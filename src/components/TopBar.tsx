@@ -97,18 +97,20 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      {/* 3-Zone Top Bar Contract */}
-      <header className="flex items-center justify-between gap-8 px-4 sm:px-6 py-3 bg-slate-950 border-b border-slate-800 z-30 shrink-0">
-        {/* Zone 1: Single text element wordmark */}
+      {/* 3-Zone Top Bar Contract - Sticky at Top */}
+      <header className="sticky top-0 flex items-center justify-between gap-3 sm:gap-6 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 z-30 shrink-0">
+        {/* Zone 1: Wordmark */}
         <button
           type="button"
           onClick={() => setActiveTab('battle')}
-          className="text-base sm:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer"
+          className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
         >
-          61267 NEU-ANSPACH ROYALE
+          <span className="text-amber-400 font-mono">61267</span>
+          <span className="hidden sm:inline">NEU-ANSPACH</span>
+          <span>ROYALE</span>
         </button>
 
-        {/* Zone 2: 5 clean single-line text navigation links */}
+        {/* Zone 2: Desktop 5 clean single-line navigation links */}
         <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
@@ -129,10 +131,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           })}
         </nav>
 
-        {/* Zone 3: Primary Operator & Mode Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <span className="hidden sm:inline-block text-xs font-mono text-amber-400 font-bold tabular-nums whitespace-nowrap shrink-0">
-            {budget.toLocaleString('de-DE')} NAT
+        {/* Zone 3: Primary Operator & Mode Action (Responsive layout) */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Budget Pill */}
+          <span className="text-xs font-mono text-amber-400 font-bold tabular-nums whitespace-nowrap shrink-0 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
+            {budget.toLocaleString('de-DE')} <span className="text-[10px] text-amber-400/80">NAT</span>
           </span>
 
           {/* Daily Missions Trigger Button */}
@@ -140,7 +143,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               type="button"
               onClick={onOpenDailyMissions}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
                 unclaimedMissionsCount > 0
                   ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md animate-pulse'
                   : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-slate-700'
@@ -154,20 +157,20 @@ export const TopBar: React.FC<TopBarProps> = ({
               />
               <span className="hidden sm:inline">Tagesbefehle</span>
               <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                className={`px-1 sm:px-1.5 py-0.2 rounded text-[10px] font-black ${
                   unclaimedMissionsCount > 0
                     ? 'bg-slate-950 text-amber-400'
                     : 'bg-slate-800 text-slate-300'
                 }`}
               >
                 {unclaimedMissionsCount > 0
-                  ? `! ${unclaimedMissionsCount}`
+                  ? `!${unclaimedMissionsCount}`
                   : `${completedMissionsCount}/${totalMissionsCount}`}
               </span>
             </button>
           )}
 
-          {/* Reputation Tag */}
+          {/* Reputation Tag (Desktop only) */}
           {onOpenDailyMissions && (
             <div
               onClick={onOpenDailyMissions}
@@ -179,11 +182,12 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
           )}
 
+          {/* Desktop Mode Toggle */}
           <button
             type="button"
             onClick={() => setIsMobileMode(!isMobileMode)}
-            title="Zwischen PC Battle Royale und Handy-Modus (ohne Battle Royale) wechseln"
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
+            title="Zwischen 3D-Battle-Royale und optimiertem Handy-Modus wechseln"
+            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
               isMobileMode
                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                 : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -192,44 +196,47 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isMobileMode ? (
               <>
                 <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden md:inline">Handy-Modus</span>
+                <span>Handy-Modus</span>
               </>
             ) : (
               <>
                 <Monitor className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden md:inline">PC-Modus</span>
+                <span>PC-Modus</span>
               </>
             )}
           </button>
 
+          {/* Sound Mute Button (Desktop) */}
           <button
             type="button"
             onClick={toggleMute}
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer shrink-0"
+            className="hidden sm:flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer shrink-0"
             title={isMuted ? 'Ton aktivieren' : 'Stummschalten'}
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
           </button>
 
+          {/* Legal / Disclaimer Button (Desktop) */}
           {onOpenLegalModal && (
             <button
               type="button"
               onClick={onOpenLegalModal}
-              className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-400 border border-slate-800 transition-colors cursor-pointer shrink-0"
+              className="hidden sm:flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-400 border border-slate-800 transition-colors cursor-pointer shrink-0"
               title="Rechtliches, Datenschutz & Disclaimer"
             >
               <Scale className="w-4 h-4" />
             </button>
           )}
 
+          {/* Profile / Callsign Button */}
           <button
             type="button"
             onClick={onOpenProfileModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs font-mono font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             title="Benutzername & Clan-Tag ändern"
           >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span className="truncate max-w-[140px]">
+            <UserCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate max-w-[85px] sm:max-w-[130px]">
               [{clanTag || '61267'}] {playerName}
             </span>
           </button>

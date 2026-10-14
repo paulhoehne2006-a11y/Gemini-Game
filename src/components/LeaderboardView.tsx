@@ -159,7 +159,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     });
 
   return (
-    <div className="w-full min-h-[calc(100vh-57px)] bg-slate-950 text-slate-100 p-4 sm:p-6 overflow-y-auto">
+    <div className="w-full min-h-full bg-slate-950 text-slate-100 p-4 sm:p-6 pb-28 lg:pb-12">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Top Header & Friends Clan-Tag Invite Bar */}
         <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-5">

@@ -44,7 +44,7 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4 overflow-y-auto">
-      <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden my-auto">
         {/* Tactical Header Banner */}
         <div className="px-6 py-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
           <div>

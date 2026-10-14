@@ -59,7 +59,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   };
 
   return (
-    <div className="w-full min-h-[calc(100vh-57px)] bg-slate-950 text-slate-100 p-4 sm:p-6 overflow-y-auto">
+    <div className="w-full min-h-full bg-slate-950 text-slate-100 p-4 sm:p-6 pb-28 lg:pb-12">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

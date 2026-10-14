@@ -8,6 +8,7 @@ import { GunsmithView } from './components/GunsmithView';
 import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
 import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
+import { MobileTacticalHub } from './components/MobileTacticalHub';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -501,6 +502,48 @@ export default function App() {
     }
   };
 
+  const handleSimulatePatrol = (arenaId: string) => {
+    // Generate 2-4 tactical enemy eliminations in the target arena
+    const patrolKills = Math.floor(Math.random() * 3) + 2;
+    const earnedNAT = 45 + patrolKills * 12;
+    const earnedScore = patrolKills * 125;
+
+    setBudget((prev) => prev + earnedNAT);
+    setLastMatchKills((prev) => prev + patrolKills);
+    setLastMatchScore((prev) => prev + earnedScore);
+
+    // Trigger daily missions progression for each kill in this arena!
+    for (let i = 0; i < patrolKills; i++) {
+      triggerMissionEvent({
+        type: 'kill',
+        arenaId,
+        role: i === 0 ? 'sniper' : 'flanker',
+        isBoss: false,
+        weaponId: selectedGunsmithWeapon,
+        wave: 2,
+      });
+    }
+
+    // Also trigger taler event for the collected NAT
+    triggerMissionEvent({
+      type: 'taler',
+      amount: earnedNAT,
+    });
+
+    submitScore({
+      name: playerName,
+      clanTag,
+      score: earnedScore,
+      kills: patrolKills,
+      victory: false,
+      city: playerCity,
+      unlockedMapsCount: effectiveUnlockedMaps.length,
+      signatureWeapon: signatureWeaponName,
+      currentArena: ARENAS[arenaId]?.name || arenaId,
+      eventNotice: `hat eine Bürgerwehr-Streife in „${ARENAS[arenaId]?.name || arenaId}“ gesichert (+${earnedNAT} NAT)!`,
+    }).catch(() => {});
+  };
+
   const handleMatchComplete = (
     victory: boolean,
     stats: { kills: number; score: number; wave: number }
@@ -574,7 +617,7 @@ export default function App() {
   ).length;
 
   return (
-    <div className="flex flex-col w-screen h-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
+    <div className="flex flex-col min-h-screen w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden">
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
         <OperatorOnboardingModal
@@ -667,36 +710,54 @@ export default function App() {
         totalMissionsCount={dailyMissionsState.missions.length}
       />
 
-      {/* Main View Router */}
-      <main className="flex-1 w-full overflow-hidden relative pb-14 lg:pb-0">
+      {/* Main View Router - with native smooth scrolling on desktop and mobile */}
+      <main className="flex-1 w-full relative overflow-y-auto">
         {activeTab === 'battle' && (
-          <ThreeCanvas
-            currentArena={currentArena}
-            onChangeArena={(arenaId) => setCurrentArena(arenaId)}
-            onMatchComplete={handleMatchComplete}
-            unlockedFacilities={facilityLevels}
-            latestCommanderBark={latestCommanderBark}
-            commanderDirectives={commanderDirectives}
-            isMobileMode={isMobileMode}
-            onCollectTaler={handleCollectTaler}
-            onOpenTycoon={() => setActiveTab('tycoon')}
-            onOpenGunsmith={() => setActiveTab('gunsmith')}
-            onOpenLeaderboard={() => setActiveTab('leaderboard')}
-            weaponUpgrades={weaponUpgrades}
-            onLootAttachmentUpdate={handleLootAttachmentUpdate}
-            totalWins={totalWins}
-            unlockedMaps={effectiveUnlockedMaps}
-            budget={budget}
-            onUnlockMap={handleUnlockMap}
-            playerName={playerName}
-            clanTag={clanTag}
-            dailyMissionsState={dailyMissionsState}
-            onEnemyEliminated={handleEnemyEliminated}
-            onStreakAchieved={handleStreakAchieved}
-            onWaveAdvanced={handleWaveAdvanced}
-            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-            onClaimDailyMission={handleClaimMission}
-          />
+          isMobileMode ? (
+            <MobileTacticalHub
+              budget={budget}
+              reputation={reputation}
+              playerName={playerName}
+              clanTag={clanTag}
+              totalIncomePerSec={totalIncomePerSec}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+              dailyMissionsState={dailyMissionsState}
+              onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+              onClaimDailyMission={handleClaimMission}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onSwitchToPcMode={() => setIsMobileMode(false)}
+              onSimulatePatrol={handleSimulatePatrol}
+            />
+          ) : (
+            <ThreeCanvas
+              currentArena={currentArena}
+              onChangeArena={(arenaId) => setCurrentArena(arenaId)}
+              onMatchComplete={handleMatchComplete}
+              unlockedFacilities={facilityLevels}
+              latestCommanderBark={latestCommanderBark}
+              commanderDirectives={commanderDirectives}
+              isMobileMode={false}
+              onCollectTaler={handleCollectTaler}
+              onOpenTycoon={() => setActiveTab('tycoon')}
+              onOpenGunsmith={() => setActiveTab('gunsmith')}
+              onOpenLeaderboard={() => setActiveTab('leaderboard')}
+              weaponUpgrades={weaponUpgrades}
+              onLootAttachmentUpdate={handleLootAttachmentUpdate}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+              budget={budget}
+              onUnlockMap={handleUnlockMap}
+              playerName={playerName}
+              clanTag={clanTag}
+              dailyMissionsState={dailyMissionsState}
+              onEnemyEliminated={handleEnemyEliminated}
+              onStreakAchieved={handleStreakAchieved}
+              onWaveAdvanced={handleWaveAdvanced}
+              onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+              onClaimDailyMission={handleClaimMission}
+            />
+          )
         )}
 
         {activeTab === 'gunsmith' && (

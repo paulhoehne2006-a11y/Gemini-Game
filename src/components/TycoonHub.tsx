@@ -71,7 +71,7 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
   };
 
   return (
-    <div className="w-full min-h-[calc(100vh-57px)] bg-slate-950 text-slate-100 p-4 sm:p-6 overflow-y-auto">
+    <div className="w-full min-h-full bg-slate-950 text-slate-100 p-4 sm:p-6 pb-28 lg:pb-12">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header Stats */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800">
