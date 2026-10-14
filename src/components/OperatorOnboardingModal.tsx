@@ -1,0 +1,229 @@
+import React, { useState } from 'react';
+import { Shield, Users, Crosshair, CheckCircle2, Swords } from 'lucide-react';
+import { soundFx } from '../audio/soundFx';
+
+interface OperatorOnboardingModalProps {
+  initialName: string;
+  initialClanTag: string;
+  initialCity: string;
+  isFirstTime: boolean;
+  onComplete: (profile: { name: string; clanTag: string; city: string }) => void;
+  onClose?: () => void;
+}
+
+const PRESET_TAGS = ['61267', 'ANS', 'TAUN', 'BEMB', 'FELD'];
+
+export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = ({
+  initialName,
+  initialClanTag,
+  initialCity,
+  isFirstTime,
+  onComplete,
+  onClose,
+}) => {
+  const [name, setName] = useState(isFirstTime ? '' : initialName);
+  const [clanTag, setClanTag] = useState(initialClanTag || '61267');
+  const [city, setCity] = useState(initialCity || 'Neu-Anspach');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      setError('Bitte gib einen Benutzernamen mit mindestens 2 Zeichen ein.');
+      return;
+    }
+    const cleanTag = clanTag.replace(/[^a-zA-Z0-9_-]/g, '').toUpperCase().slice(0, 6) || '61267';
+    soundFx.playLevelUp();
+    onComplete({
+      name: trimmed.slice(0, 20),
+      clanTag: cleanTag,
+      city,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4 overflow-y-auto">
+      <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
+        {/* Tactical Header Banner */}
+        <div className="px-6 py-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-mono text-amber-400 tracking-wider">
+              61267 NEU-ANSPACH · OPERATOR-AKTE & MULTIPLAYER-PROFIL
+            </div>
+            <h2 className="text-xl font-bold text-white tracking-tight mt-0.5">
+              {isFirstTime
+                ? 'Wähle deinen Benutzernamen für das Live-Leaderboard'
+                : 'Operator-Benutzername & Clan-Tag anpassen'}
+            </h2>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Shield className="w-5 h-5" />
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* Explanation */}
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Dein Benutzername und Clan-Tag werden in Echtzeit mit dem echten Server-Leaderboard synchronisiert. Wenn du und deine Freunde denselben Clan-Tag nutzt, könnt ihr eure Punkte, Kills und freigeschalteten Maps direkt vergleichen.
+          </p>
+
+          {/* Username Input */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-mono font-semibold text-slate-200">
+              1. DEIN BENUTZERNAME (SPIELERNAME)
+            </label>
+            <input
+              type="text"
+              autoFocus
+              maxLength={20}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder="z.B. Paul61267, TaunusSniper, BembelKing..."
+              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 focus:outline-none text-white font-mono text-sm"
+            />
+            {error && <div className="text-xs text-red-400 font-mono">{error}</div>}
+          </div>
+
+          {/* Friend Clan Tag Input */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-mono font-semibold text-slate-200">
+                2. FREUNDES-CLAN-TAG (FÜR GEMEINSAME GRUPPEN)
+              </label>
+              <span className="text-[11px] font-mono text-slate-400">Max. 6 Zeichen</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[140px]">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400 font-mono font-bold text-sm">
+                  [
+                </span>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={clanTag}
+                  onChange={(e) =>
+                    setClanTag(e.target.value.replace(/[^a-zA-Z0-9_-]/g, '').toUpperCase())
+                  }
+                  placeholder="61267"
+                  className="w-full pl-7 pr-7 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-500 focus:outline-none text-amber-400 font-mono font-bold text-sm uppercase"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-amber-400 font-mono font-bold text-sm">
+                  ]
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {PRESET_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setClanTag(tag)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                      clanTag === tag
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    [{tag}]
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Faction Selector */}
+          <div className="space-y-2">
+            <label className="block text-xs font-mono font-semibold text-slate-200">
+              3. HEIMAT-FRAKTION IM TAUNUS-DERBY
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setCity('Neu-Anspach')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  city === 'Neu-Anspach'
+                    ? 'bg-red-950/40 border-red-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">61267 Neu-Anspach</span>
+                  {city === 'Neu-Anspach' && <CheckCircle2 className="w-4 h-4 text-red-400" />}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Hessenpark, Waldschwimmbad, Bahnhof & Feldbergblick
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCity('Wehrheim')}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  city === 'Wehrheim'
+                    ? 'bg-amber-950/40 border-amber-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">61273 Wehrheim</span>
+                  {city === 'Wehrheim' && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1">
+                  Apfeldorf & Lochmühle-Garde im Lokalderby
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Live Callsign Preview */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-mono font-bold text-amber-400 text-sm">
+                {(name.trim() || 'OP').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div className="text-[10px] font-mono text-slate-400">
+                  VORSCHAU IM ECHTEN MULTIPLAYER-LEADERBOARD
+                </div>
+                <div className="text-sm font-bold text-white font-mono">
+                  <span className="text-amber-400 mr-1.5">[{clanTag || '61267'}]</span>
+                  <span>{name.trim() || 'DeinBenutzername'}</span>
+                </div>
+              </div>
+            </div>
+            <span className="text-xs font-mono text-slate-400">{city}</span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            {!isFirstTime && onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Abbrechen
+              </button>
+            )}
+            <button
+              type="submit"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs tracking-wide transition-colors cursor-pointer"
+            >
+              <Swords className="w-4 h-4" />
+              <span>
+                {isFirstTime
+                  ? 'Benutzername speichern & Spiel starten'
+                  : 'Operator-Profil aktualisieren'}
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "Neu-Anspach 61267: Taunus Battle Royale & Tycoon",
+  "description": "3D-Battle-Royale und Tycoon-Simulation für 61267 Neu-Anspach gegen Wehrheimer Horden mit lokaler Infrastruktur, Gemini-Pro-Agentensteuerung und Echtzeit-Multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

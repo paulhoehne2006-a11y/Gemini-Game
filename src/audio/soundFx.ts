@@ -1,0 +1,329 @@
+/**
+ * Web Audio API Procedural Sound Synthesizer for Neu-Anspach Battle Royale
+ * 100% procedural - zero external audio assets needed!
+ */
+
+class SoundEffectsManager {
+  private ctx: AudioContext | null = null;
+  private isMuted: boolean = false;
+
+  private initCtx() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  public toggleMute(): boolean {
+    this.isMuted = !this.isMuted;
+    return this.isMuted;
+  }
+
+  public setMuted(muted: boolean): void {
+    this.isMuted = muted;
+  }
+
+  public getMuted(): boolean {
+    return this.isMuted;
+  }
+
+  // Real Gunshot Audio: Crisp muzzle crack transient + punchy kick
+  public playShoot() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+
+    // Layer 1: High-frequency explosive crack / noise burst
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.06);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+    }
+    const whiteNoise = this.ctx.createBufferSource();
+    whiteNoise.buffer = noiseBuffer;
+
+    const noiseFilter = this.ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.setValueAtTime(1800, now);
+    noiseFilter.Q.setValueAtTime(1.2, now);
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.35, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+    whiteNoise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.ctx.destination);
+    whiteNoise.start(now);
+
+    // Layer 2: Punchy low-end firearm thump (pitch dropped kick)
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.1);
+
+    const kickFilter = this.ctx.createBiquadFilter();
+    kickFilter.type = 'lowpass';
+    kickFilter.frequency.setValueAtTime(800, now);
+
+    oscGain.gain.setValueAtTime(0.4, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    osc.connect(kickFilter);
+    kickFilter.connect(oscGain);
+    oscGain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
+  // Hit impact: Apple squish / Stoneware crack
+  public playHit() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    const now = this.ctx.currentTime;
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(110, now + 0.12);
+
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.12);
+  }
+
+  // Handkäs Mine Explosion
+  public playExplosion() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(30, now + 0.4);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.4);
+  }
+
+  // Tycoon Coin / Taler Ding
+  public playCoin() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(987, now); // B5
+    osc.frequency.setValueAtTime(1318, now + 0.08); // E6
+
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  // Taunus Fog Zone Warning Siren
+  public playZoneWarning() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(330, now);
+    osc.frequency.linearRampToValueAtTime(550, now + 0.2);
+    osc.frequency.linearRampToValueAtTime(330, now + 0.4);
+
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.4);
+  }
+
+  // Level Up / District Unlocked
+  public playLevelUp() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    const now = this.ctx.currentTime;
+
+    notes.forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const startTime = now + idx * 0.09;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.2, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
+
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.2);
+    });
+  }
+
+  // Wave Start Horn (Taunus War Horn)
+  public playWaveStart() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const notes = [330, 440, 554.37, 659.25]; // E4, A4, C#5, E5
+    const now = this.ctx.currentTime;
+
+    notes.forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const startTime = now + idx * 0.08;
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.2, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.28);
+
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.28);
+    });
+  }
+
+  // Wave Victory Chime
+  public playWaveVictory() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const chords = [523.25, 659.25, 783.99, 1046.5];
+    const now = this.ctx.currentTime;
+
+    chords.forEach((freq, idx) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const startTime = now + idx * 0.06;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.18, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.45);
+
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + 0.45);
+    });
+  }
+
+  // Boss Spawn Horn (Traktor-Horst arrival)
+  public playBossSpawn() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const subOsc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    subOsc.type = 'square';
+
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.linearRampToValueAtTime(120, now + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(65, now + 0.8);
+
+    subOsc.frequency.setValueAtTime(47, now);
+    subOsc.frequency.exponentialRampToValueAtTime(32, now + 0.8);
+
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+
+    osc.connect(gain);
+    subOsc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    subOsc.start(now);
+    osc.stop(now + 0.85);
+    subOsc.stop(now + 0.85);
+  }
+
+  // Satisfying Kill Hit
+  public playKill() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now); // A5
+    osc.frequency.setValueAtTime(1174.66, now + 0.06); // D6
+
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+}
+
+export const soundFx = new SoundEffectsManager();

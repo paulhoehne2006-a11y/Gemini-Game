@@ -1,0 +1,566 @@
+import React, { useState, useEffect } from 'react';
+import { TopBar, AppTab } from './components/TopBar';
+import { ThreeCanvas } from './components/ThreeCanvas';
+import { TycoonHub } from './components/TycoonHub';
+import { MultiplayerLobby } from './components/MultiplayerLobby';
+import { LeaderboardView } from './components/LeaderboardView';
+import { GunsmithView } from './components/GunsmithView';
+import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
+import { INITIAL_FACILITIES, Facility } from './game/tycoon';
+import {
+  MultiplayerRoom,
+  updateMultiplayerState,
+  submitScore,
+  registerOperatorProfile,
+} from './game/multiplayer';
+import {
+  WEAPONS,
+  INITIAL_WEAPON_UPGRADES,
+  getEffectiveWeaponStats,
+} from './game/weapons';
+import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from './game/three/arenas';
+import { AllWeaponsUpgrades, AttachmentType, WeaponAttachments } from './types';
+import { soundFx } from './audio/soundFx';
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<AppTab>('battle');
+  const [currentArena, setCurrentArena] = useState<string>('hessenpark');
+
+  // Auto-detect mobile device/screen, or allow switching anytime in the TopBar
+  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 820 || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+    }
+    return false;
+  });
+
+  // Operator Profile & Onboarding State ("Am anfang soll man sich mit einen Benutzernamen geben")
+  const [isOperatorRegistered, setIsOperatorRegistered] = useState<boolean>(() => {
+    return localStorage.getItem('na_operator_registered') === 'true';
+  });
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(() => {
+    return localStorage.getItem('na_operator_registered') !== 'true';
+  });
+
+  const [playerName, setPlayerName] = useState<string>(() => {
+    return localStorage.getItem('na_player_name') || 'AnspachOperator';
+  });
+  const [clanTag, setClanTag] = useState<string>(() => {
+    return localStorage.getItem('na_clan_tag') || '61267';
+  });
+  const [playerCity, setPlayerCity] = useState<string>(() => {
+    return localStorage.getItem('na_player_city') || 'Neu-Anspach';
+  });
+
+  // Economy & Progression State
+  const [budget, setBudget] = useState<number>(() => {
+    const saved = localStorage.getItem('na_budget');
+    return saved ? parseInt(saved, 10) : 450;
+  });
+  const [facilities, setFacilities] = useState<Record<string, Facility>>(() => {
+    const saved = localStorage.getItem('na_facilities');
+    return saved ? JSON.parse(saved) : INITIAL_FACILITIES;
+  });
+  const [totalWins, setTotalWins] = useState<number>(() => {
+    const saved = localStorage.getItem('na_wins');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // Unlocked Maps Progression State (Starts with Hessenpark unlocked!)
+  const [unlockedMaps, setUnlockedMaps] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('na_unlocked_maps');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return ['hessenpark'];
+  });
+
+  // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III)
+  const [weaponUpgrades, setWeaponUpgrades] = useState<AllWeaponsUpgrades>(() => {
+    try {
+      const saved = localStorage.getItem('na_weapon_upgrades');
+      if (saved) {
+        return { ...INITIAL_WEAPON_UPGRADES, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return INITIAL_WEAPON_UPGRADES;
+  });
+  const [selectedGunsmithWeapon, setSelectedGunsmithWeapon] = useState<string>('bembel');
+
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [lastMatchScore, setLastMatchScore] = useState(0);
+  const [lastMatchKills, setLastMatchKills] = useState(0);
+
+  // Gemini Pro Master-Commander State
+  const [isCommanderThinking, setIsCommanderThinking] = useState(false);
+  const [latestCommanderBark, setLatestCommanderBark] = useState<string>(
+    'Ei gude! Packt die Bembel aus un vertreibt die Wehrheimer vom Hessenpark-Marktplatz!'
+  );
+  const [commanderDirectives, setCommanderDirectives] = useState<any>(null);
+  const [crisisEvent, setCrisisEvent] = useState<{
+    title: string;
+    description: string;
+    budgetBonus: number;
+    recommendedUpgrade: string;
+  } | null>(null);
+
+  // Multiplayer sync state
+  const [activeRoom, setActiveRoom] = useState<MultiplayerRoom | null>(null);
+  const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
+
+  // Compute current signature weapon display name for Real Leaderboard
+  const primaryWeaponObj = WEAPONS[selectedGunsmithWeapon] || WEAPONS.bembel;
+  const signatureWeaponName = getEffectiveWeaponStats(
+    primaryWeaponObj,
+    weaponUpgrades[selectedGunsmithWeapon]
+  ).displayName;
+
+  // Total count of unlocked maps (combining explicit unlocks + win threshold unlocks)
+  const effectiveUnlockedMaps = Object.keys(ARENAS).filter((id) =>
+    checkArenaUnlocked(id, totalWins, unlockedMaps)
+  );
+
+  // Calculate total passive income per second
+  const totalIncomePerSec = Object.values(facilities).reduce(
+    (acc, f) => acc + f.level * f.incomePerSec,
+    0
+  );
+
+  // Passive Income Timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (totalIncomePerSec > 0) {
+        setBudget((prev) => {
+          const next = prev + totalIncomePerSec;
+          localStorage.setItem('na_budget', next.toString());
+          return next;
+        });
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [totalIncomePerSec]);
+
+  // Persist state in localStorage
+  useEffect(() => {
+    localStorage.setItem('na_budget', budget.toString());
+  }, [budget]);
+
+  useEffect(() => {
+    localStorage.setItem('na_facilities', JSON.stringify(facilities));
+  }, [facilities]);
+
+  useEffect(() => {
+    localStorage.setItem('na_wins', totalWins.toString());
+  }, [totalWins]);
+
+  useEffect(() => {
+    localStorage.setItem('na_unlocked_maps', JSON.stringify(unlockedMaps));
+  }, [unlockedMaps]);
+
+  useEffect(() => {
+    localStorage.setItem('na_weapon_upgrades', JSON.stringify(weaponUpgrades));
+  }, [weaponUpgrades]);
+
+  // Sync registered operator profile with real server on startup
+  useEffect(() => {
+    if (isOperatorRegistered && playerName) {
+      registerOperatorProfile({
+        name: playerName,
+        clanTag,
+        city: playerCity,
+        unlockedMapsCount: effectiveUnlockedMaps.length,
+        signatureWeapon: signatureWeaponName,
+        currentArena: ARENAS[currentArena]?.name || currentArena,
+      }).catch(() => {});
+    }
+  }, [isOperatorRegistered]);
+
+  const handleCompleteOnboarding = (profile: {
+    name: string;
+    clanTag: string;
+    city: string;
+  }) => {
+    setPlayerName(profile.name);
+    setClanTag(profile.clanTag);
+    setPlayerCity(profile.city);
+    setIsOperatorRegistered(true);
+    setShowProfileModal(false);
+
+    localStorage.setItem('na_player_name', profile.name);
+    localStorage.setItem('na_clan_tag', profile.clanTag);
+    localStorage.setItem('na_player_city', profile.city);
+    localStorage.setItem('na_operator_registered', 'true');
+
+    registerOperatorProfile({
+      name: profile.name,
+      clanTag: profile.clanTag,
+      city: profile.city,
+      unlockedMapsCount: effectiveUnlockedMaps.length,
+      signatureWeapon: signatureWeaponName,
+      currentArena: ARENAS[currentArena]?.name || currentArena,
+    }).catch(console.error);
+  };
+
+  // CoD Cold War Gunsmith Handlers
+  const handleUpgradeAttachment = (
+    weaponId: string,
+    slot: AttachmentType,
+    targetLevel: number,
+    cost: number
+  ) => {
+    if (budget < cost) return;
+    setBudget((prev) => prev - cost);
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          attachments: {
+            ...cur.attachments,
+            [slot]: targetLevel,
+          },
+        },
+      };
+    });
+  };
+
+  const handleUpgradeRarity = (weaponId: string, targetTier: number, cost: number) => {
+    if (budget < cost) return;
+    setBudget((prev) => prev - cost);
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          rarityTier: targetTier,
+        },
+      };
+    });
+  };
+
+  const handleUpgradePackAPunch = (weaponId: string, targetLevel: number, cost: number) => {
+    if (budget < cost) return;
+    setBudget((prev) => prev - cost);
+    const papWeaponName = WEAPONS[weaponId]?.papNames[targetLevel - 1] || WEAPONS[weaponId]?.name;
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          papLevel: targetLevel,
+        },
+      };
+    });
+
+    if (isOperatorRegistered) {
+      submitScore({
+        name: playerName,
+        clanTag,
+        score: 0,
+        kills: 0,
+        victory: false,
+        city: playerCity,
+        unlockedMapsCount: effectiveUnlockedMaps.length,
+        signatureWeapon: papWeaponName,
+        currentArena: ARENAS[currentArena]?.name || currentArena,
+        eventNotice: `hat „${papWeaponName}“ (Pack-a-Punch Stufe ${targetLevel}) geschmiedet!`,
+      }).catch(() => {});
+    }
+  };
+
+  const handleLootAttachmentUpdate = (weaponId: string, newAtt: WeaponAttachments) => {
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          attachments: {
+            ...cur.attachments,
+            ...newAtt,
+          },
+        },
+      };
+    });
+  };
+
+  // Map Unlock Handler
+  const handleUnlockMap = (arenaId: string, costNAT: number) => {
+    if (budget < costNAT) return;
+    setBudget((prev) => prev - costNAT);
+    setUnlockedMaps((prev) => {
+      const next = prev.includes(arenaId) ? prev : [...prev, arenaId];
+      if (isOperatorRegistered) {
+        submitScore({
+          name: playerName,
+          clanTag,
+          score: 0,
+          kills: 0,
+          victory: false,
+          city: playerCity,
+          unlockedMapsCount: next.length,
+          signatureWeapon: signatureWeaponName,
+          currentArena: ARENAS[arenaId]?.name || arenaId,
+          eventNotice: `hat das Einsatzgebiet „${ARENAS[arenaId]?.name || arenaId}“ freigeschaltet!`,
+        }).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  // Request Gemini Pro Commander analysis
+  const requestCommanderOrders = async () => {
+    try {
+      setIsCommanderThinking(true);
+      const activePerks = Object.values(facilities)
+        .filter((f) => f.level > 0)
+        .map((f) => f.name);
+
+      const res = await fetch('/api/ai/commander', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          arena: currentArena,
+          wave: totalWins + 1,
+          playerHealth: 100,
+          budget,
+          currentPerks: activePerks,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.commander) {
+        if (data.commander.hessianCombatBark) {
+          setLatestCommanderBark(data.commander.hessianCombatBark);
+        }
+        if (data.commander.wehrheimAgentsOrders) {
+          setCommanderDirectives({
+            flankers: data.commander.wehrheimAgentsOrders.flankers,
+            snipers: data.commander.wehrheimAgentsOrders.snipers,
+            shocktroopers: data.commander.wehrheimAgentsOrders.shocktroopers,
+            bark: data.commander.hessianCombatBark,
+          });
+        }
+        if (data.commander.tycoonCrisisEvent) {
+          setCrisisEvent(data.commander.tycoonCrisisEvent);
+        }
+      }
+    } catch (err) {
+      console.error('Commander error:', err);
+    } finally {
+      setIsCommanderThinking(false);
+    }
+  };
+
+  const handleUpgradeFacility = (facilityId: string, cost: number) => {
+    if (budget >= cost) {
+      setBudget((prev) => prev - cost);
+      setFacilities((prev) => ({
+        ...prev,
+        [facilityId]: {
+          ...prev[facilityId],
+          level: prev[facilityId].level + 1,
+        },
+      }));
+    }
+  };
+
+  const handleAcceptCrisis = () => {
+    if (crisisEvent) {
+      soundFx.playCoin();
+      setBudget((prev) => prev + crisisEvent.budgetBonus);
+      setCrisisEvent(null);
+    }
+  };
+
+  const handleCollectTaler = (amount: number) => {
+    setBudget((prev) => prev + amount);
+  };
+
+  const handleMatchComplete = (
+    victory: boolean,
+    stats: { kills: number; score: number; wave: number }
+  ) => {
+    setLastMatchKills(stats.kills);
+    setLastMatchScore(stats.score);
+
+    const waveBonus = stats.wave * 6;
+    const scoreBonus = Math.round(stats.score * 0.06);
+    const winBonus = victory ? 45 : 12;
+    const reward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    setBudget((prev) => prev + reward);
+
+    let nextWins = totalWins;
+    let nextUnlocked = [...unlockedMaps];
+
+    if (victory) {
+      nextWins = totalWins + 1;
+      setTotalWins(nextWins);
+
+      // Automatically unlock maps whose requiredWins <= nextWins
+      Object.values(ARENA_UNLOCK_RULES).forEach((rule) => {
+        if (nextWins >= rule.requiredWins && !nextUnlocked.includes(rule.id)) {
+          nextUnlocked.push(rule.id);
+        }
+      });
+      setUnlockedMaps(nextUnlocked);
+    }
+
+    submitScore({
+      name: playerName,
+      clanTag,
+      score: stats.score,
+      kills: stats.kills,
+      wave: stats.wave,
+      victory,
+      city: playerCity,
+      unlockedMapsCount: nextUnlocked.length,
+      signatureWeapon: signatureWeaponName,
+      currentArena: ARENAS[currentArena]?.name || currentArena,
+    }).catch(console.error);
+
+    if (activeRoom && localPlayerId) {
+      updateMultiplayerState(
+        activeRoom.code,
+        localPlayerId,
+        stats.kills,
+        victory ? 100 : 0,
+        stats.score,
+        stats.wave
+      ).catch(console.error);
+    }
+  };
+
+  const handleStartGameWithRoom = (room: MultiplayerRoom, playerId: string) => {
+    setActiveRoom(room);
+    setLocalPlayerId(playerId);
+    setCurrentArena(room.arena || 'hessenpark');
+    setActiveTab('battle');
+  };
+
+  const facilityLevels = Object.fromEntries(
+    Object.entries(facilities).map(([k, v]) => [k, v.level])
+  );
+
+  return (
+    <div className="flex flex-col w-screen h-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
+      {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
+      {showProfileModal && (
+        <OperatorOnboardingModal
+          initialName={playerName}
+          initialClanTag={clanTag}
+          initialCity={playerCity}
+          isFirstTime={!isOperatorRegistered}
+          onComplete={handleCompleteOnboarding}
+          onClose={isOperatorRegistered ? () => setShowProfileModal(false) : undefined}
+        />
+      )}
+
+      {/* 3-Zone Top Navigation Contract */}
+      <TopBar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        budget={budget}
+        isMuted={isMuted}
+        setIsMuted={setIsMuted}
+        onRequestCommander={requestCommanderOrders}
+        isCommanderThinking={isCommanderThinking}
+        isMobileMode={isMobileMode}
+        setIsMobileMode={setIsMobileMode}
+        playerName={playerName}
+        clanTag={clanTag}
+        onOpenProfileModal={() => setShowProfileModal(true)}
+      />
+
+      {/* Main View Router */}
+      <main className="flex-1 w-full overflow-hidden relative pb-14 lg:pb-0">
+        {activeTab === 'battle' && (
+          <ThreeCanvas
+            currentArena={currentArena}
+            onChangeArena={(arenaId) => setCurrentArena(arenaId)}
+            onMatchComplete={handleMatchComplete}
+            unlockedFacilities={facilityLevels}
+            latestCommanderBark={latestCommanderBark}
+            commanderDirectives={commanderDirectives}
+            isMobileMode={isMobileMode}
+            onCollectTaler={handleCollectTaler}
+            onOpenTycoon={() => setActiveTab('tycoon')}
+            onOpenGunsmith={() => setActiveTab('gunsmith')}
+            onOpenLeaderboard={() => setActiveTab('leaderboard')}
+            weaponUpgrades={weaponUpgrades}
+            onLootAttachmentUpdate={handleLootAttachmentUpdate}
+            totalWins={totalWins}
+            unlockedMaps={effectiveUnlockedMaps}
+            budget={budget}
+            onUnlockMap={handleUnlockMap}
+            playerName={playerName}
+            clanTag={clanTag}
+          />
+        )}
+
+        {activeTab === 'gunsmith' && (
+          <GunsmithView
+            budget={budget}
+            weaponUpgrades={weaponUpgrades}
+            activeWeaponId={selectedGunsmithWeapon}
+            onSelectWeapon={(wId) => setSelectedGunsmithWeapon(wId)}
+            onUpgradeAttachment={handleUpgradeAttachment}
+            onUpgradeRarity={handleUpgradeRarity}
+            onUpgradePackAPunch={handleUpgradePackAPunch}
+            onClose={() => setActiveTab('battle')}
+          />
+        )}
+
+        {activeTab === 'tycoon' && (
+          <TycoonHub
+            budget={budget}
+            onUpgradeFacility={handleUpgradeFacility}
+            facilities={facilities}
+            totalWins={totalWins}
+            unlockedMaps={effectiveUnlockedMaps}
+            onUnlockMap={handleUnlockMap}
+            totalIncomePerSec={totalIncomePerSec}
+            commanderCrisisEvent={crisisEvent}
+            onAcceptCrisisEvent={handleAcceptCrisis}
+            onStartArena={(arenaId) => {
+              setCurrentArena(arenaId);
+              setActiveTab('battle');
+            }}
+          />
+        )}
+
+        {activeTab === 'multiplayer' && (
+          <MultiplayerLobby
+            onStartGameWithRoom={handleStartGameWithRoom}
+            playerName={playerName}
+            clanTag={clanTag}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+            onOpenLeaderboard={() => setActiveTab('leaderboard')}
+            totalWins={totalWins}
+            unlockedMaps={effectiveUnlockedMaps}
+          />
+        )}
+
+        {activeTab === 'leaderboard' && (
+          <LeaderboardView
+            currentScore={lastMatchScore}
+            currentKills={lastMatchKills}
+            playerName={playerName}
+            clanTag={clanTag}
+            playerCity={playerCity}
+            unlockedMapsCount={effectiveUnlockedMaps.length}
+            signatureWeapon={signatureWeaponName}
+            currentArenaName={ARENAS[currentArena]?.name || currentArena}
+            onEditProfile={() => setShowProfileModal(true)}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
