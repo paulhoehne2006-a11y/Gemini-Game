@@ -231,7 +231,9 @@ export function animateCharacterRig(
   time: number,
   isMoving: boolean,
   recoilKick = 0,
-  speedRatio = 1.0
+  speedRatio = 1.0,
+  crouchAmount = 0,
+  isSprinting = false
 ) {
   const leftLeg = group.getObjectByName('leftLeg');
   const rightLeg = group.getObjectByName('rightLeg');
@@ -242,54 +244,72 @@ export function animateCharacterRig(
   const leftElbow = group.getObjectByName('leftElbow');
   const torsoGroup = group.getObjectByName('torsoGroup');
   const headGroup = group.getObjectByName('headGroup');
+  const pelvis = group.getObjectByName('pelvis');
+  const belt = group.getObjectByName('belt');
+  const playerRing = group.getObjectByName('playerRing');
   const weaponMount = group.getObjectByName('weaponMount');
 
   const hasWeapon = weaponMount && weaponMount.children.length > 0;
-  const clampedRatio = Math.max(0.25, Math.min(1.25, speedRatio));
+  const clampedRatio = Math.max(0.25, Math.min(1.65, speedRatio));
+  const c = THREE.MathUtils.clamp(crouchAmount, 0, 1);
+
+  // Vertical crouch drop (~0.29m lower hips/torso/head while boots stay planted at y=0)
+  const dropY = 0.29 * c;
+  const baseThighCrouch = -0.82 * c;
+  const baseKneeCrouch = 1.64 * c;
+
+  if (leftLeg) leftLeg.position.y = 0.92 - dropY;
+  if (rightLeg) rightLeg.position.y = 0.92 - dropY;
+  if (pelvis) pelvis.position.y = 0.94 - dropY;
+  if (belt) belt.position.y = 1.01 - dropY;
+  if (playerRing) playerRing.position.y = 2.28 - dropY * 1.1;
 
   if (isMoving) {
-    // Natural human stride cadence (~1.5 steps per second, not frantic robotic wiggling!)
-    const phase = time * 4.8 * clampedRatio;
-    const strideAngle = 0.42 * clampedRatio;
+    // Natural human stride cadence (faster when sprinting, stealthier when crouched)
+    const phase = time * (isSprinting ? 5.6 : 4.8) * clampedRatio;
+    const strideAngle = (isSprinting ? 0.48 : 0.42) * clampedRatio * (1 - c * 0.42);
 
-    // Hip swing
-    if (leftLeg) leftLeg.rotation.x = Math.sin(phase) * strideAngle;
-    if (rightLeg) rightLeg.rotation.x = Math.sin(phase + Math.PI) * strideAngle;
+    // Hip swing + crouch knee/thigh flexion
+    if (leftLeg) leftLeg.rotation.x = baseThighCrouch + Math.sin(phase) * strideAngle;
+    if (rightLeg) rightLeg.rotation.x = baseThighCrouch + Math.sin(phase + Math.PI) * strideAngle;
 
-    // Realistic knee flexion (knees only bend backward during forward swing / recovery phase!)
+    // Realistic knee flexion (knees bend deeper when crouched or sprinting)
+    const kneeSwing = (isSprinting ? 0.78 : 0.62) * clampedRatio * (1 - c * 0.35);
     if (leftKnee) {
-      leftKnee.rotation.x = Math.max(0, -Math.cos(phase) * 0.62 * clampedRatio);
+      leftKnee.rotation.x = baseKneeCrouch + Math.max(0, -Math.cos(phase) * kneeSwing);
     }
     if (rightKnee) {
-      rightKnee.rotation.x = Math.max(0, -Math.cos(phase + Math.PI) * 0.62 * clampedRatio);
+      rightKnee.rotation.x = baseKneeCrouch + Math.max(0, -Math.cos(phase + Math.PI) * kneeSwing);
     }
 
     // Upper body subtle vertical bob & natural shoulder counter-rotation
+    const sprintLean = isSprinting ? 0.16 : 0.045 * clampedRatio;
+    const crouchLean = c * 0.18;
     if (torsoGroup) {
-      torsoGroup.position.y = 0.94 + Math.abs(Math.cos(phase)) * 0.028 * clampedRatio;
-      torsoGroup.rotation.y = -Math.sin(phase) * 0.065 * clampedRatio;
-      torsoGroup.rotation.x = 0.045 * clampedRatio;
+      torsoGroup.position.y = 0.94 - dropY + Math.abs(Math.cos(phase)) * 0.028 * clampedRatio * (1 - c * 0.4);
+      torsoGroup.rotation.y = -Math.sin(phase) * (isSprinting ? 0.11 : 0.065) * clampedRatio;
+      torsoGroup.rotation.x = sprintLean + crouchLean;
     }
 
     if (headGroup) {
-      headGroup.position.y = 1.66 + Math.abs(Math.cos(phase)) * 0.02 * clampedRatio;
+      headGroup.position.y = 1.66 - dropY * 1.08 + Math.abs(Math.cos(phase)) * 0.02 * clampedRatio * (1 - c * 0.4);
       headGroup.rotation.y = Math.sin(phase) * 0.03;
     }
 
     if (hasWeapon) {
-      // Tactical two-handed or ready stance with subtle stride sway
+      // Tactical two-handed ready stance (or angled tactical sprint posture when sprinting)
       if (leftArm) {
-        leftArm.rotation.x = -0.52 + Math.sin(phase + Math.PI) * 0.12 * clampedRatio;
-        leftArm.rotation.z = 0.22;
+        leftArm.rotation.x = (isSprinting ? -0.68 : -0.52) + Math.sin(phase + Math.PI) * (isSprinting ? 0.22 : 0.12) * clampedRatio;
+        leftArm.rotation.z = isSprinting ? 0.34 : 0.22;
       }
       if (leftElbow) {
-        leftElbow.rotation.x = -0.58;
+        leftElbow.rotation.x = isSprinting ? -0.72 : -0.58;
       }
       if (rightArm) {
-        rightArm.rotation.x = -0.18 + Math.sin(phase) * 0.06 - recoilKick * 2.8;
+        rightArm.rotation.x = (isSprinting ? -0.32 : -0.18) + Math.sin(phase) * (isSprinting ? 0.14 : 0.06) - recoilKick * 2.8;
       }
     } else {
-      // Natural human arm swing when walking unarmed (e.g. Mobile Exploration Mode)
+      // Natural human arm swing when walking/sprinting unarmed (Mobile Exploration Mode)
       if (leftArm) {
         leftArm.rotation.x = Math.sin(phase + Math.PI) * 0.34 * clampedRatio;
         leftArm.rotation.z = 0.06;
@@ -302,32 +322,32 @@ export function animateCharacterRig(
       }
     }
   } else {
-    // Natural human breathing & relaxed standing posture
+    // Natural human breathing & standing / crouched idle posture
     const breath = Math.sin(time * 1.9);
-    if (leftLeg) leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, 0.15);
-    if (rightLeg) rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, 0.15);
-    if (leftKnee) leftKnee.rotation.x = THREE.MathUtils.lerp(leftKnee.rotation.x, 0.03, 0.15);
-    if (rightKnee) rightKnee.rotation.x = THREE.MathUtils.lerp(rightKnee.rotation.x, 0.03, 0.15);
+    if (leftLeg) leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, baseThighCrouch, 0.2);
+    if (rightLeg) rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, baseThighCrouch, 0.2);
+    if (leftKnee) leftKnee.rotation.x = THREE.MathUtils.lerp(leftKnee.rotation.x, 0.03 + baseKneeCrouch, 0.2);
+    if (rightKnee) rightKnee.rotation.x = THREE.MathUtils.lerp(rightKnee.rotation.x, 0.03 + baseKneeCrouch, 0.2);
 
     if (torsoGroup) {
-      torsoGroup.position.y = 0.94 + breath * 0.008;
+      torsoGroup.position.y = 0.94 - dropY + breath * 0.008;
       torsoGroup.rotation.y = breath * 0.015;
-      torsoGroup.rotation.x = 0;
+      torsoGroup.rotation.x = c * 0.16;
     }
 
     if (headGroup) {
-      headGroup.position.y = 1.66 + breath * 0.008;
+      headGroup.position.y = 1.66 - dropY * 1.08 + breath * 0.008;
       headGroup.rotation.y = Math.sin(time * 0.8) * 0.04;
     }
 
     if (hasWeapon) {
       if (leftArm) {
-        leftArm.rotation.x = -0.48 + breath * 0.02;
+        leftArm.rotation.x = -0.48 - c * 0.08 + breath * 0.02;
         leftArm.rotation.z = 0.22;
       }
       if (leftElbow) leftElbow.rotation.x = -0.55;
       if (rightArm) {
-        rightArm.rotation.x = -0.15 + breath * 0.015 - recoilKick * 2.8;
+        rightArm.rotation.x = -0.15 - c * 0.06 + breath * 0.015 - recoilKick * 2.8;
       }
     } else {
       if (leftArm) {
@@ -473,6 +493,7 @@ export function createArticulatedHumanoid(options: {
 
   // 2. Pelvis / Belt Waist
   const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.22, 0.18, 14), pantsMat);
+  pelvis.name = 'pelvis';
   pelvis.position.y = 0.94;
   pelvis.castShadow = true;
   group.add(pelvis);
@@ -481,6 +502,7 @@ export function createArticulatedHumanoid(options: {
     new THREE.CylinderGeometry(0.246, 0.246, 0.055, 14),
     new THREE.MeshStandardMaterial({ color: 0x18181B, roughness: 0.4, metalness: 0.4 })
   );
+  belt.name = 'belt';
   belt.position.y = 1.01;
   group.add(belt);
 

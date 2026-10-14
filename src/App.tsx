@@ -6,6 +6,17 @@ import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { LeaderboardView } from './components/LeaderboardView';
 import { GunsmithView } from './components/GunsmithView';
 import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
+import { LegalModal } from './components/LegalModal';
+import { DailyMissionsModal } from './components/DailyMissionsModal';
+import {
+  DailyMissionsState,
+  loadSavedDailyMissions,
+  saveDailyMissions,
+  processDailyMissionEvent,
+  claimDailyMission,
+  claimDailyGrandBonus,
+} from './game/missions';
+import { AgentRole } from './game/agents/microAgents';
 import { INITIAL_FACILITIES, Facility } from './game/tycoon';
 import {
   MultiplayerRoom,
@@ -41,6 +52,7 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState<boolean>(() => {
     return localStorage.getItem('na_operator_registered') !== 'true';
   });
+  const [showLegalModal, setShowLegalModal] = useState<boolean>(false);
 
   const [playerName, setPlayerName] = useState<string>(() => {
     return localStorage.getItem('na_player_name') || 'AnspachOperator';
@@ -51,6 +63,23 @@ export default function App() {
   const [playerCity, setPlayerCity] = useState<string>(() => {
     return localStorage.getItem('na_player_city') || 'Neu-Anspach';
   });
+
+  // Daily Mission System & Operator Reputation Progression
+  const [showDailyMissionsModal, setShowDailyMissionsModal] = useState<boolean>(false);
+  const [dailyMissionsState, setDailyMissionsState] = useState<DailyMissionsState>(() => {
+    return loadSavedDailyMissions();
+  });
+  const [reputation, setReputation] = useState<number>(() => {
+    const saved = localStorage.getItem('na_reputation');
+    return saved ? parseInt(saved, 10) : 150;
+  });
+  const [completedMissionToast, setCompletedMissionToast] = useState<{
+    id: string;
+    title: string;
+    description: string;
+    rewardNAT: number;
+    rewardReputation: number;
+  } | null>(null);
 
   // Economy & Progression State
   const [budget, setBudget] = useState<number>(() => {
@@ -164,6 +193,19 @@ export default function App() {
     localStorage.setItem('na_weapon_upgrades', JSON.stringify(weaponUpgrades));
   }, [weaponUpgrades]);
 
+  useEffect(() => {
+    localStorage.setItem('na_reputation', reputation.toString());
+  }, [reputation]);
+
+  // Toast auto-dismiss timer
+  useEffect(() => {
+    if (!completedMissionToast) return;
+    const timer = setTimeout(() => {
+      setCompletedMissionToast(null);
+    }, 5500);
+    return () => clearTimeout(timer);
+  }, [completedMissionToast]);
+
   // Sync registered operator profile with real server on startup
   useEffect(() => {
     if (isOperatorRegistered && playerName) {
@@ -204,6 +246,24 @@ export default function App() {
     }).catch(console.error);
   };
 
+  const triggerMissionEvent = (event: Parameters<typeof processDailyMissionEvent>[1]) => {
+    setDailyMissionsState((prev) => {
+      const { nextState, newlyCompleted } = processDailyMissionEvent(prev, event);
+      if (newlyCompleted.length > 0) {
+        soundFx.playMissionComplete();
+        const first = newlyCompleted[0];
+        setCompletedMissionToast({
+          id: first.id,
+          title: first.title,
+          description: first.description,
+          rewardNAT: first.rewardNAT,
+          rewardReputation: first.rewardReputation,
+        });
+      }
+      return nextState;
+    });
+  };
+
   // CoD Cold War Gunsmith Handlers
   const handleUpgradeAttachment = (
     weaponId: string,
@@ -213,6 +273,7 @@ export default function App() {
   ) => {
     if (budget < cost) return;
     setBudget((prev) => prev - cost);
+    triggerMissionEvent({ type: 'gunsmith' });
     setWeaponUpgrades((prev) => {
       const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
       return {
@@ -246,6 +307,7 @@ export default function App() {
   const handleUpgradePackAPunch = (weaponId: string, targetLevel: number, cost: number) => {
     if (budget < cost) return;
     setBudget((prev) => prev - cost);
+    triggerMissionEvent({ type: 'gunsmith' });
     const papWeaponName = WEAPONS[weaponId]?.papNames[targetLevel - 1] || WEAPONS[weaponId]?.name;
     setWeaponUpgrades((prev) => {
       const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
@@ -381,6 +443,62 @@ export default function App() {
 
   const handleCollectTaler = (amount: number) => {
     setBudget((prev) => prev + amount);
+    triggerMissionEvent({ type: 'taler', amount });
+  };
+
+  const handleEnemyEliminated = (details: {
+    arenaId: string;
+    role: AgentRole;
+    isBoss: boolean;
+    weaponId: string;
+    wave: number;
+    isCrit: boolean;
+  }) => {
+    triggerMissionEvent({
+      type: 'kill',
+      arenaId: details.arenaId,
+      role: details.role,
+      isBoss: details.isBoss,
+      weaponId: details.weaponId,
+      wave: details.wave,
+    });
+  };
+
+  const handleStreakAchieved = (streakCount: number) => {
+    triggerMissionEvent({
+      type: 'streak',
+      streakCount,
+    });
+  };
+
+  const handleWaveAdvanced = (wave: number) => {
+    triggerMissionEvent({
+      type: 'wave',
+      wave,
+    });
+  };
+
+  const handleClaimMission = (missionId: string) => {
+    const res = claimDailyMission(dailyMissionsState, missionId);
+    if (res) {
+      soundFx.playRewardClaim();
+      setDailyMissionsState(res.nextState);
+      setBudget((prev) => prev + res.rewardedNAT);
+      setReputation((prev) => prev + res.rewardedReputation);
+      if (completedMissionToast?.id === missionId) {
+        setCompletedMissionToast(null);
+      }
+    }
+  };
+
+  const handleClaimGrandBonus = () => {
+    const res = claimDailyGrandBonus(dailyMissionsState);
+    if (res) {
+      soundFx.playRewardClaim();
+      setDailyMissionsState(res.nextState);
+      setBudget((prev) => prev + res.rewardedNAT);
+      setReputation((prev) => prev + res.rewardedReputation);
+    }
   };
 
   const handleMatchComplete = (
@@ -448,6 +566,13 @@ export default function App() {
     Object.entries(facilities).map(([k, v]) => [k, v.level])
   );
 
+  const unclaimedMissionsCount = dailyMissionsState.missions.filter(
+    (m) => m.completed && !m.claimed
+  ).length;
+  const completedMissionsCount = dailyMissionsState.missions.filter(
+    (m) => m.completed
+  ).length;
+
   return (
     <div className="flex flex-col w-screen h-screen bg-slate-950 font-sans text-slate-100 overflow-hidden">
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
@@ -462,11 +587,70 @@ export default function App() {
         />
       )}
 
+      {/* Legal & Privacy Transparency Modal */}
+      <LegalModal
+        isOpen={showLegalModal}
+        onClose={() => setShowLegalModal(false)}
+      />
+
+      {/* Daily Missions & Operator Reputation Modal */}
+      <DailyMissionsModal
+        isOpen={showDailyMissionsModal}
+        onClose={() => setShowDailyMissionsModal(false)}
+        missionsState={dailyMissionsState}
+        reputation={reputation}
+        onClaimMission={handleClaimMission}
+        onClaimGrandBonus={handleClaimGrandBonus}
+        onSelectArenaAndPlay={(arenaId) => {
+          setCurrentArena(arenaId);
+          setActiveTab('battle');
+        }}
+      />
+
+      {/* In-Game Daily Mission Completed Toast Overlay */}
+      {completedMissionToast && (
+        <div
+          onClick={() => {
+            setShowDailyMissionsModal(true);
+            setCompletedMissionToast(null);
+          }}
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 p-3.5 sm:px-5 rounded-2xl bg-slate-950/95 border-2 border-amber-500 shadow-2xl text-slate-100 cursor-pointer animate-in slide-in-from-top-4 duration-300"
+        >
+          <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shrink-0 text-sm">
+            🎯
+          </div>
+          <div className="text-left">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono font-black text-amber-400 uppercase tracking-wider">
+                TAGESBEFEHL ERFÜLLT!
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                +{completedMissionToast.rewardNAT} NAT · +{completedMissionToast.rewardReputation} RUF
+              </span>
+            </div>
+            <div className="text-xs font-bold text-white truncate max-w-xs sm:max-w-md">
+              {completedMissionToast.description}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClaimMission(completedMissionToast.id);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] uppercase tracking-wider shrink-0 transition-transform active:scale-95 cursor-pointer"
+          >
+            Einfordern
+          </button>
+        </div>
+      )}
+
       {/* 3-Zone Top Navigation Contract */}
       <TopBar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         budget={budget}
+        reputation={reputation}
         isMuted={isMuted}
         setIsMuted={setIsMuted}
         onRequestCommander={requestCommanderOrders}
@@ -476,6 +660,11 @@ export default function App() {
         playerName={playerName}
         clanTag={clanTag}
         onOpenProfileModal={() => setShowProfileModal(true)}
+        onOpenLegalModal={() => setShowLegalModal(true)}
+        onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+        unclaimedMissionsCount={unclaimedMissionsCount}
+        completedMissionsCount={completedMissionsCount}
+        totalMissionsCount={dailyMissionsState.missions.length}
       />
 
       {/* Main View Router */}
@@ -501,6 +690,12 @@ export default function App() {
             onUnlockMap={handleUnlockMap}
             playerName={playerName}
             clanTag={clanTag}
+            dailyMissionsState={dailyMissionsState}
+            onEnemyEliminated={handleEnemyEliminated}
+            onStreakAchieved={handleStreakAchieved}
+            onWaveAdvanced={handleWaveAdvanced}
+            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+            onClaimDailyMission={handleClaimMission}
           />
         )}
 

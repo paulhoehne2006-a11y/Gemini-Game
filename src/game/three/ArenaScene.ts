@@ -137,6 +137,15 @@ export interface GameEventCallbacks {
   onAttachmentsChange?: (attachments: WeaponAttachments, weaponId?: string) => void;
   onElevationChange?: (elevationMeters: number) => void;
   onToggleGunsmith?: () => void;
+  onStanceChange?: (stance: 'standing' | 'sprinting' | 'crouching') => void;
+  onEnemyKilled?: (details: {
+    arenaId: string;
+    role: AgentRole;
+    isBoss: boolean;
+    weaponId: string;
+    wave: number;
+    isCrit: boolean;
+  }) => void;
 }
 
 function createDamageSprite(amount: number, isCrit: boolean): THREE.Sprite {
@@ -219,6 +228,12 @@ export class ArenaSceneManager {
   private cameraDistance = 4.3;
   private shoulderOffset = 1.15;
   private isAiming = false;
+  private isSprinting = false;
+  private isCrouching = false;
+  private crouchToggle = false;
+  private currentCrouchAmount = 0;
+  private currentHeadHeight = 1.75;
+  private lastReportedStance: 'standing' | 'sprinting' | 'crouching' = 'standing';
   private currentFov = 68;
   private isPointerLocked = false;
   private isGameOver = false;
@@ -432,6 +447,7 @@ export class ArenaSceneManager {
       new THREE.RingGeometry(0.36, 0.48, 16),
       new THREE.MeshBasicMaterial({ color: 0x10B981, side: THREE.DoubleSide })
     );
+    ring.name = 'playerRing';
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 2.28;
     group.add(ring);
@@ -528,9 +544,29 @@ export class ArenaSceneManager {
   }
 
   public triggerJump() {
+    if (this.isCrouching) {
+      this.crouchToggle = false;
+      this.isCrouching = false;
+    }
     if (this.isGrounded) {
       this.playerVelY = 8.8;
       this.isGrounded = false;
+    }
+  }
+
+  public setSprintState(sprinting: boolean) {
+    this.isSprinting = sprinting;
+    if (sprinting) {
+      this.crouchToggle = false;
+      this.isCrouching = false;
+    }
+  }
+
+  public toggleCrouchState() {
+    this.crouchToggle = !this.crouchToggle;
+    this.isCrouching = this.crouchToggle;
+    if (this.isCrouching) {
+      this.isSprinting = false;
     }
   }
 
@@ -825,37 +861,80 @@ export class ArenaSceneManager {
     this.cleanupListeners.push(() => this.container.removeEventListener('click', onContainerClick));
 
     const onKeyDown = (e: KeyboardEvent) => {
-      this.keys[e.key.toLowerCase()] = true;
+      const lowerKey = e.key.toLowerCase();
+      this.keys[lowerKey] = true;
+
+      // Prevent browser shortcuts (e.g. Ctrl+S, Ctrl+A, Ctrl+D) when holding Strg (Control) + WASD
+      if (e.ctrlKey && ['w', 'a', 's', 'd', ' '].includes(lowerKey)) {
+        e.preventDefault();
+      }
+
       if (e.code === 'Space') {
         e.preventDefault();
         this.triggerJump();
       }
+
+      // SHIFT = SPRINT
+      if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        this.isSprinting = true;
+        this.crouchToggle = false;
+        this.isCrouching = false;
+      }
+
+      // STRG (Control) = CROUCH (Hold)
+      if (e.key === 'Control' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        e.preventDefault();
+        this.isCrouching = true;
+        this.isSprinting = false;
+      }
+
+      // Optional 'C' key = Toggle Crouch
+      if (!e.ctrlKey && lowerKey === 'c') {
+        this.crouchToggle = !this.crouchToggle;
+        this.isCrouching = this.crouchToggle;
+        if (this.isCrouching) {
+          this.isSprinting = false;
+        }
+      }
+
       if (!this.peacefulMode) {
         if (e.key === '1') this.setWeapon('bembel');
         if (e.key === '2') this.setWeapon('zwille');
         if (e.key === '3') this.setWeapon('spritzer');
         if (e.key === '4') this.setWeapon('handkaes');
-        if (e.key.toLowerCase() === 'b') {
+        if (lowerKey === 'b') {
           this.unlockPointer();
           this.callbacks.onToggleGunsmith?.();
         }
-      }
-
-      if (e.key.toLowerCase() === 'shift') {
-        this.isAiming = true;
       }
     };
     window.addEventListener('keydown', onKeyDown);
     this.cleanupListeners.push(() => window.removeEventListener('keydown', onKeyDown));
 
     const onKeyUp = (e: KeyboardEvent) => {
-      this.keys[e.key.toLowerCase()] = false;
-      if (e.key.toLowerCase() === 'shift') {
-        this.isAiming = false;
+      const lowerKey = e.key.toLowerCase();
+      this.keys[lowerKey] = false;
+
+      if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        this.isSprinting = false;
+      }
+      if (e.key === 'Control' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        this.crouchToggle = false;
+        this.isCrouching = false;
       }
     };
     window.addEventListener('keyup', onKeyUp);
     this.cleanupListeners.push(() => window.removeEventListener('keyup', onKeyUp));
+
+    const onWindowBlur = () => {
+      this.keys = {};
+      this.isSprinting = false;
+      this.isCrouching = false;
+      this.crouchToggle = false;
+      this.isMouseDown = false;
+    };
+    window.addEventListener('blur', onWindowBlur);
+    this.cleanupListeners.push(() => window.removeEventListener('blur', onWindowBlur));
 
     // Spike-free, zero-React-thrashing mouse look handler!
     const onMouseMove = (e: MouseEvent) => {
@@ -954,7 +1033,8 @@ export class ArenaSceneManager {
     this.lastFireTime = now;
     soundFx.playShoot();
 
-    const recoilReduction = Math.max(0.4, 1 - (this.attachments.scope || 0) * 0.16);
+    const crouchRecoilMult = 1 - this.currentCrouchAmount * 0.35;
+    const recoilReduction = Math.max(0.3, (1 - (this.attachments.scope || 0) * 0.16) * crouchRecoilMult);
     this.recoilPitch = Math.min(0.032, this.recoilPitch + 0.0055 * recoilReduction);
 
     _bulletDir.set(
@@ -965,9 +1045,10 @@ export class ArenaSceneManager {
     _bulletDir.normalize();
 
     const rightVec = new THREE.Vector3(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
+    const muzzleHeight = 1.4 - this.currentCrouchAmount * 0.44;
     const spawnPos = this.playerPos
       .clone()
-      .add(new THREE.Vector3(0, 1.4, 0))
+      .add(new THREE.Vector3(0, muzzleHeight, 0))
       .addScaledVector(rightVec, 0.42)
       .addScaledVector(_bulletDir, 1.05);
 
@@ -986,7 +1067,8 @@ export class ArenaSceneManager {
 
     if (isShotgun) {
       const pelletCount = 4 + (this.attachments.mag || 0) + (upgState.papLevel > 0 ? 2 : 0);
-      const spreadAmount = Math.max(0.025, 0.08 - (this.attachments.scope || 0) * 0.015);
+      const baseSpread = Math.max(0.025, 0.08 - (this.attachments.scope || 0) * 0.015);
+      const spreadAmount = baseSpread * (1 - this.currentCrouchAmount * 0.25);
       for (let p = 0; p < pelletCount; p++) {
         const spreadDir = _bulletDir
           .clone()
@@ -1234,11 +1316,14 @@ export class ArenaSceneManager {
       }
     }
 
-    // Smooth Over-The-Shoulder Camera Positioning (No frame lag or angle gimbal lock!)
-    const targetDist = this.isAiming ? 2.4 : 4.2;
+    // Smooth Over-The-Shoulder Camera Positioning with Sprint FOV & Crouch Eye-Level
+    const isMovingNow = Math.hypot(this.playerVelX, this.playerVelZ) > 0.25;
+    const activeSprintCam = this.isSprinting && !this.isCrouching && !this.isAiming && isMovingNow;
+
+    const targetDist = this.isAiming ? 2.4 : activeSprintCam ? 4.55 : this.isCrouching ? 3.85 : 4.2;
     const targetShoulderOffset = this.peacefulMode ? 0.65 : this.isAiming ? 0.85 : 1.15;
     const adsZoomFov = Math.max(38, 52 - this.attachments.scope * 4);
-    const targetFov = this.isAiming ? adsZoomFov : 68;
+    const targetFov = this.isAiming ? adsZoomFov : activeSprintCam ? 76 : 68;
 
     this.cameraDistance = THREE.MathUtils.damp(this.cameraDistance, targetDist, 12, delta);
     this.shoulderOffset = THREE.MathUtils.damp(this.shoulderOffset, targetShoulderOffset, 12, delta);
@@ -1246,10 +1331,14 @@ export class ArenaSceneManager {
     this.camera.fov = this.currentFov;
     this.camera.updateProjectionMatrix();
 
+    // Smoothly interpolate crouch camera height (1.75m standing -> 1.18m crouched)
+    const targetHeadHeight = 1.75 - this.currentCrouchAmount * 0.57;
+    this.currentHeadHeight = THREE.MathUtils.damp(this.currentHeadHeight, targetHeadHeight, 14, delta);
+
     _forward.set(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw));
     _right.set(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
 
-    _headPos.copy(this.playerPos).add(new THREE.Vector3(0, 1.75, 0));
+    _headPos.copy(this.playerPos).add(new THREE.Vector3(0, this.currentHeadHeight, 0));
 
     const effectivePitch = this.cameraPitch + this.recoilPitch;
     _desiredCamPos
@@ -1259,7 +1348,7 @@ export class ArenaSceneManager {
       .add(new THREE.Vector3(0, this.cameraDistance * Math.sin(effectivePitch) + 0.25, 0));
 
     // Clamp camera height so it never clips under the ground when looking up
-    _desiredCamPos.y = Math.max(this.playerPos.y + 0.45, _desiredCamPos.y);
+    _desiredCamPos.y = Math.max(this.playerPos.y + 0.38, _desiredCamPos.y);
 
     this.camera.position.copy(_desiredCamPos);
 
@@ -1316,7 +1405,36 @@ export class ArenaSceneManager {
     }
 
     const hasInput = _playerMove.lengthSq() > 0.001;
-    const maxWalkSpeed = this.isAiming ? this.playerSpeed * 0.65 : this.playerSpeed;
+    const activeSprinting = this.isSprinting && !this.isCrouching && !this.isAiming && hasInput;
+
+    // Smoothly damp crouch amount (0 = standing, 1 = crouched)
+    this.currentCrouchAmount = THREE.MathUtils.damp(
+      this.currentCrouchAmount,
+      this.isCrouching ? 1.0 : 0.0,
+      14,
+      delta
+    );
+
+    // Notify HUD when player stance changes
+    const nextStance: 'standing' | 'sprinting' | 'crouching' = this.isCrouching
+      ? 'crouching'
+      : activeSprinting
+      ? 'sprinting'
+      : 'standing';
+    if (nextStance !== this.lastReportedStance) {
+      this.lastReportedStance = nextStance;
+      this.callbacks.onStanceChange?.(nextStance);
+    }
+
+    // Raider Stock attachment bonus (+7% per level to sprint, crouch & ADS mobility!)
+    const stockMobilityBonus = 1 + (this.attachments.stock || 0) * 0.07;
+    const maxWalkSpeed = activeSprinting
+      ? this.playerSpeed * 1.62 * stockMobilityBonus
+      : this.isCrouching
+      ? this.playerSpeed * 0.55 * stockMobilityBonus
+      : this.isAiming
+      ? this.playerSpeed * 0.68 * stockMobilityBonus
+      : this.playerSpeed;
 
     let targetVx = 0;
     let targetVz = 0;
@@ -1375,9 +1493,17 @@ export class ArenaSceneManager {
     this.playerGroup.position.copy(this.playerPos);
     this.playerGroup.rotation.y = this.cameraYaw + Math.PI;
 
-    // Animate Realistic Human Gait (scaled by actual walking velocity!)
+    // Animate Realistic Human Gait (including Sprint & Crouch 3D posture!)
     const speedRatio = currentSpeed / this.playerSpeed;
-    animateCharacterRig(this.playerGroup, elapsed, isMoving, this.recoilPitch, speedRatio);
+    animateCharacterRig(
+      this.playerGroup,
+      elapsed,
+      isMoving,
+      this.recoilPitch,
+      speedRatio,
+      this.currentCrouchAmount,
+      activeSprinting
+    );
     this.callbacks.onElevationChange?.(Math.round(this.playerPos.y * 10) / 10);
   }
 
@@ -1679,6 +1805,14 @@ export class ArenaSceneManager {
               this.score += ag.role === 'boss' ? 500 : 100;
               this.callbacks.onKillsChange(this.kills);
               this.callbacks.onScoreChange(this.score);
+              this.callbacks.onEnemyKilled?.({
+                arenaId: this.currentArenaId,
+                role: ag.role,
+                isBoss: ag.role === 'boss',
+                weaponId: this.currentWeapon.id,
+                wave: this.wave,
+                isCrit,
+              });
               this.dropLoot(ag.position);
               soundFx.playKill();
 
@@ -1710,9 +1844,11 @@ export class ArenaSceneManager {
           }
         }
       } else {
-        const playerChest = this.playerPos.clone().add(new THREE.Vector3(0, 1.1, 0));
+        const chestHeight = 1.1 - this.currentCrouchAmount * 0.38;
+        const hitRadius = 1.25 - this.currentCrouchAmount * 0.3;
+        const playerChest = this.playerPos.clone().add(new THREE.Vector3(0, chestHeight, 0));
         _line.closestPointToPoint(playerChest, true, _closest);
-        if (_closest.distanceTo(playerChest) <= 1.25) {
+        if (_closest.distanceTo(playerChest) <= hitRadius) {
           this.damagePlayer(b.damage, 'Wehrheimer Apfelgeschoss');
           this.scene.remove(b.mesh);
           this.bullets.splice(i, 1);

@@ -10,6 +10,9 @@ import {
   Trophy,
   Wrench,
   UserCheck,
+  Scale,
+  Target,
+  Award,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
@@ -19,6 +22,7 @@ interface TopBarProps {
   activeTab: AppTab;
   setActiveTab: (tab: AppTab) => void;
   budget: number;
+  reputation?: number;
   isMuted: boolean;
   setIsMuted: (muted: boolean) => void;
   onRequestCommander: () => void;
@@ -28,12 +32,18 @@ interface TopBarProps {
   playerName: string;
   clanTag: string;
   onOpenProfileModal: () => void;
+  onOpenLegalModal?: () => void;
+  onOpenDailyMissions?: () => void;
+  unclaimedMissionsCount?: number;
+  completedMissionsCount?: number;
+  totalMissionsCount?: number;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
   setActiveTab,
   budget,
+  reputation = 0,
   isMuted,
   setIsMuted,
   isMobileMode,
@@ -41,6 +51,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   playerName,
   clanTag,
   onOpenProfileModal,
+  onOpenLegalModal,
+  onOpenDailyMissions,
+  unclaimedMissionsCount = 0,
+  completedMissionsCount = 0,
+  totalMissionsCount = 4,
 }) => {
   const toggleMute = () => {
     const next = soundFx.toggleMute();
@@ -120,6 +135,50 @@ export const TopBar: React.FC<TopBarProps> = ({
             {budget.toLocaleString('de-DE')} NAT
           </span>
 
+          {/* Daily Missions Trigger Button */}
+          {onOpenDailyMissions && (
+            <button
+              type="button"
+              onClick={onOpenDailyMissions}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
+                unclaimedMissionsCount > 0
+                  ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md animate-pulse'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-slate-700'
+              }`}
+              title="Tagesbefehle & Operator-Ruf öffnen"
+            >
+              <Target
+                className={`w-3.5 h-3.5 ${
+                  unclaimedMissionsCount > 0 ? 'text-slate-950 stroke-[3]' : 'text-amber-400'
+                }`}
+              />
+              <span className="hidden sm:inline">Tagesbefehle</span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                  unclaimedMissionsCount > 0
+                    ? 'bg-slate-950 text-amber-400'
+                    : 'bg-slate-800 text-slate-300'
+                }`}
+              >
+                {unclaimedMissionsCount > 0
+                  ? `! ${unclaimedMissionsCount}`
+                  : `${completedMissionsCount}/${totalMissionsCount}`}
+              </span>
+            </button>
+          )}
+
+          {/* Reputation Tag */}
+          {onOpenDailyMissions && (
+            <div
+              onClick={onOpenDailyMissions}
+              className="hidden xl:flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-950/40 border border-purple-500/30 text-purple-300 text-xs font-mono font-bold cursor-pointer hover:border-purple-400/50 transition-colors"
+              title="Operator-Ansehen (Ruf-Punkte)"
+            >
+              <Award className="w-3.5 h-3.5 text-purple-400" />
+              <span className="tabular-nums">{reputation} Ruf</span>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setIsMobileMode(!isMobileMode)}
@@ -151,6 +210,17 @@ export const TopBar: React.FC<TopBarProps> = ({
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
           </button>
+
+          {onOpenLegalModal && (
+            <button
+              type="button"
+              onClick={onOpenLegalModal}
+              className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-400 border border-slate-800 transition-colors cursor-pointer shrink-0"
+              title="Rechtliches, Datenschutz & Disclaimer"
+            >
+              <Scale className="w-4 h-4" />
+            </button>
+          )}
 
           <button
             type="button"

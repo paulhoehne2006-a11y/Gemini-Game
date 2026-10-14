@@ -23,8 +23,13 @@ import {
   Lock,
   Unlock,
   Trophy,
+  Award,
+  CheckCircle2,
+  Gift,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
+import { DailyMissionsState, DailyMission } from '../game/missions';
+import { AgentRole } from '../game/agents/microAgents';
 
 interface ThreeCanvasProps {
   currentArena: string;
@@ -46,6 +51,19 @@ interface ThreeCanvasProps {
   onUnlockMap?: (arenaId: string, costNAT: number) => void;
   playerName?: string;
   clanTag?: string;
+  dailyMissionsState?: DailyMissionsState;
+  onEnemyEliminated?: (details: {
+    arenaId: string;
+    role: AgentRole;
+    isBoss: boolean;
+    weaponId: string;
+    wave: number;
+    isCrit: boolean;
+  }) => void;
+  onStreakAchieved?: (count: number) => void;
+  onWaveAdvanced?: (wave: number) => void;
+  onOpenDailyMissions?: () => void;
+  onClaimDailyMission?: (missionId: string) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -68,6 +86,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onUnlockMap,
   playerName = 'Operator',
   clanTag = '61267',
+  dailyMissionsState,
+  onEnemyEliminated,
+  onStreakAchieved,
+  onWaveAdvanced,
+  onOpenDailyMissions,
+  onClaimDailyMission,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<ArenaSceneManager | null>(null);
@@ -101,6 +125,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [hitMarkerActive, setHitMarkerActive] = useState(false);
   const [killStreakNotice, setKillStreakNotice] = useState<string | null>(null);
   const [lockedArenaPrompt, setLockedArenaPrompt] = useState<string | null>(null);
+  const [stance, setStance] = useState<'standing' | 'sprinting' | 'crouching'>('standing');
 
   const lastKillTimeRef = useRef<number>(0);
   const streakCountRef = useRef<number>(0);
@@ -135,6 +160,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const maxHpBonus = (unlockedFacilities.waldschwimmbad || 0) * 15;
   const speedMultiplier = 1 + (unlockedFacilities.breitband || 0) * 0.05;
 
+  // Active daily mission relevant to current arena or next active incomplete challenge
+  const activeDailyMission =
+    dailyMissionsState?.missions.find(
+      (m) => !m.completed && m.arenaId === currentArena
+    ) ||
+    dailyMissionsState?.missions.find((m) => !m.completed) ||
+    dailyMissionsState?.missions[0];
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -150,6 +183,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     setCurrentTarget(null);
     setKillStreakNotice(null);
     setLockedArenaPrompt(null);
+    setStance('standing');
     streakCountRef.current = 0;
 
     const manager = new ArenaSceneManager(
@@ -168,6 +202,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           if (now - lastKillTimeRef.current < 4500) {
             streakCountRef.current += 1;
             const streak = streakCountRef.current;
+            onStreakAchieved?.(streak);
             const streakTitle =
               streak === 2
                 ? 'DOPPEL-KILL!'
@@ -229,6 +264,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         },
         onWaveChange: (info) => {
           setWaveInfo(info);
+          onWaveAdvanced?.(info.wave);
+        },
+        onEnemyKilled: (details) => {
+          onEnemyEliminated?.(details);
         },
         onAttachmentsChange: (att, weaponId) => {
           setAttachments(att);
@@ -241,6 +280,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         },
         onToggleGunsmith: () => {
           onOpenGunsmith?.();
+        },
+        onStanceChange: (nextStance) => {
+          setStance(nextStance);
         },
       },
       { maxHpBonus, speedMultiplier, peacefulMode: isMobileMode, weaponUpgrades }
@@ -620,9 +662,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             </div>
           )}
 
-          {/* CROSSHAIR & HIT MARKER (CENTER OF SCREEN) */}
+          {/* CROSSHAIR & HIT MARKER (CENTER OF SCREEN - TIGHTENS WHEN CROUCHING) */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-            <div className="relative w-10 h-10 flex items-center justify-center">
+            <div
+              className={`relative flex items-center justify-center transition-all duration-150 ${
+                stance === 'crouching'
+                  ? 'w-7 h-7'
+                  : stance === 'sprinting'
+                  ? 'w-14 h-14 opacity-75'
+                  : 'w-10 h-10'
+              }`}
+            >
               <div className="absolute w-2.5 h-[2px] bg-white/90 left-0 shadow-sm" />
               <div className="absolute w-2.5 h-[2px] bg-white/90 right-0 shadow-sm" />
               <div className="absolute h-2.5 w-[2px] bg-white/90 top-0 shadow-sm" />
@@ -687,10 +737,71 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
             ))}
 
-            <div className="pt-1 border-t border-white/10 text-[10px] font-mono text-slate-400 flex items-center justify-between">
-              <span>WASD: Gehen · SPACE: Sprung</span>
-              <span className="text-amber-400">[B]: Waffenschmiede</span>
+            <div className="pt-1 border-t border-white/10 text-[10px] font-mono text-slate-400 flex flex-col gap-0.5">
+              <div className="flex items-center justify-between">
+                <span>SHIFT: Sprint · STRG: Ducken</span>
+                <span>SPACE: Sprung</span>
+              </div>
+              <div className="flex items-center justify-between text-amber-400">
+                <span>Rechtsklick: Visier (ADS)</span>
+                <span>[B]: Waffenschmiede</span>
+              </div>
             </div>
+
+            {/* ACTIVE DAILY MISSION HUD WIDGET */}
+            {activeDailyMission && (
+              <div
+                onClick={() => {
+                  managerRef.current?.unlockPointer();
+                  onOpenDailyMissions?.();
+                }}
+                className="mt-2 p-2.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-amber-500/30 hover:border-amber-400 transition-all cursor-pointer pointer-events-auto shadow-xl"
+                title="Klicken für alle Tagesbefehle & Belohnungen"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+                    <Target className="w-3 h-3" />
+                    <span>TAGESBEFEHL:</span>
+                    <span className="text-slate-300 font-normal truncate max-w-[120px]">
+                      {activeDailyMission.badge}
+                    </span>
+                  </div>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[9px] font-black tabular-nums ${
+                      activeDailyMission.completed
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-slate-800 text-amber-400'
+                    }`}
+                  >
+                    {activeDailyMission.currentProgress}/{activeDailyMission.targetCount}
+                  </span>
+                </div>
+                <div className="text-[11px] font-bold text-white truncate mb-1">
+                  {activeDailyMission.description}
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      activeDailyMission.completed ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (activeDailyMission.currentProgress / activeDailyMission.targetCount) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1 text-[9px] font-mono text-slate-400">
+                  <span className="text-amber-400 font-bold">
+                    +{activeDailyMission.rewardNAT} NAT
+                  </span>
+                  <span className="text-purple-400 font-bold">
+                    +{activeDailyMission.rewardReputation} RUF
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* TOP RIGHT: STORM, SCORE & ACTIVE WEHRHEIMER TARGET */}
@@ -776,8 +887,26 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             </div>
           )}
 
-          {/* HEALTH & SHIELD STACK (BOTTOM LEFT) */}
+          {/* HEALTH, SHIELD & LIVE STANCE STACK (BOTTOM LEFT) */}
           <div className="absolute bottom-14 left-6 flex flex-col gap-2 w-64 md:w-72 pointer-events-auto z-20">
+            {/* Live Tactical Stance Badge (Shift Sprint / Strg Crouch) */}
+            <div className="flex items-center justify-between px-3 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md border border-white/10 font-mono text-[10px]">
+              <span className="text-slate-400 uppercase font-bold">HALTUNG:</span>
+              {stance === 'sprinting' ? (
+                <span className="text-amber-400 font-black tracking-wider">
+                  ⚡ TAKTISCHER SPRINT [SHIFT]
+                </span>
+              ) : stance === 'crouching' ? (
+                <span className="text-cyan-400 font-black tracking-wider">
+                  🛡️ GEDUCKT [STRG] (-35% Rückstoß)
+                </span>
+              ) : (
+                <span className="text-emerald-400 font-bold tracking-wider">
+                  STEHEND [SHIFT Sprint · STRG Ducken]
+                </span>
+              )}
+            </div>
+
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs font-mono font-bold text-cyan-300">
                 <div className="flex items-center gap-1.5">
@@ -1054,6 +1183,77 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Daily Missions Progress Summary in Game Over Modal */}
+            {dailyMissionsState && (
+              <div className="mb-6 p-3.5 bg-slate-950 rounded-2xl border border-slate-800 text-left">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400">
+                    <Target className="w-3.5 h-3.5" />
+                    <span>TAGESBEFEHLE STATUS</span>
+                  </div>
+                  {onOpenDailyMissions && (
+                    <button
+                      type="button"
+                      onClick={onOpenDailyMissions}
+                      className="text-[10px] font-mono text-slate-400 hover:text-white underline cursor-pointer"
+                    >
+                      Alle ansehen
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {dailyMissionsState.missions.slice(0, 3).map((m) => {
+                    const isDone = m.completed;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between text-xs font-mono bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-white/5"
+                      >
+                        <div className="flex items-center gap-1.5 truncate max-w-[200px]">
+                          {isDone ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          ) : (
+                            <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                          )}
+                          <span
+                            className={`truncate text-[11px] ${
+                              isDone ? 'text-white font-bold' : 'text-slate-300'
+                            }`}
+                          >
+                            {m.title}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-slate-400 tabular-nums">
+                            {m.currentProgress}/{m.targetCount}
+                          </span>
+                          {isDone && !m.claimed && onClaimDailyMission ? (
+                            <button
+                              type="button"
+                              onClick={() => onClaimDailyMission(m.id)}
+                              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] cursor-pointer"
+                            >
+                              +{m.rewardNAT} NAT
+                            </button>
+                          ) : isDone && m.claimed ? (
+                            <span className="text-[10px] text-emerald-400 font-bold">
+                              Eingelöst
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-amber-400 font-bold">
+                              +{m.rewardNAT}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-2.5">
               {onOpenGunsmith && (
