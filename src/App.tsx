@@ -35,6 +35,7 @@ import {
 import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from './game/three/arenas';
 import { AllWeaponsUpgrades, AttachmentType, WeaponAttachments } from './types';
 import { soundFx } from './audio/soundFx';
+import { LegalConsentRecord } from './legal';
 
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -59,6 +60,15 @@ export default function App() {
     return localStorage.getItem('na_operator_registered') !== 'true';
   });
   const [showLegalModal, setShowLegalModal] = useState<boolean>(false);
+  const [legalConsent, setLegalConsent] = useState<LegalConsentRecord | undefined>(() => {
+    const stored = localStorage.getItem('na_legal_consent');
+    if (!stored) return undefined;
+    try {
+      return JSON.parse(stored) as LegalConsentRecord;
+    } catch {
+      return undefined;
+    }
+  });
 
   const [playerName, setPlayerName] = useState<string>(() => {
     return localStorage.getItem('na_player_name') || 'AnspachOperator';
@@ -263,17 +273,19 @@ export default function App() {
         name: playerName,
         clanTag,
         city: playerCity,
+        consent: legalConsent,
         unlockedMapsCount: effectiveUnlockedMaps.length,
         signatureWeapon: signatureWeaponName,
         currentArena: ARENAS[currentArena]?.name || currentArena,
       }).catch(() => {});
     }
-  }, [isOperatorRegistered]);
+  }, [isOperatorRegistered, legalConsent]);
 
   const handleCompleteOnboarding = (profile: {
     name: string;
     clanTag: string;
     city: string;
+    consent?: LegalConsentRecord;
   }) => {
     setPlayerName(profile.name);
     setClanTag(profile.clanTag);
@@ -285,11 +297,16 @@ export default function App() {
     localStorage.setItem('na_clan_tag', profile.clanTag);
     localStorage.setItem('na_player_city', profile.city);
     localStorage.setItem('na_operator_registered', 'true');
+    if (profile.consent) {
+      setLegalConsent(profile.consent);
+      localStorage.setItem('na_legal_consent', JSON.stringify(profile.consent));
+    }
 
     registerOperatorProfile({
       name: profile.name,
       clanTag: profile.clanTag,
       city: profile.city,
+      consent: profile.consent,
       unlockedMapsCount: effectiveUnlockedMaps.length,
       signatureWeapon: signatureWeaponName,
       currentArena: ARENAS[currentArena]?.name || currentArena,
@@ -696,6 +713,7 @@ export default function App() {
           initialCity={playerCity}
           isFirstTime={!isOperatorRegistered}
           onComplete={handleCompleteOnboarding}
+          onOpenLegal={() => setShowLegalModal(true)}
           onClose={isOperatorRegistered ? () => setShowProfileModal(false) : undefined}
         />
       )}

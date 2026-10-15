@@ -63,10 +63,18 @@ export interface LeaderboardPayload {
   onlineCount: number;
 }
 
+export interface OperatorProfileConsent {
+  acceptedAt: string;
+  noticeVersion: string;
+  privacyPolicyVersion: string;
+  termsVersion: string;
+}
+
 export async function registerOperatorProfile(payload: {
   name: string;
   clanTag?: string;
   city?: string;
+  consent?: OperatorProfileConsent;
   unlockedMapsCount?: number;
   signatureWeapon?: string;
   currentArena?: string;

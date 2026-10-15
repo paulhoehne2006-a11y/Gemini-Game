@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
-import { Shield, Users, Crosshair, CheckCircle2, Swords } from 'lucide-react';
+import { Shield, CheckCircle2, Swords, Scale } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
+import { LegalConsentRecord } from '../legal';
 
 interface OperatorOnboardingModalProps {
   initialName: string;
   initialClanTag: string;
   initialCity: string;
   isFirstTime: boolean;
-  onComplete: (profile: { name: string; clanTag: string; city: string }) => void;
+  onComplete: (profile: {
+    name: string;
+    clanTag: string;
+    city: string;
+    consent?: LegalConsentRecord;
+  }) => void;
+  onOpenLegal: () => void;
   onClose?: () => void;
 }
 
@@ -19,11 +26,13 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
   initialCity,
   isFirstTime,
   onComplete,
+  onOpenLegal,
   onClose,
 }) => {
   const [name, setName] = useState(isFirstTime ? '' : initialName);
   const [clanTag, setClanTag] = useState(initialClanTag || '61267');
   const [city, setCity] = useState(initialCity || 'Neu-Anspach');
+  const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -33,12 +42,26 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
       setError('Bitte gib einen Benutzernamen mit mindestens 2 Zeichen ein.');
       return;
     }
+    if (isFirstTime && !hasAcceptedLegal) {
+      setError('Bitte bestätige die Datenschutzhinweise und Nutzungsbedingungen.');
+      return;
+    }
     const cleanTag = clanTag.replace(/[^a-zA-Z0-9_-]/g, '').toUpperCase().slice(0, 6) || '61267';
     soundFx.playLevelUp();
     onComplete({
       name: trimmed.slice(0, 20),
       clanTag: cleanTag,
       city,
+      ...(isFirstTime
+        ? {
+            consent: {
+              acceptedAt: new Date().toISOString(),
+              noticeVersion: '2026-10-15',
+              privacyPolicyVersion: '2026-10-15',
+              termsVersion: '2026-10-15',
+            },
+          }
+        : {}),
     });
   };
 
@@ -65,7 +88,7 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Explanation */}
           <p className="text-xs text-slate-300 leading-relaxed">
-            Dein Benutzername und Clan-Tag werden in Echtzeit mit dem echten Server-Leaderboard synchronisiert. Wenn du und deine Freunde denselben Clan-Tag nutzt, könnt ihr eure Punkte, Kills und freigeschalteten Maps direkt vergleichen.
+            Für das Multiplayer-Profil ist nur ein frei gewählter Benutzername erforderlich. Benutzername, optionaler Clan-Tag, optionale Fraktion und Spielstatistiken werden mit dem Leaderboard synchronisiert. Bitte gib keine E-Mail-Adresse, Telefonnummer oder andere unnötige persönliche Daten ein.
           </p>
 
           {/* Username Input */}
@@ -87,6 +110,42 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
             />
             {error && <div className="text-xs text-red-400 font-mono">{error}</div>}
           </div>
+
+          {isFirstTime && (
+            <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-950/20 p-4">
+              <label className="flex items-start gap-3 text-xs text-slate-200 leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={hasAcceptedLegal}
+                  onChange={(event) => {
+                    setHasAcceptedLegal(event.target.checked);
+                    if (error) setError(null);
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-amber-500"
+                  required
+                />
+                <span>
+                  Ich habe die{' '}
+                  <button
+                    type="button"
+                    onClick={onOpenLegal}
+                    className="font-semibold text-amber-300 underline underline-offset-2 hover:text-amber-200"
+                  >
+                    Datenschutzhinweise und Nutzungsbedingungen
+                  </button>{' '}
+                  gelesen und stimme der Verarbeitung der für das Multiplayer-Profil
+                  erforderlichen Daten zu. Diese Zustimmung wird mit Version und
+                  Zeitpunkt gespeichert und kann über die genannten Kontaktwege widerrufen
+                  werden.
+                </span>
+              </label>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <Scale className="h-3.5 w-3.5 text-amber-400" />
+                Keine Rechtsberatung; die Texte sind Produktinformationen und müssen vor
+                dem öffentlichen Betrieb konfiguriert/geprüft werden.
+              </div>
+            </div>
+          )}
 
           {/* Friend Clan Tag Input */}
           <div className="space-y-2">
