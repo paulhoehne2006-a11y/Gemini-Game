@@ -8,9 +8,17 @@ export interface PublicAccount {
   createdAt: string;
 }
 
+export interface LegalConsentRecord {
+  acceptedAt: string;
+  noticeVersion: string;
+  privacyPolicyVersion: string;
+  termsVersion: string;
+}
+
 interface StoredAccount extends PublicAccount {
   passwordSalt: string;
   passwordHash: string;
+  legalConsent: LegalConsentRecord;
 }
 
 interface StoredSession {
@@ -61,9 +69,10 @@ export class AuthStore {
     this.database = this.load();
   }
 
-  register(usernameInput: string, password: string): PublicAccount {
+  register(usernameInput: string, password: string, legalConsent: LegalConsentRecord): PublicAccount {
     const username = usernameInput.trim();
     this.validateCredentials(username, password);
+    this.validateLegalConsent(legalConsent);
 
     if (this.database.accounts.some((account) => account.username.toLowerCase() === username.toLowerCase())) {
       throw new AuthConflictError('Ein Konto mit diesem Benutzernamen existiert bereits.');
@@ -75,6 +84,7 @@ export class AuthStore {
       username,
       passwordSalt: salt.toString('base64url'),
       passwordHash: hashPassword(password, salt).toString('base64url'),
+      legalConsent,
       createdAt: new Date().toISOString(),
     };
     this.database.accounts.push(account);
@@ -153,6 +163,18 @@ export class AuthStore {
       throw new AuthValidationError(
         'Das Passwort muss 10-128 Zeichen lang sein und mindestens einen Großbuchstaben, Kleinbuchstaben und eine Zahl enthalten.'
       );
+    }
+  }
+
+  private validateLegalConsent(legalConsent: LegalConsentRecord): void {
+    if (
+      !legalConsent ||
+      typeof legalConsent.acceptedAt !== 'string' ||
+      typeof legalConsent.noticeVersion !== 'string' ||
+      typeof legalConsent.privacyPolicyVersion !== 'string' ||
+      typeof legalConsent.termsVersion !== 'string'
+    ) {
+      throw new AuthValidationError('Bitte bestätige die rechtlichen Hinweise und Datenschutzinformationen.');
     }
   }
 

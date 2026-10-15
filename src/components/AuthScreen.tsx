@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AlertCircle, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 import { AuthRequestError, AuthUser, login, register } from '../auth';
+import { createLegalConsentRecord } from '../legal';
 
 interface AuthScreenProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -15,6 +16,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [legalConsentAccepted, setLegalConsentAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -26,6 +28,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
       return 'Das Passwort muss 10-128 Zeichen lang sein und mindestens einen Großbuchstaben, Kleinbuchstaben und eine Zahl enthalten.';
     }
     if (mode === 'register' && password !== confirmation) return 'Die Passwörter stimmen nicht überein.';
+    if (mode === 'register' && !legalConsentAccepted) {
+      return 'Bitte bestätige die rechtlichen Hinweise und Datenschutzinformationen.';
+    }
     return null;
   };
 
@@ -42,7 +47,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
     try {
       const user = mode === 'login'
         ? await login(username.trim(), password)
-        : await register(username.trim(), password);
+        : await register(username.trim(), password, createLegalConsentRecord());
       onAuthenticated(user);
     } catch (requestError) {
       setError(
@@ -154,6 +159,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
               />
             </div>
+          )}
+
+          {mode === 'register' && (
+            <label className="flex items-start gap-3 text-xs leading-relaxed text-slate-300">
+              <input
+                type="checkbox"
+                checked={legalConsentAccepted}
+                onChange={(event) => setLegalConsentAccepted(event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500"
+              />
+              <span>
+                Ich bestätige, dass ich die Hinweise zu Datenschutz, Nutzungsbedingungen und
+                öffentlichen Spielprofilen gelesen habe. Diese Produktinformation ersetzt keine
+                Rechtsberatung.
+              </span>
+            </label>
           )}
 
           {error && (

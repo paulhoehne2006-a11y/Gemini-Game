@@ -97,7 +97,11 @@ function requireAccount(req: express.Request, res: express.Response, next: expre
 app.post('/api/auth/register', (req, res) => {
   if (isAuthRateLimited(req)) return res.status(429).json({ error: 'Zu viele Versuche. Bitte später erneut versuchen.' });
   try {
-    const account = authStore.register(String(req.body?.username || ''), req.body?.password);
+    const account = authStore.register(
+      String(req.body?.username || ''),
+      req.body?.password,
+      req.body?.legalConsent
+    );
     const session = authStore.createSession(account.id, authConfig.sessionTtlMs);
     setSessionCookie(res, session.token, session.expiresAt);
     res.status(201).json({ success: true, account });

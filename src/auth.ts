@@ -6,6 +6,13 @@ export interface AuthUser {
   createdAt?: string;
 }
 
+export interface LegalConsentRecord {
+  acceptedAt: string;
+  noticeVersion: string;
+  privacyPolicyVersion: string;
+  termsVersion: string;
+}
+
 interface AuthResponse {
   user?: AuthUser;
   account?: AuthUser;
@@ -70,11 +77,15 @@ export async function login(username: string, password: string): Promise<AuthUse
   return user;
 }
 
-export async function register(username: string, password: string): Promise<AuthUser> {
+export async function register(
+  username: string,
+  password: string,
+  legalConsent: LegalConsentRecord
+): Promise<AuthUser> {
   const user = normalizeUser(
     await requestAuth('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email: username, password }),
+      body: JSON.stringify({ username, email: username, password, legalConsent }),
     })
   );
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);
