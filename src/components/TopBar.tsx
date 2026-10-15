@@ -13,6 +13,7 @@ import {
   Scale,
   Target,
   Award,
+  LogOut,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
@@ -34,6 +35,7 @@ interface TopBarProps {
   onOpenProfileModal: () => void;
   onOpenLegalModal?: () => void;
   onOpenDailyMissions?: () => void;
+  onLogout: () => void;
   unclaimedMissionsCount?: number;
   completedMissionsCount?: number;
   totalMissionsCount?: number;
@@ -53,6 +55,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenProfileModal,
   onOpenLegalModal,
   onOpenDailyMissions,
+  onLogout,
   unclaimedMissionsCount = 0,
   completedMissionsCount = 0,
   totalMissionsCount = 4,
@@ -109,7 +112,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="hidden sm:inline">NEU-ANSPACH</span>
           <span>ROYALE</span>
         </button>
-
         {/* Zone 2: Desktop 5 clean single-line navigation links */}
         <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
           {navItems.map((item) => {
@@ -239,6 +241,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="truncate max-w-[85px] sm:max-w-[130px]">
               [{clanTag || '61267'}] {playerName}
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer text-xs font-mono font-bold"
+            title="Vom Konto abmelden"
+          >
+            <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+            <span className="hidden xl:inline">Abmelden</span>
           </button>
         </div>
       </header>

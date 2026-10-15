@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { AuthScreen } from './components/AuthScreen';
+import { AuthUser, AuthRequestError, getCurrentUser, logout } from './auth';
 import { TopBar, AppTab } from './components/TopBar';
 import { ThreeCanvas } from './components/ThreeCanvas';
 import { TycoonHub } from './components/TycoonHub';
@@ -35,6 +37,9 @@ import { AllWeaponsUpgrades, AttachmentType, WeaponAttachments } from './types';
 import { soundFx } from './audio/soundFx';
 
 export default function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('battle');
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
@@ -140,6 +145,50 @@ export default function App() {
   // Multiplayer sync state
   const [activeRoom, setActiveRoom] = useState<MultiplayerRoom | null>(null);
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getCurrentUser()
+      .then((user) => {
+        if (active) setAuthUser(user);
+      })
+      .catch(() => {
+        if (active) setAuthError('Die Sitzung konnte nicht geprüft werden. Bitte lade die Seite neu.');
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleAuthenticated = (user: AuthUser) => {
+    setAuthError(null);
+    setAuthUser(user);
+    const identity = user.displayName || user.username || user.email;
+    if (identity && localStorage.getItem('na_operator_registered') !== 'true') {
+      setPlayerName(identity.slice(0, 20));
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      if (!(error instanceof AuthRequestError && error.status === 401)) {
+        setAuthError('Die Abmeldung konnte nicht bestätigt werden. Bitte versuche es erneut.');
+        return;
+      }
+    }
+    setAuthUser(null);
+    setIsOperatorRegistered(false);
+    setShowProfileModal(false);
+    localStorage.removeItem('na_operator_registered');
+    localStorage.removeItem('na_player_name');
+    localStorage.removeItem('na_clan_tag');
+    localStorage.removeItem('na_player_city');
+  };
 
   // Compute current signature weapon display name for Real Leaderboard
   const primaryWeaponObj = WEAPONS[selectedGunsmithWeapon] || WEAPONS.bembel;
@@ -616,6 +665,27 @@ export default function App() {
     (m) => m.completed
   ).length;
 
+  if (authLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-center text-slate-300">
+        <p role="status" className="font-mono text-xs uppercase tracking-widest">Sitzung wird geprüft ...</p>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <>
+        <AuthScreen onAuthenticated={handleAuthenticated} />
+        {authError && (
+          <div role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-red-500/40 bg-red-950/90 px-4 py-3 text-xs text-red-100 shadow-xl">
+            {authError}
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden">
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
@@ -705,6 +775,7 @@ export default function App() {
         onOpenProfileModal={() => setShowProfileModal(true)}
         onOpenLegalModal={() => setShowLegalModal(true)}
         onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+        onLogout={handleLogout}
         unclaimedMissionsCount={unclaimedMissionsCount}
         completedMissionsCount={completedMissionsCount}
         totalMissionsCount={dailyMissionsState.missions.length}
