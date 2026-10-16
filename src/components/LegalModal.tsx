@@ -1,113 +1,120 @@
 import React from 'react';
-import { X, ShieldCheck, Database, Award, Info, Scale } from 'lucide-react';
+import { X, ShieldCheck, Database, FileText, UserRound, Mail, Scale } from 'lucide-react';
+import { legalContactEmail, legalOperatorName, LEGAL_NOTICE_VERSION } from '../legal';
 
 interface LegalModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+const Section: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({
+  title,
+  icon,
+  children,
+}) => (
+  <section className="space-y-2" aria-labelledby={title}>
+    <h3 id={title} className="flex items-center gap-2 text-xs font-mono font-bold uppercase text-amber-400">
+      {icon}
+      {title}
+    </h3>
+    <div className="text-xs leading-relaxed text-slate-300">{children}</div>
+  </section>
+);
+
 export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="legal-modal-title"
+    >
+      <div className="my-auto flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/60 px-6 py-4">
           <div className="flex items-center gap-2.5">
-            <Scale className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-bold text-white tracking-tight font-mono">
-              Rechtliche Hinweise & Datenschutz
+            <Scale className="h-5 w-5 text-amber-400" />
+            <h2 id="legal-modal-title" className="font-mono text-lg font-bold tracking-tight text-white">
+              Rechtliches, Datenschutz & Bedingungen
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Rechtliche Hinweise schließen"
+            className="cursor-pointer rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300 leading-relaxed font-sans">
-          {/* Section 1: Sensible Daten & Secrets */}
-          <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-emerald-400 font-mono font-bold text-xs uppercase mb-2">
-              <ShieldCheck className="w-4 h-4" />
-              1. Keine sensiblen Daten oder Passwörter hinterlegt
-            </div>
-            <p className="text-xs text-slate-400">
-              Im gesamten Codebase und in der Datenbank sind <strong className="text-slate-200">keine Passwörter, keine privaten E-Mails, keine Telefonnummern, keine Bezahlinformationen und keine geheimen API-Schlüssel</strong> im Klartext gespeichert.
-              Der optionale KI-Funksprüche-Dienst nutzt serverseitige Umgebungsvariablen.
-            </p>
+        <div className="space-y-6 overflow-y-auto p-6 font-sans text-slate-300">
+          <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/20 p-4 text-xs leading-relaxed text-cyan-100">
+            <strong>Produkt-Hinweis:</strong> Diese Ansicht ist eine verständliche Produktinformation
+            für das Spiel und keine Rechtsberatung. Vor einem öffentlichen oder kommerziellen Betrieb
+            müssen die Platzhalter ersetzt und die Texte rechtlich geprüft werden.
           </div>
 
-          {/* Section 2: Was wird gespeichert? (DSGVO / GDPR Transparenz) */}
-          <div>
-            <div className="flex items-center gap-2 text-amber-400 font-mono font-bold text-xs uppercase mb-2">
-              <Database className="w-4 h-4" />
-              2. Welche Daten werden gespeichert? (Datenschutz / DSGVO)
-            </div>
-            <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-300">
-              <li>
-                <strong className="text-slate-200">Frei wählbarer Spielername (Pseudonym):</strong> Der Name und Clan-Tag, den du dir gibst (z.B. „PEPSI“ oder „BembelRitter61267“), um im Leaderboard und in der Freunde-Lobby aufzutauchen.
-              </li>
-              <li>
-                <strong className="text-slate-200">Spielstatistiken:</strong> Highscore, Kills, überlebte Wellen, freigeschaltete Maps und ausgerüstete Waffe.
-              </li>
-              <li>
-                <strong className="text-slate-200">Lokale Einstellungen:</strong> Lautstärke und Waffen-Upgrades werden lokal in deinem eigenen Browser (LocalStorage) gesichert. Es werden keine Werbe- oder Tracking-Cookies gesetzt.
-              </li>
-              <li>
-                <strong className="text-slate-200">Multiplayer-Sitzungen:</strong> Raum-Codes und Koordinaten von Spielern werden nur flüchtig im Arbeitsspeicher des Servers gehalten und nach Verlassen der Runde gelöscht.
-              </li>
+          <Section title="1. Welche Daten werden für das Konto benötigt?" icon={<UserRound className="h-4 w-4" />}>
+            <p>
+              Für das Multiplayer-Profil wird nur ein frei gewählter Benutzername benötigt.
+              Optional können Clan-Tag und Fraktion angegeben werden. Spielstatistiken werden
+              zur Anzeige im Leaderboard gespeichert. Es werden hier keine E-Mail-Adressen,
+              Passwörter, Telefonnummern, Zahlungsdaten oder Werbeprofile erhoben.
+            </p>
+          </Section>
+
+          <Section title="2. Datenschutz & öffentliche Anzeige" icon={<Database className="h-4 w-4" />}>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Im Leaderboard können Benutzername, Clan-Tag, Fraktion und Spielwerte öffentlich sichtbar sein.</li>
+              <li>Lokale Einstellungen bleiben im Browser; es werden keine Tracking- oder Werbe-Cookies gesetzt.</li>
+              <li>Multiplayer-Raumdaten werden nur für die laufende Sitzung benötigt und nicht als Kontoidentität verwendet.</li>
+              <li>Bitte verwende ein Pseudonym und teile keine zusätzlichen persönlichen Daten im Spiel.</li>
             </ul>
-          </div>
+          </Section>
 
-          {/* Section 3: Marken, Ortsnamen & Urheberrecht */}
-          <div>
-            <div className="flex items-center gap-2 text-cyan-400 font-mono font-bold text-xs uppercase mb-2">
-              <Award className="w-4 h-4" />
-              3. Markenrechte, Orte & Haftungsausschluss (Disclaimer)
-            </div>
-            <p className="text-xs text-slate-400 mb-2">
-              Dies ist ein <strong className="text-slate-200">nicht-kommerzielles Fan- und Freizeitprojekt</strong> zur Würdigung der Region 61267 Neu-Anspach und des Taunus.
+          <Section title="3. Nutzungsbedingungen" icon={<FileText className="h-4 w-4" />}>
+            <p>
+              Nutze das Spiel fair, respektvoll und nur mit Inhalten, für die du die erforderlichen
+              Rechte hast. Keine Manipulation, kein Missbrauch des Dienstes und keine Eingabe
+              sensibler Daten. Der Betreiber kann öffentliche Profil- oder Spielinhalte entfernen,
+              wenn dies für Sicherheit oder Betrieb erforderlich ist.
             </p>
-            <ul className="list-disc pl-5 space-y-1 text-xs text-slate-400">
-              <li>
-                Die Nennung realer Orte (z.B. <em>Freilichtmuseum Hessenpark, Waldschwimmbad, Bürgerhaus, Taunus-Center, Adolf-Reichwein-Schule</em>) dient ausschließlich dem regionalen Lokalkolorit in einem fiktiven Computerspiel. Es besteht keinerlei offizielle Verbindung, Partnerschaft oder Billigung durch die Betreiber der jeweiligen realen Institutionen.
-              </li>
-              <li>
-                Bezeichnungen wie „Cold War Waffen-Upgrades“, „Pack-a-Punch“ oder Waffennamen sind genretypische Hommagen bzw. Parodien. Alle Marken, Logos und Namen gehören ihren jeweiligen rechtmäßigen Inhabern.
-              </li>
-            </ul>
-          </div>
+          </Section>
 
-          {/* Section 4: Rechtliche Bedingungen beim Hosten & Teilen */}
-          <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-amber-300 font-mono font-bold text-xs uppercase mb-2">
-              <Info className="w-4 h-4" />
-              4. Hosten & Teilen mit Freunden: Was musst du beachten?
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Solange du das Spiel im <strong className="text-amber-200">privaten Freundeskreis</strong> spielst (nicht kommerziell, kein Verkauf, keine Werbung), bist du rechtlich auf der sicheren Seite (sog. Haushaltsausnahme bei der DSGVO).
-              Wenn du die Seite dauerhaft als eigene öffentliche Domain betreibst, genügt in Deutschland typischerweise die Angabe eines einfachen Impressums/Kontakts gemäß § 5 DDG (Digitale-Dienste-Gesetz).
+          <Section title="4. Löschung, Auskunft & Widerruf" icon={<ShieldCheck className="h-4 w-4" />}>
+            <p>
+              Für Fragen, Auskunft, Berichtigung, Löschung oder Widerruf der Einwilligung nutze
+              den konfigurierten Kontakt. Ohne verifizierte Identitätsdaten kann die Bearbeitung
+              eines Anliegens zusätzliche Angaben zur Zuordnung des Pseudonyms erfordern.
+              Ein Lösch- und Exportprozess ist vor öffentlichem Betrieb verbindlich festzulegen.
             </p>
-          </div>
+          </Section>
+
+          <Section title="5. Sicherheit & Kontakt" icon={<Mail className="h-4 w-4" />}>
+            <p>
+              Sicherheitsvorfälle oder Datenschutzfragen bitte an{' '}
+              <a className="text-amber-300 underline" href={`mailto:${legalContactEmail}`}>
+                {legalContactEmail}
+              </a>{' '}
+              melden. Verantwortliche Stelle: <strong className="text-slate-200">{legalOperatorName}</strong>.
+              Beide Werte sind absichtlich Konfigurationsplatzhalter und müssen über
+              <code className="mx-1 rounded bg-slate-950 px-1 py-0.5">VITE_LEGAL_CONTACT_EMAIL</code>
+              und <code className="rounded bg-slate-950 px-1 py-0.5">VITE_LEGAL_OPERATOR_NAME</code>
+              gesetzt werden; es werden keine Identitäten erfunden.
+            </p>
+          </Section>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-950">
-          <span className="text-[11px] font-mono text-slate-500">
-            Version 2.4.0 • 61267 Neu-Anspach Fan-Projekt
-          </span>
+        <div className="flex items-center justify-between border-t border-slate-800 bg-slate-950 px-6 py-3.5">
+          <span className="font-mono text-[11px] text-slate-500">Hinweisversion {LEGAL_NOTICE_VERSION}</span>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-mono font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer"
+            className="cursor-pointer rounded-lg bg-amber-400 px-4 py-1.5 font-mono text-xs font-bold text-slate-950 transition-colors hover:bg-amber-300"
           >
-            Verstanden & Schließen
+            Schließen
           </button>
         </div>
       </div>

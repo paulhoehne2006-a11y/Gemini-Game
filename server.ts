@@ -6,17 +6,133 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import {
+  AuthConflictError,
+  AuthStore,
+  AuthValidationError,
+  authConfig,
+} from './auth.ts';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+export const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
+
+const authStore = new AuthStore(authConfig.dataFile);
+const authRateLimit = new Map<string, { count: number; resetAt: number }>();
+const AUTH_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_RATE_LIMIT_MAX = 20;
+
+function getClientAddress(req: express.Request): string {
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+function isAuthRateLimited(req: express.Request): boolean {
+  const now = Date.now();
+  const key = getClientAddress(req);
+  const current = authRateLimit.get(key);
+  if (!current || current.resetAt <= now) {
+    authRateLimit.set(key, { count: 1, resetAt: now + AUTH_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  current.count += 1;
+  return current.count > AUTH_RATE_LIMIT_MAX;
+}
+
+function parseCookies(req: express.Request): Record<string, string> {
+  const header = req.headers.cookie;
+  if (!header) return {};
+  return Object.fromEntries(
+    header.split(';').flatMap((part) => {
+      const separator = part.indexOf('=');
+      if (separator < 0) return [];
+      return [[part.slice(0, separator).trim(), decodeURIComponent(part.slice(separator + 1).trim())]];
+    })
+  );
+}
+
+function setSessionCookie(res: express.Response, token: string, expiresAt: string): void {
+  const attributes = [
+    `${authConfig.cookieName}=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    'Path=/',
+    `Expires=${new Date(expiresAt).toUTCString()}`,
+    `Max-Age=${Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000))}`,
+    'SameSite=Strict',
+  ];
+  if (authConfig.secureCookie) attributes.push('Secure');
+  res.setHeader('Set-Cookie', attributes.join('; '));
+}
+
+function clearSessionCookie(res: express.Response): void {
+  res.setHeader(
+    'Set-Cookie',
+    `${authConfig.cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict${
+      authConfig.secureCookie ? '; Secure' : ''
+    }`
+  );
+}
+
+function currentAccount(req: express.Request) {
+  const token = parseCookies(req)[authConfig.cookieName];
+  return token ? authStore.getAccountBySession(token) : null;
+}
+
+function requireAccount(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const account = currentAccount(req);
+  if (!account) {
+    res.status(401).json({ error: 'Anmeldung erforderlich.' });
+    return;
+  }
+  res.locals.account = account;
+  next();
+}
+
+app.post('/api/auth/register', (req, res) => {
+  if (isAuthRateLimited(req)) return res.status(429).json({ error: 'Zu viele Versuche. Bitte später erneut versuchen.' });
+  try {
+    const account = authStore.register(
+      String(req.body?.username || ''),
+      req.body?.password,
+      req.body?.legalConsent
+    );
+    const session = authStore.createSession(account.id, authConfig.sessionTtlMs);
+    setSessionCookie(res, session.token, session.expiresAt);
+    res.status(201).json({ success: true, account });
+  } catch (error) {
+    if (error instanceof AuthConflictError || error instanceof AuthValidationError) {
+      return res.status(error instanceof AuthConflictError ? 409 : 400).json({ error: error.message });
+    }
+    console.error('Account registration failed:', error);
+    res.status(500).json({ error: 'Konto konnte nicht erstellt werden.' });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  if (isAuthRateLimited(req)) return res.status(429).json({ error: 'Zu viele Versuche. Bitte später erneut versuchen.' });
+  const account = authStore.verifyCredentials(String(req.body?.username || ''), req.body?.password);
+  if (!account) return res.status(401).json({ error: 'Benutzername oder Passwort ist ungültig.' });
+  const session = authStore.createSession(account.id, authConfig.sessionTtlMs);
+  setSessionCookie(res, session.token, session.expiresAt);
+  res.json({ success: true, account });
+});
+
+app.get('/api/auth/me', requireAccount, (req, res) => {
+  res.json({ authenticated: true, account: res.locals.account });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = parseCookies(req)[authConfig.cookieName];
+  if (token) authStore.revokeSession(token);
+  clearSessionCookie(res);
+  res.json({ success: true });
+});
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
