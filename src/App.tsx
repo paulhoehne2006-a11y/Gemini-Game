@@ -164,7 +164,20 @@ export default function App() {
     let active = true;
     getCurrentUser()
       .then((user) => {
-        if (active) setAuthUser(user);
+        if (active) {
+          setAuthUser(user);
+          if (user) {
+            const profileClanTag = user.clanTag || '61267';
+            const profileCity = user.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
+            setClanTag(profileClanTag);
+            setPlayerCity(profileCity);
+            setIsOperatorRegistered(true);
+            setShowProfileModal(false);
+            localStorage.setItem('na_clan_tag', profileClanTag);
+            localStorage.setItem('na_player_city', profileCity);
+            localStorage.setItem('na_operator_registered', 'true');
+          }
+        }
       })
       .catch(() => {
         if (active) setAuthError('Die Sitzung konnte nicht geprüft werden. Bitte lade die Seite neu.');
@@ -184,15 +197,21 @@ export default function App() {
     const identity = user.displayName || user.username || user.email;
     if (identity) {
       const cleanName = identity.slice(0, 20);
+      const profileClanTag = user.clanTag || clanTag || '61267';
+      const profileCity = user.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
       setPlayerName(cleanName);
+      setClanTag(profileClanTag);
+      setPlayerCity(profileCity);
       localStorage.setItem('na_player_name', cleanName);
+      localStorage.setItem('na_clan_tag', profileClanTag);
+      localStorage.setItem('na_player_city', profileCity);
       localStorage.setItem('na_operator_registered', 'true');
       setIsOperatorRegistered(true);
       setShowProfileModal(false);
       registerOperatorProfile({
         name: cleanName,
-        clanTag: clanTag || '61267',
-        city: playerCity || 'Neu-Anspach',
+        clanTag: profileClanTag,
+        city: profileCity,
       }).catch(() => {});
     }
   };

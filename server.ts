@@ -145,6 +145,8 @@ app.post('/api/auth/register', (req, res) => {
     const account = authStore.register(
       String(req.body?.username || ''),
       req.body?.password,
+      String(req.body?.clanTag || ''),
+      String(req.body?.faction || ''),
       req.body?.legalConsent
     );
     const session = authStore.createSession(account.id, authConfig.sessionTtlMs);

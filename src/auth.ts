@@ -3,6 +3,8 @@ export interface AuthUser {
   email?: string;
   username?: string;
   displayName?: string;
+  clanTag?: string;
+  faction?: 'neu-anspach' | 'wehrheim';
   createdAt?: string;
 }
 
@@ -113,11 +115,13 @@ export async function login(username: string, password: string): Promise<AuthUse
 export async function register(
   username: string,
   password: string,
+  clanTag: string,
+  faction: 'neu-anspach' | 'wehrheim',
   legalConsent: LegalConsentRecord
 ): Promise<AuthUser> {
   const res = await requestAuth('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ username, email: username, password, legalConsent }),
+    body: JSON.stringify({ username, email: username, password, clanTag, faction, legalConsent }),
   });
   const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);

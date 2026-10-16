@@ -5,8 +5,12 @@ import path from 'node:path';
 export interface PublicAccount {
   id: string;
   username: string;
+  clanTag: string;
+  faction: Faction;
   createdAt: string;
 }
+
+export type Faction = 'neu-anspach' | 'wehrheim';
 
 export interface LegalConsentRecord {
   acceptedAt: string;
@@ -37,6 +41,8 @@ interface AuthDatabase {
 const PASSWORD_MIN_LENGTH = 10;
 const PASSWORD_MAX_LENGTH = 128;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{3,24}$/;
+const CLAN_TAG_PATTERN = /^[a-zA-Z0-9_-]{2,6}$/;
+const FACTIONS: readonly Faction[] = ['neu-anspach', 'wehrheim'];
 const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
 
 export class AuthValidationError extends Error {}
@@ -58,6 +64,8 @@ function toPublicAccount(account: StoredAccount): PublicAccount {
   return {
     id: account.id,
     username: account.username,
+    clanTag: account.clanTag,
+    faction: account.faction,
     createdAt: account.createdAt,
   };
 }
@@ -69,9 +77,17 @@ export class AuthStore {
     this.database = this.load();
   }
 
-  register(usernameInput: string, password: string, legalConsent: LegalConsentRecord): PublicAccount {
+  register(
+    usernameInput: string,
+    password: string,
+    clanTagInput: string,
+    factionInput: string,
+    legalConsent: LegalConsentRecord
+  ): PublicAccount {
     const username = usernameInput.trim();
+    const clanTag = clanTagInput.trim().toUpperCase();
     this.validateCredentials(username, password);
+    this.validateProfile(clanTag, factionInput);
     this.validateLegalConsent(legalConsent);
 
     if (this.database.accounts.some((account) => account.username.toLowerCase() === username.toLowerCase())) {
@@ -82,6 +98,8 @@ export class AuthStore {
     const account: StoredAccount = {
       id: `acct_${crypto.randomUUID()}`,
       username,
+      clanTag,
+      faction: factionInput as Faction,
       passwordSalt: salt.toString('base64url'),
       passwordHash: hashPassword(password, salt).toString('base64url'),
       legalConsent,
@@ -173,6 +191,8 @@ export class AuthStore {
     return {
       id: account.id,
       username: account.username,
+      clanTag: account.clanTag,
+      faction: account.faction,
       createdAt: account.createdAt,
       legalConsent: account.legalConsent,
       security: {
@@ -235,11 +255,31 @@ export class AuthStore {
     }
   }
 
+  private validateProfile(clanTag: string, faction: string): void {
+    if (!CLAN_TAG_PATTERN.test(clanTag)) {
+      throw new AuthValidationError(
+        'Der Clan-Tag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.'
+      );
+    }
+    if (!FACTIONS.includes(faction as Faction)) {
+      throw new AuthValidationError('Bitte wähle eine gültige Fraktion: Neu-Anspach oder Wehrheim.');
+    }
+  }
+
   private load(): AuthDatabase {
     try {
       const raw = fs.readFileSync(this.filePath, 'utf8');
       const parsed = JSON.parse(raw) as AuthDatabase;
-      if (Array.isArray(parsed.accounts) && Array.isArray(parsed.sessions)) return parsed;
+      if (Array.isArray(parsed.accounts) && Array.isArray(parsed.sessions)) {
+        return {
+          accounts: parsed.accounts.map((account) => ({
+            ...account,
+            clanTag: account.clanTag || '61267',
+            faction: account.faction || 'neu-anspach',
+          })),
+          sessions: parsed.sessions,
+        };
+      }
     } catch {
       // Missing or invalid local state starts empty; writes surface errors explicitly.
     }
