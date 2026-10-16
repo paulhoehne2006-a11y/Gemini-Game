@@ -5,7 +5,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import {
   AuthConflictError,
   AuthStore,
@@ -225,16 +224,6 @@ app.post('/api/auth/delete', requireAccount, (req, res) => {
 
   clearSessionCookie(res);
   res.json({ success: true, message: 'Konto und alle zugehörigen Daten wurden gelöscht.' });
-});
-
-// Initialize Gemini Client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
 });
 
 // Persistent disk storage for REAL player leaderboard (ZERO fake bots!)
@@ -695,79 +684,30 @@ app.post('/api/leaderboard/submit', (req, res) => {
   });
 });
 
-// API Route: Gemini Pro Master Commander for Multi-Agent Direction
+// API Route: Procedural Master Commander for Multi-Agent Direction
 app.post('/api/ai/commander', async (req, res) => {
   try {
-    const { arena, wave, playerHealth, budget, activeWeapons, currentPerks } = req.body;
-
-    const prompt = `
-Du bist der taktische Ober-General "Groß-Kommandeur Feldberg-Stier" und koordinierst als Master-KI die Schlacht zwischen 61267 Neu-Anspach und den angreifenden Wehrheimern (aus dem Apfeldorf Wehrheim / Freizeitpark Lochmühle).
-Aktuelle Lage:
-- Arena: ${arena || 'Freilichtmuseum Hessenpark'}
-- Wehrheim-Angriffswelle: ${wave || 1}
-- Spieler-Gesundheit: ${playerHealth || 100}%
-- Stadtkasse Neu-Anspach: ${budget || 500} NAT (Neu-Anspach-Taler)
-- Ausrüstung: ${(activeWeapons || ['Bembel-Kanone']).join(', ')}
-- Stadtinfrastruktur-Perks: ${(currentPerks || []).join(', ')}
-
-Aufgabe:
-Orchestriere die kleineren Sub-Agenten (die Wehrheimer Bot-Einheiten) und gib dem Neu-Anspacher Spieler strategische Anweisungen.
-Antworte im validen JSON-Format:
-{
-  "commanderName": "Groß-Kommandeur Feldberg-Stier",
-  "tacticalDirective": "1-2 Sätze taktische Gesamtanalyse für Neu-Anspach",
-  "hessianCombatBark": "Ein humorvoller, authentischer hessischer Funkspruch (z.B. Dialekt wie 'Ei gude wie!', 'Die Wehrheimer stürme mit de Apfel-Trecker!', 'Gebt'ne Saures mit'm Bembel!')",
-  "wehrheimAgentsOrders": {
-    "flankers": "Verhalten der schnellen Wehrheimer Apfel-Flankierer",
-    "snipers": "Ziel der Apfelschützen aus Wehrheim",
-    "shocktroopers": "Einsatzbefehl der Lochmühle-Zwerge und Traktor-Horden"
-  },
-  "tycoonCrisisEvent": {
-    "title": "Kurzer Name für ein Stadt-Event (z.B. 'Äppler-Spende der Kelterei' oder 'Taunusbahn-Sonderzug')",
-    "description": "Erklärung des Events für Neu-Anspach",
-    "budgetBonus": 150,
-    "recommendedUpgrade": "Eine städtische Infrastruktur zum Ausbauen"
-  }
-}
-Gib AUSSCHLIESSLICH das reine JSON ohne Markdown-Codeblöcke zurück.
-`;
-
-    let resultJson: any = null;
-
-    const callModel = async (model: string, config: any, ms = 7000) => {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms));
-      const req = ai.models.generateContent({ model, contents: prompt, config });
-      return Promise.race([req, timeout]) as Promise<any>;
-    };
-
-    try {
-      const response = await callModel('gemini-4-argon', {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-        responseMimeType: 'application/json',
-      }, 7000);
-
-      const text = response.text || '{}';
-      resultJson = JSON.parse(text);
-    } catch (modelError: any) {
-      console.warn('Fallback to gemini-3.8-flash for commander:', modelError?.message);
-      try {
-        const fallbackResponse = await callModel('gemini-3.8-flash', {
-          responseMimeType: 'application/json',
-        }, 5000);
-        const text = fallbackResponse.text || '{}';
-        resultJson = JSON.parse(text);
-      } catch (e) {
-        console.warn('Using procedural commander preset');
-      }
-    }
-
-    if (!resultJson) {
-      throw new Error('Fallback to preset');
-    }
-
-    res.json({ success: true, commander: resultJson });
+    res.json({
+      success: true,
+      commander: {
+        commanderName: 'Groß-Kommandeur Feldberg-Stier',
+        tacticalDirective: 'Die Wehrheimer Apfel-Garde formiert sich an den Flanken! Haltet das Hessenpark-Tor!',
+        hessianCombatBark: 'Ei gude! Packt die Bembel aus un gebt de Wehrheimern Saures!',
+        wehrheimAgentsOrders: {
+          flankers: 'Umfassung über die Streuobstwiesen',
+          snipers: 'Störfeuer aus dem Schatten der Windmühle',
+          shocktroopers: 'Frontaler Ansturm mit Lochmühlen-Rollwagen',
+        },
+        tycoonCrisisEvent: {
+          title: 'Taunusbahn-Expressversorgung',
+          description: 'Ein Notfallzug aus Frankfurt hat zusätzliche Taler nach Neu-Anspach gebracht!',
+          budgetBonus: 200,
+          recommendedUpgrade: 'Breitband Taunus Netze',
+        },
+      },
+    });
   } catch (error: any) {
-    console.error('Gemini Commander error:', error);
+    console.error('Commander response error:', error);
     res.json({
       success: true,
       commander: {
