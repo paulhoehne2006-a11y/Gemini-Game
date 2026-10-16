@@ -28,6 +28,22 @@ const _right = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
 const _camTarget = new THREE.Vector3();
 const _desiredCamPos = new THREE.Vector3();
+const _skyGradientCanvas = document.createElement('canvas');
+
+function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
+  _skyGradientCanvas.width = 2;
+  _skyGradientCanvas.height = 512;
+  const context = _skyGradientCanvas.getContext('2d')!;
+  const gradient = context.createLinearGradient(0, 0, 0, _skyGradientCanvas.height);
+  gradient.addColorStop(0, topColor);
+  gradient.addColorStop(0.68, horizonColor);
+  gradient.addColorStop(1, '#0F172A');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, _skyGradientCanvas.width, _skyGradientCanvas.height);
+  const texture = new THREE.CanvasTexture(_skyGradientCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
 
 export const WAVE_CONFIGS = [
   {
@@ -338,6 +354,19 @@ export class ArenaSceneManager {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(arenaDef.skyColor || 0x0F172A);
     this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0x1E293B, 0.0075);
+    const skyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(145, 32, 16),
+      new THREE.MeshBasicMaterial({
+        map: createSkyGradientTexture(
+          `#${new THREE.Color(arenaDef.skyColor || 0x0F172A).getHexString()}`,
+          `#${new THREE.Color(arenaDef.fogColor || 0x1E293B).getHexString()}`
+        ),
+        side: THREE.BackSide,
+        depthWrite: false,
+      })
+    );
+    skyDome.renderOrder = -10;
+    this.scene.add(skyDome);
 
     this.camera = new THREE.PerspectiveCamera(
       this.currentFov,
@@ -1120,12 +1149,9 @@ export class ArenaSceneManager {
     const recoilReduction = Math.max(0.3, (1 - (this.attachments.scope || 0) * 0.16) * crouchRecoilMult);
     this.recoilPitch = Math.min(0.032, this.recoilPitch + 0.0055 * recoilReduction);
 
-    _bulletDir.set(
-      -Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch),
-      -Math.sin(this.cameraPitch),
-      -Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch)
-    );
-    _bulletDir.normalize();
+    // Use the camera's optical axis so the projectile and the center reticle stay
+    // aligned even when the over-the-shoulder camera is pitched up or down.
+    this.camera.getWorldDirection(_bulletDir);
 
     const rightVec = new THREE.Vector3(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
     const muzzleHeight = 1.4 - this.currentCrouchAmount * 0.44;
@@ -1551,8 +1577,14 @@ export class ArenaSceneManager {
       let blockedZ = false;
       for (const box of this.obstacles) {
         if (this.playerPos.y < box.max.y - 0.35) {
-          if (box.containsPoint(_tempVec.set(nextX, testY, this.playerPos.z))) blockedX = true;
-          if (box.containsPoint(_tempVec.set(this.playerPos.x, testY, nextZ))) blockedZ = true;
+          const expanded = box.clone();
+          const playerRadius = 0.42;
+          expanded.min.x -= playerRadius;
+          expanded.max.x += playerRadius;
+          expanded.min.z -= playerRadius;
+          expanded.max.z += playerRadius;
+          if (expanded.containsPoint(_tempVec.set(nextX, testY, this.playerPos.z))) blockedX = true;
+          if (expanded.containsPoint(_tempVec.set(this.playerPos.x, testY, nextZ))) blockedZ = true;
         }
       }
 

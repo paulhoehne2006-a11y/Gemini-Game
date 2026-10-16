@@ -471,6 +471,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }`}
       />
 
+      {!isMobileMode && !gameOverState?.over && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
+          aria-hidden="true"
+        >
+          <Crosshair className="h-7 w-7 stroke-[1.5] opacity-90" />
+          <span className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300 shadow-[0_0_5px_rgba(251,191,36,0.95)]" />
+        </div>
+      )}
+
       {/* COMPASS TAPE & ELEVATION TELEMETRY (TOP CENTER) */}
       <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-md px-3">
         <div className="flex items-center gap-3 px-4 py-1 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 text-white font-mono text-xs shadow-lg">
