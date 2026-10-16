@@ -443,7 +443,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   return (
     <div
-      className={`relative w-full h-[calc(100vh-53px)] lg:h-[calc(100vh-53px)] pb-14 lg:pb-0 overflow-hidden bg-slate-950 select-none touch-none ${
+      className={`fixed inset-0 z-10 w-full h-[100dvh] pb-14 lg:pb-0 overflow-hidden bg-slate-950 select-none touch-none ${
         gameOverState?.over || isMobileMode ? 'cursor-default' : ''
       }`}
     >

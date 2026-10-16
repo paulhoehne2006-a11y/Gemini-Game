@@ -540,7 +540,7 @@ export class ArenaSceneManager {
     this.cameraYaw -= clampedDx * sensitivity;
     // Wrap cameraYaw cleanly in [-PI, PI] so it never overflows or bugs out!
     this.cameraYaw = Math.atan2(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw));
-    this.cameraPitch = Math.max(-0.52, Math.min(0.65, this.cameraPitch + clampedDy * sensitivity));
+    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + clampedDy * sensitivity, -0.52, 1.12);
   }
 
   public triggerJump() {
@@ -971,7 +971,7 @@ export class ArenaSceneManager {
         this.cameraYaw -= dx * sensitivity;
         // Normalize yaw to [-PI, PI] so continuous 360° rotation never overflows or glitches
         this.cameraYaw = Math.atan2(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw));
-        this.cameraPitch = Math.max(-0.52, Math.min(0.65, this.cameraPitch + dy * sensitivity));
+        this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + dy * sensitivity, -0.52, 1.12);
       }
     };
     window.addEventListener('mousemove', onMouseMove);

@@ -28,7 +28,7 @@ import {
   registerOperatorProfile,
   connectLeaderboardSocket,
 } from './game/multiplayer';
-import { ShieldAlert } from 'lucide-react';
+import { ArrowRight, Crosshair, ShieldAlert, Trophy, Users, Wrench } from 'lucide-react';
 import {
   WEAPONS,
   INITIAL_WEAPON_UPGRADES,
@@ -45,6 +45,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [sessionSupersededNotice, setSessionSupersededNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('battle');
+  const [showHome, setShowHome] = useState(true);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
   // Auto-detect mobile device/screen, or allow switching anytime in the TopBar
@@ -683,6 +684,12 @@ export default function App() {
     setLocalPlayerId(playerId);
     setCurrentArena(room.arena || 'hessenpark');
     setActiveTab('battle');
+    setShowHome(false);
+  };
+
+  const openTab = (tab: AppTab) => {
+    setActiveTab(tab);
+    setShowHome(false);
   };
 
   const facilityLevels = Object.fromEntries(
@@ -736,7 +743,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden">
+    <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
+      !showHome && activeTab === 'battle' && !isMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`}>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
         <OperatorOnboardingModal
@@ -809,32 +818,95 @@ export default function App() {
         </div>
       )}
 
-      {/* 3-Zone Top Navigation Contract */}
-      <TopBar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        budget={budget}
-        reputation={reputation}
-        isMuted={isMuted}
-        setIsMuted={setIsMuted}
-        onRequestCommander={requestCommanderOrders}
-        isCommanderThinking={isCommanderThinking}
-        isMobileMode={isMobileMode}
-        setIsMobileMode={setIsMobileMode}
-        playerName={playerName}
-        clanTag={clanTag}
-        onOpenProfileModal={() => setShowProfileModal(true)}
-        onOpenLegalModal={() => setShowLegalModal(true)}
-        onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-        onLogout={handleLogout}
-        unclaimedMissionsCount={unclaimedMissionsCount}
-        completedMissionsCount={completedMissionsCount}
-        totalMissionsCount={dailyMissionsState.missions.length}
-      />
+      {!showHome && (activeTab !== 'battle' || isMobileMode) && (
+        <TopBar
+          activeTab={activeTab}
+          setActiveTab={openTab}
+          budget={budget}
+          reputation={reputation}
+          isMuted={isMuted}
+          setIsMuted={setIsMuted}
+          onRequestCommander={requestCommanderOrders}
+          isCommanderThinking={isCommanderThinking}
+          isMobileMode={isMobileMode}
+          setIsMobileMode={setIsMobileMode}
+          playerName={playerName}
+          clanTag={clanTag}
+          onOpenHome={() => setShowHome(true)}
+          onOpenProfileModal={() => setShowProfileModal(true)}
+          onOpenLegalModal={() => setShowLegalModal(true)}
+          onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+          onLogout={handleLogout}
+          unclaimedMissionsCount={unclaimedMissionsCount}
+          completedMissionsCount={completedMissionsCount}
+          totalMissionsCount={dailyMissionsState.missions.length}
+        />
+      )}
 
-      {/* Main View Router - with native smooth scrolling on desktop and mobile */}
-      <main className="flex-1 w-full relative overflow-y-auto">
-        {activeTab === 'battle' && (
+      {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
+      <main className={`flex-1 w-full relative ${
+        showHome || activeTab !== 'battle' || isMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+      }`}>
+        {showHome && (
+          <section className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 py-12 sm:px-10 lg:px-20">
+            <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full border border-amber-400/20 bg-amber-400/5 blur-3xl" aria-hidden="true" />
+            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+              <div>
+                <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-400">
+                  61267 · Neu-Anspach
+                </p>
+                <h1 className="max-w-3xl text-5xl font-black tracking-tight text-white sm:text-7xl">
+                  Hessenpark
+                  <span className="block text-amber-400">Battle Royale</span>
+                </h1>
+                <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+                  Dein taktischer Einsatz beginnt hier. Erkunde die 3D-Arena, sichere NAT und
+                  überliste die Wehrheimer im ersten lokalen Battle Royale von Neu-Anspach.
+                </p>
+                <div className="mt-9 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('battle');
+                      setShowHome(false);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+                  >
+                    <Crosshair className="h-5 w-5" aria-hidden="true" />
+                    Einsatz starten
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openTab('multiplayer')}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-5 py-3 font-bold text-slate-200 transition hover:border-amber-400/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+                  >
+                    <Users className="h-5 w-5" aria-hidden="true" />
+                    Freunde-Lobby
+                  </button>
+                </div>
+                <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                  Maus: umsehen · WASD: bewegen · Linksklick: feuern
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                {[
+                  { icon: Crosshair, title: '3D-Einsatz', text: 'Fullscreen-Arena mit freier Kamerasicht' },
+                  { icon: Wrench, title: 'Waffenschmiede', text: 'Verbessere deine Signaturwaffe' },
+                  { icon: Trophy, title: 'Rangliste', text: 'Sichere dir deinen Platz in Neu-Anspach' },
+                ].map(({ icon: Icon, title, text }) => (
+                  <div key={title} className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 backdrop-blur-sm">
+                    <Icon className="mb-3 h-5 w-5 text-amber-400" aria-hidden="true" />
+                    <h2 className="font-bold text-white">{title}</h2>
+                    <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!showHome && activeTab === 'battle' && (
           isMobileMode ? (
             <MobileTacticalHub
               budget={budget}

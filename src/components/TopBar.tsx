@@ -32,6 +32,7 @@ interface TopBarProps {
   setIsMobileMode: (mobile: boolean) => void;
   playerName: string;
   clanTag: string;
+  onOpenHome?: () => void;
   onOpenProfileModal: () => void;
   onOpenLegalModal?: () => void;
   onOpenDailyMissions?: () => void;
@@ -52,6 +53,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   setIsMobileMode,
   playerName,
   clanTag,
+  onOpenHome,
   onOpenProfileModal,
   onOpenLegalModal,
   onOpenDailyMissions,
@@ -105,7 +107,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Zone 1: Wordmark */}
         <button
           type="button"
-          onClick={() => setActiveTab('battle')}
+          onClick={() => (onOpenHome ? onOpenHome() : setActiveTab('battle'))}
+          aria-label="Startseite öffnen"
           className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
         >
           <span className="text-amber-400 font-mono">61267</span>

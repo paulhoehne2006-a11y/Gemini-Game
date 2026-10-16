@@ -10,6 +10,10 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  html:has(.fixed.inset-0.z-10) {
+    overflow: hidden;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   }
