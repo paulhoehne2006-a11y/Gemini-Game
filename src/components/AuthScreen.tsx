@@ -15,6 +15,8 @@ const usernamePattern = /^[a-zA-Z0-9_-]{3,24}$/;
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
+  const [clanTag, setClanTag] = useState('');
+  const [faction, setFaction] = useState<'neu-anspach' | 'wehrheim'>('neu-anspach');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [legalConsentAccepted, setLegalConsentAccepted] = useState(false);
@@ -25,6 +27,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const validate = (): string | null => {
     if (!usernamePattern.test(username.trim())) {
       return 'Der Benutzername muss 3-24 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.';
+    }
+    if (mode === 'register' && !/^[a-zA-Z0-9_-]{2,6}$/.test(clanTag.trim())) {
+      return 'Der Clan-Tag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.';
     }
     if (password.length < 10 || password.length > 128 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
       return 'Das Passwort muss 10-128 Zeichen lang sein und mindestens einen Großbuchstaben, Kleinbuchstaben und eine Zahl enthalten.';
@@ -56,7 +61,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
           onAuthenticated(user);
         }, 400);
       } else {
-        const user = await register(username.trim(), password, createLegalConsentRecord());
+        const user = await register(username.trim(), password, clanTag.trim().toUpperCase(), faction, createLegalConsentRecord());
         setSuccessMessage(`Konto erfolgreich erstellt! Willkommen, ${user.username || 'Operator'}!`);
         soundFx.playLevelUp();
         setTimeout(() => {
@@ -140,6 +145,58 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
             />
           </div>
+
+          {mode === 'register' && (
+            <>
+              <div className="space-y-2">
+                <label htmlFor="auth-clan-tag" className="font-mono text-xs font-bold uppercase tracking-wide text-slate-300">
+                  Clan-Tag
+                </label>
+                <input
+                  id="auth-clan-tag"
+                  name="clanTag"
+                  type="text"
+                  autoComplete="organization"
+                  required
+                  minLength={2}
+                  maxLength={6}
+                  pattern="[a-zA-Z0-9_-]{2,6}"
+                  value={clanTag}
+                  onChange={(event) => setClanTag(event.target.value.toUpperCase())}
+                  aria-describedby="auth-clan-tag-help"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm uppercase text-white outline-none transition-colors focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                />
+                <p id="auth-clan-tag-help" className="text-xs text-slate-500">2-6 Zeichen: Buchstaben, Zahlen, _ oder -.</p>
+              </div>
+
+              <fieldset className="space-y-2">
+                <legend className="font-mono text-xs font-bold uppercase tracking-wide text-slate-300">Fraktion</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  {([
+                    ['neu-anspach', 'Neu-Anspach'],
+                    ['wehrheim', 'Wehrheim'],
+                  ] as const).map(([value, label]) => (
+                    <label
+                      key={value}
+                      className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-sm transition-colors ${
+                        faction === value ? 'border-amber-500 bg-amber-500/15 text-white' : 'border-slate-700 bg-slate-950 text-slate-400'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="faction"
+                        value={value}
+                        checked={faction === value}
+                        onChange={() => setFaction(value)}
+                        className="accent-amber-500"
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="auth-password" className="font-mono text-xs font-bold uppercase tracking-wide text-slate-300">

@@ -125,10 +125,19 @@ export async function joinMultiplayerRoom(
     body: JSON.stringify({ code, playerName, clanTag, arena }),
   });
   const data = await res.json();
-  if (!data.success) {
+  if (!res.ok || !data.success || !data.room || !data.playerId) {
     throw new Error(data.error || 'Fehler beim Beitreten');
   }
   return { room: data.room, playerId: data.playerId };
+}
+
+export async function fetchMultiplayerRoom(roomCode: string): Promise<MultiplayerRoom> {
+  const res = await fetch(`/api/multiplayer/rooms/${encodeURIComponent(roomCode)}`);
+  const data = await res.json();
+  if (!res.ok || !data.success || !data.room) {
+    throw new Error(data.error || 'Raum nicht gefunden');
+  }
+  return data.room;
 }
 
 export async function updateMultiplayerState(
@@ -145,6 +154,9 @@ export async function updateMultiplayerState(
     body: JSON.stringify({ roomCode, playerId, kills, health, score, wave }),
   });
   const data = await res.json();
+  if (!res.ok || !data.success || !data.room) {
+    throw new Error(data.error || 'Multiplayer-Status konnte nicht synchronisiert werden');
+  }
   return data.room;
 }
 

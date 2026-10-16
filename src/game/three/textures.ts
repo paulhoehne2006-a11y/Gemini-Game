@@ -595,6 +595,12 @@ export function createEnterableBuilding(options: {
   const doorHeader = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, headerH, wallThickness), wallMat);
   doorHeader.position.set(x, height - headerH / 2, z + depth / 2 - wallThickness / 2);
   group.add(doorHeader);
+  obstacles.push(
+    new THREE.Box3(
+      new THREE.Vector3(x - doorWidth / 2, height - headerH, z + depth / 2 - wallThickness),
+      new THREE.Vector3(x + doorWidth / 2, height, z + depth / 2)
+    )
+  );
 
   // Walkable flat roof slab
   const roofSlab = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, 0.45, depth + 0.4), roofMat);
@@ -602,6 +608,12 @@ export function createEnterableBuilding(options: {
   roofSlab.castShadow = true;
   roofSlab.receiveShadow = true;
   group.add(roofSlab);
+  obstacles.push(
+    new THREE.Box3(
+      new THREE.Vector3(x - (width + 0.4) / 2, height, z - (depth + 0.4) / 2),
+      new THREE.Vector3(x + (width + 0.4) / 2, height + 0.45, z + (depth + 0.4) / 2)
+    )
+  );
 
   const roofTopY = height + 0.42;
   walkableSurfaces.push({
