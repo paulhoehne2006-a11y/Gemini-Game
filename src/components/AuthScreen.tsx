@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { AlertCircle, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
+import { AlertCircle, CheckCircle2, LogIn, ShieldCheck, UserPlus } from 'lucide-react';
 import { AuthRequestError, AuthUser, login, register } from '../auth';
 import { createLegalConsentRecord } from '../legal';
+import { soundFx } from '../audio/soundFx';
 
 interface AuthScreenProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -18,6 +19,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const [confirmation, setConfirmation] = useState('');
   const [legalConsentAccepted, setLegalConsentAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validate = (): string | null => {
@@ -37,6 +39,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     const validationError = validate();
     if (validationError) {
       setError(validationError);
@@ -45,17 +48,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
 
     setIsSubmitting(true);
     try {
-      const user = mode === 'login'
-        ? await login(username.trim(), password)
-        : await register(username.trim(), password, createLegalConsentRecord());
-      onAuthenticated(user);
+      if (mode === 'login') {
+        const user = await login(username.trim(), password);
+        setSuccessMessage(`Willkommen zurück, ${user.username || 'Operator'}! Spiel startet...`);
+        soundFx.playRewardClaim();
+        setTimeout(() => {
+          onAuthenticated(user);
+        }, 400);
+      } else {
+        const user = await register(username.trim(), password, createLegalConsentRecord());
+        setSuccessMessage(`Konto erfolgreich erstellt! Willkommen, ${user.username || 'Operator'}!`);
+        soundFx.playLevelUp();
+        setTimeout(() => {
+          onAuthenticated(user);
+        }, 600);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof AuthRequestError
           ? requestError.message
           : 'Der Authentifizierungsdienst ist gerade nicht erreichbar. Bitte versuche es erneut.'
       );
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -63,6 +76,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setError(null);
+    setSuccessMessage(null);
     setPassword('');
     setConfirmation('');
   };
@@ -184,13 +198,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated }) => {
             </div>
           )}
 
+          {successMessage && (
+            <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-950/60 p-3 text-xs font-mono font-bold text-emerald-300 animate-in fade-in">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden="true" />
+              <span>{successMessage}</span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3.5 text-sm font-black text-slate-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3.5 text-sm font-black text-slate-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {mode === 'login' ? <LogIn className="h-4 w-4" aria-hidden="true" /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
-            {isSubmitting ? 'Wird verarbeitet ...' : mode === 'login' ? 'Anmelden & Spiel starten' : 'Konto erstellen'}
+            {isSubmitting
+              ? 'Wird verarbeitet ...'
+              : mode === 'login'
+              ? 'Anmelden & Spiel starten'
+              : 'Konto registrieren & Spiel starten'}
           </button>
         </form>
       </section>

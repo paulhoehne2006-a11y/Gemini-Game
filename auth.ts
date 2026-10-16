@@ -112,13 +112,24 @@ export class AuthStore {
   createSession(accountId: string, ttlMs: number): { token: string; expiresAt: string } {
     const token = crypto.randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    const now = new Date().toISOString();
+
+    // Enforce 1 active session per account: revoke any existing active sessions
+    for (const session of this.database.sessions) {
+      if (session.accountId === accountId && !session.revokedAt) {
+        session.revokedAt = now;
+      }
+    }
+
+    // Clean up expired or older revoked sessions
     this.database.sessions = this.database.sessions.filter(
-      (session) => session.expiresAt > new Date().toISOString() && !session.revokedAt
+      (session) => session.expiresAt > now && (!session.revokedAt || Date.parse(session.revokedAt) > Date.now() - 86400000)
     );
+
     this.database.sessions.push({
       accountId,
       tokenHash: hashSessionToken(token),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
       expiresAt,
     });
     this.save();
@@ -137,6 +148,16 @@ export class AuthStore {
     return account ? toPublicAccount(account) : null;
   }
 
+  getAccountIdBySession(token: string): string | null {
+    const session = this.database.sessions.find(
+      (candidate) =>
+        candidate.tokenHash === hashSessionToken(token) &&
+        !candidate.revokedAt &&
+        candidate.expiresAt > new Date().toISOString()
+    );
+    return session ? session.accountId : null;
+  }
+
   revokeSession(token: string): void {
     const tokenHash = hashSessionToken(token);
     const session = this.database.sessions.find((candidate) => candidate.tokenHash === tokenHash);
@@ -144,6 +165,42 @@ export class AuthStore {
       session.revokedAt = new Date().toISOString();
       this.save();
     }
+  }
+
+  exportAccountData(accountId: string): any | null {
+    const account = this.database.accounts.find((candidate) => candidate.id === accountId);
+    if (!account) return null;
+    return {
+      id: account.id,
+      username: account.username,
+      createdAt: account.createdAt,
+      legalConsent: account.legalConsent,
+      security: {
+        passwordAlgorithm: 'scrypt-pbkdf',
+        passwordSaltStored: true,
+        hashType: 'base64url-scrypt',
+      },
+      exportTimestamp: new Date().toISOString(),
+    };
+  }
+
+  deleteAccount(accountId: string, passwordInput: string): boolean {
+    const account = this.database.accounts.find((candidate) => candidate.id === accountId);
+    if (!account || typeof passwordInput !== 'string') return false;
+
+    const salt = Buffer.from(account.passwordSalt, 'base64url');
+    const expected = Buffer.from(account.passwordHash, 'base64url');
+    const actual = hashPassword(passwordInput, salt);
+
+    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+      return false;
+    }
+
+    // Permanently remove account and sessions
+    this.database.accounts = this.database.accounts.filter((candidate) => candidate.id !== accountId);
+    this.database.sessions = this.database.sessions.filter((candidate) => candidate.accountId !== accountId);
+    this.save();
+    return true;
   }
 
   private validateCredentials(username: string, password: string): void {

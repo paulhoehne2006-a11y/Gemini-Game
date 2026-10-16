@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Shield, CheckCircle2, Swords, Scale } from 'lucide-react';
+import { Shield, CheckCircle2, Swords, Scale, Download, Trash2, AlertTriangle } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 import { LegalConsentRecord } from '../legal';
+import { exportUserData, deleteUserAccount } from '../auth';
 
 interface OperatorOnboardingModalProps {
   initialName: string;
@@ -16,6 +17,7 @@ interface OperatorOnboardingModalProps {
   }) => void;
   onOpenLegal: () => void;
   onClose?: () => void;
+  onLogout?: () => void;
 }
 
 const PRESET_TAGS = ['61267', 'ANS', 'TAUN', 'BEMB', 'FELD'];
@@ -28,12 +30,20 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
   onComplete,
   onOpenLegal,
   onClose,
+  onLogout,
 }) => {
   const [name, setName] = useState(isFirstTime ? '' : initialName);
   const [clanTag, setClanTag] = useState(initialClanTag || '61267');
   const [city, setCity] = useState(initialCity || 'Neu-Anspach');
   const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +73,46 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
           }
         : {}),
     });
+  };
+
+  const handleExportData = async () => {
+    try {
+      setIsExporting(true);
+      setExportFeedback(null);
+      const data = await exportUserData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `operator-daten-${name.trim() || 'export'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportFeedback('Daten erfolgreich als JSON exportiert!');
+    } catch {
+      setExportFeedback('Export fehlgeschlagen. Bitte erneut versuchen.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDeleteAccountSubmit = async () => {
+    if (!deletePassword) {
+      setDeleteError('Bitte gib dein Passwort ein.');
+      return;
+    }
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
+      await deleteUserAccount(deletePassword);
+      if (onLogout) {
+        onLogout();
+      } else {
+        window.location.reload();
+      }
+    } catch (err: any) {
+      setDeleteError(err.message || 'Löschung fehlgeschlagen.');
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -257,6 +307,92 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
             </div>
             <span className="text-xs font-mono text-slate-400">{city}</span>
           </div>
+
+          {/* DSGVO & Privacy Controls for logged-in profile */}
+          {!isFirstTime && (
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-semibold text-slate-300">
+                  DSGVO / DATENSCHUTZ-RECHTE
+                </span>
+                <button
+                  type="button"
+                  onClick={onOpenLegal}
+                  className="text-[11px] text-amber-400 hover:underline"
+                >
+                  Rechtliche Hinweise
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportData}
+                  disabled={isExporting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{isExporting ? 'Exportiere ...' : 'Daten exportieren (JSON)'}</span>
+                </button>
+
+                {!showDeleteConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-800/50 text-xs font-mono transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Konto löschen</span>
+                  </button>
+                ) : (
+                  <div className="w-full p-3 rounded-lg bg-red-950/60 border border-red-500/50 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-red-200 font-semibold">
+                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Konto unwiderruflich löschen?</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Bitte bestätige mit deinem Passwort. Alle Kontodaten, Sitzungen und Leaderboard-Einträge werden sofort entfernt.
+                    </p>
+                    {deleteError && (
+                      <div className="text-xs text-red-400 font-mono">{deleteError}</div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        placeholder="Dein Passwort"
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-red-500/40 text-xs font-mono text-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleDeleteAccountSubmit}
+                        disabled={isDeleting}
+                        className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs font-mono cursor-pointer"
+                      >
+                        {isDeleting ? 'Löschen ...' : 'Endgültig löschen'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteConfirm(false);
+                          setDeletePassword('');
+                          setDeleteError(null);
+                        }}
+                        className="px-2 py-1.5 text-xs text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {exportFeedback && (
+                <div className="text-xs text-amber-400 font-mono">{exportFeedback}</div>
+              )}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">

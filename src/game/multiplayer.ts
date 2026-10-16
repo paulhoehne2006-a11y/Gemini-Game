@@ -153,7 +153,8 @@ export async function updateMultiplayerState(
  */
 export function connectLeaderboardSocket(
   onSync: (payload: LeaderboardPayload) => void,
-  onStatusChange?: (connected: boolean) => void
+  onStatusChange?: (connected: boolean) => void,
+  onSessionSuperseded?: (reason: string) => void
 ) {
   let ws: WebSocket | null = null;
   let reconnectTimer: number | null = null;
@@ -168,6 +169,10 @@ export function connectLeaderboardSocket(
 
       ws.onopen = () => {
         onStatusChange?.(true);
+        const storedToken = localStorage.getItem('na_auth_token');
+        if (storedToken && ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'auth:bind_session', token: storedToken }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -175,6 +180,11 @@ export function connectLeaderboardSocket(
           const msg = JSON.parse(event.data);
           if (msg.type === 'leaderboard:sync' && msg.data) {
             onSync(msg.data);
+          } else if (msg.type === 'auth:session_superseded') {
+            onSessionSuperseded?.(
+              msg.reason ||
+                'Dein Account wurde auf einem anderen Gerät angemeldet. Aus Sicherheitsgründen kann immer nur 1 Gerät aktiv sein.'
+            );
           }
         } catch {}
       };
@@ -209,6 +219,11 @@ export function connectLeaderboardSocket(
     }) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'player:presence', ...presence }));
+      }
+    },
+    bindSession: (token: string) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'auth:bind_session', token }));
       }
     },
     disconnect: () => {

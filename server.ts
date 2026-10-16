@@ -45,6 +45,38 @@ function isAuthRateLimited(req: express.Request): boolean {
   return current.count > AUTH_RATE_LIMIT_MAX;
 }
 
+interface ClientMeta {
+  playerName?: string;
+  clanTag?: string;
+  accountId?: string;
+  sessionToken?: string;
+}
+
+const connectedClients = new Map<WebSocket, ClientMeta>();
+
+function notifySessionSuperseded(accountId: string, currentSessionToken?: string, reason?: string) {
+  const payload = JSON.stringify({
+    type: 'auth:session_superseded',
+    reason:
+      reason ||
+      'Dein Account wurde auf einem anderen Gerät angemeldet. Aus Sicherheitsgründen kann immer nur 1 aktives Gerät eingeloggt sein.',
+  });
+
+  connectedClients.forEach((meta, client) => {
+    // Only kick connections for this account that have a DIFFERENT session token (i.e. another login/device)
+    if (
+      meta.accountId === accountId &&
+      (!currentSessionToken || (meta.sessionToken && meta.sessionToken !== currentSessionToken)) &&
+      client.readyState === WebSocket.OPEN
+    ) {
+      try {
+        client.send(payload);
+        client.close(4001, 'Session superseded');
+      } catch {}
+    }
+  });
+}
+
 function parseCookies(req: express.Request): Record<string, string> {
   const header = req.headers.cookie;
   if (!header) return {};
@@ -57,30 +89,44 @@ function parseCookies(req: express.Request): Record<string, string> {
   );
 }
 
+function extractRequestToken(req: express.Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const candidate = authHeader.slice(7).trim();
+    if (candidate) return candidate;
+  }
+  return parseCookies(req)[authConfig.cookieName];
+}
+
 function setSessionCookie(res: express.Response, token: string, expiresAt: string): void {
+  const isSecure = authConfig.secureCookie;
+  // Use SameSite=None when secure for iframe embedding, otherwise Lax for local development
+  const sameSite = isSecure ? 'None' : 'Lax';
   const attributes = [
     `${authConfig.cookieName}=${encodeURIComponent(token)}`,
     'HttpOnly',
     'Path=/',
     `Expires=${new Date(expiresAt).toUTCString()}`,
     `Max-Age=${Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000))}`,
-    'SameSite=Strict',
+    `SameSite=${sameSite}`,
   ];
-  if (authConfig.secureCookie) attributes.push('Secure');
+  if (isSecure) attributes.push('Secure');
   res.setHeader('Set-Cookie', attributes.join('; '));
 }
 
 function clearSessionCookie(res: express.Response): void {
+  const isSecure = authConfig.secureCookie;
+  const sameSite = isSecure ? 'None' : 'Lax';
   res.setHeader(
     'Set-Cookie',
-    `${authConfig.cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict${
-      authConfig.secureCookie ? '; Secure' : ''
+    `${authConfig.cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=${sameSite}${
+      isSecure ? '; Secure' : ''
     }`
   );
 }
 
 function currentAccount(req: express.Request) {
-  const token = parseCookies(req)[authConfig.cookieName];
+  const token = extractRequestToken(req);
   return token ? authStore.getAccountBySession(token) : null;
 }
 
@@ -104,7 +150,8 @@ app.post('/api/auth/register', (req, res) => {
     );
     const session = authStore.createSession(account.id, authConfig.sessionTtlMs);
     setSessionCookie(res, session.token, session.expiresAt);
-    res.status(201).json({ success: true, account });
+    notifySessionSuperseded(account.id, session.token);
+    res.status(201).json({ success: true, account, token: session.token });
   } catch (error) {
     if (error instanceof AuthConflictError || error instanceof AuthValidationError) {
       return res.status(error instanceof AuthConflictError ? 409 : 400).json({ error: error.message });
@@ -120,7 +167,8 @@ app.post('/api/auth/login', (req, res) => {
   if (!account) return res.status(401).json({ error: 'Benutzername oder Passwort ist ungültig.' });
   const session = authStore.createSession(account.id, authConfig.sessionTtlMs);
   setSessionCookie(res, session.token, session.expiresAt);
-  res.json({ success: true, account });
+  notifySessionSuperseded(account.id, session.token);
+  res.json({ success: true, account, token: session.token });
 });
 
 app.get('/api/auth/me', requireAccount, (req, res) => {
@@ -128,10 +176,55 @@ app.get('/api/auth/me', requireAccount, (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  const token = parseCookies(req)[authConfig.cookieName];
+  const token = extractRequestToken(req);
   if (token) authStore.revokeSession(token);
   clearSessionCookie(res);
   res.json({ success: true });
+});
+
+// DSGVO / GDPR Auskunftsrecht & Datenexport
+app.get('/api/auth/export', requireAccount, (req, res) => {
+  const accountId = (res.locals.account as { id: string }).id;
+  const data = authStore.exportAccountData(accountId);
+  if (!data) return res.status(404).json({ error: 'Kontodaten nicht gefunden.' });
+  
+  // Also include player leaderboard entry if exists
+  const leaderboardEntry = state.leaderboard.find(
+    (p) => p.name.toLowerCase() === res.locals.account.username.toLowerCase()
+  );
+
+  res.json({
+    account: data,
+    operatorProfile: leaderboardEntry || null,
+    exportedAt: new Date().toISOString(),
+  });
+});
+
+// DSGVO / GDPR Recht auf Vergessenwerden: Kontolöschung
+app.post('/api/auth/delete', requireAccount, (req, res) => {
+  const account = res.locals.account as { id: string; username: string };
+  const password = String(req.body?.password || '');
+  if (!password) {
+    return res.status(400).json({ error: 'Zur Kontolöschung ist die Eingabe deines Passworts erforderlich.' });
+  }
+
+  const success = authStore.deleteAccount(account.id, password);
+  if (!success) {
+    return res.status(403).json({ error: 'Das eingegebene Passwort ist nicht korrekt.' });
+  }
+
+  // Remove player from active leaderboard & broadcast
+  state.leaderboard = state.leaderboard.filter(
+    (p) => p.name.toLowerCase() !== account.username.toLowerCase()
+  );
+  sortAndSaveLeaderboard();
+  broadcastLeaderboardSync();
+
+  // Terminate any connected WebSocket for this account
+  notifySessionSuperseded(account.id, 'Dein Konto wurde erfolgreich und unwiderruflich gelöscht.');
+
+  clearSessionCookie(res);
+  res.json({ success: true, message: 'Konto und alle zugehörigen Daten wurden gelöscht.' });
 });
 
 // Initialize Gemini Client
@@ -295,7 +388,6 @@ const rooms: Record<string, Room> = {};
 
 // WebSocket Server for Real-Time Leaderboard & Friends Presence Sync
 const wss = new WebSocketServer({ server, path: '/ws' });
-const connectedClients = new Map<WebSocket, { playerName?: string; clanTag?: string }>();
 
 function getPublicLeaderboardPayload() {
   const now = Date.now();
@@ -345,13 +437,50 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      // Bind session for cross-device single-active-session revocation
+      if (msg.type === 'auth:bind_session' && typeof msg.token === 'string') {
+        const accountId = authStore.getAccountIdBySession(msg.token);
+        if (accountId) {
+          // Invalidate and notify any other active connection for the same account on a DIFFERENT device (different token)
+          connectedClients.forEach((meta, client) => {
+            if (
+              client !== ws &&
+              meta.accountId === accountId &&
+              meta.sessionToken &&
+              meta.sessionToken !== msg.token &&
+              client.readyState === WebSocket.OPEN
+            ) {
+              try {
+                client.send(
+                  JSON.stringify({
+                    type: 'auth:session_superseded',
+                    reason:
+                      'Dein Account wurde auf einem anderen Gerät angemeldet. Aus Sicherheitsgründen kann immer nur 1 aktives Gerät eingeloggt sein.',
+                  })
+                );
+                client.close(4001, 'Session superseded');
+              } catch {}
+            }
+          });
+
+          const currentMeta = connectedClients.get(ws) || {};
+          currentMeta.accountId = accountId;
+          currentMeta.sessionToken = msg.token;
+          connectedClients.set(ws, currentMeta);
+        }
+      }
+
       if (msg.type === 'player:presence' && msg.playerName) {
         const cleanName = String(msg.playerName).trim().slice(0, 22);
         const cleanTag = String(msg.clanTag || '')
           .trim()
           .toUpperCase()
           .slice(0, 6);
-        connectedClients.set(ws, { playerName: cleanName, clanTag: cleanTag });
+        const meta = connectedClients.get(ws) || {};
+        meta.playerName = cleanName;
+        meta.clanTag = cleanTag;
+        connectedClients.set(ws, meta);
 
         const existing = state.leaderboard.find(
           (p) => p.name.toLowerCase() === cleanName.toLowerCase()

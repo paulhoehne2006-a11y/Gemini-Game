@@ -26,7 +26,9 @@ import {
   updateMultiplayerState,
   submitScore,
   registerOperatorProfile,
+  connectLeaderboardSocket,
 } from './game/multiplayer';
+import { ShieldAlert } from 'lucide-react';
 import {
   WEAPONS,
   INITIAL_WEAPON_UPGRADES,
@@ -41,6 +43,7 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [sessionSupersededNotice, setSessionSupersededNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('battle');
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
@@ -175,10 +178,21 @@ export default function App() {
 
   const handleAuthenticated = (user: AuthUser) => {
     setAuthError(null);
+    setSessionSupersededNotice(null);
     setAuthUser(user);
     const identity = user.displayName || user.username || user.email;
-    if (identity && localStorage.getItem('na_operator_registered') !== 'true') {
-      setPlayerName(identity.slice(0, 20));
+    if (identity) {
+      const cleanName = identity.slice(0, 20);
+      setPlayerName(cleanName);
+      localStorage.setItem('na_player_name', cleanName);
+      localStorage.setItem('na_operator_registered', 'true');
+      setIsOperatorRegistered(true);
+      setShowProfileModal(false);
+      registerOperatorProfile({
+        name: cleanName,
+        clanTag: clanTag || '61267',
+        city: playerCity || 'Neu-Anspach',
+      }).catch(() => {});
     }
   };
 
@@ -693,6 +707,24 @@ export default function App() {
   if (!authUser) {
     return (
       <>
+        {sessionSupersededNotice && (
+          <div
+            role="alert"
+            className="fixed top-4 left-1/2 z-50 -translate-x-1/2 w-11/12 max-w-md rounded-2xl border border-amber-500/50 bg-amber-950/95 p-4 text-xs text-amber-100 shadow-2xl flex items-start gap-3 backdrop-blur-md"
+          >
+            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-bold text-amber-300">Sitzung auf diesem Gerät beendet</div>
+              <div className="text-amber-200/90 mt-0.5">{sessionSupersededNotice}</div>
+            </div>
+            <button
+              onClick={() => setSessionSupersededNotice(null)}
+              className="text-amber-400 hover:text-white text-xs font-mono font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <AuthScreen onAuthenticated={handleAuthenticated} />
         {authError && (
           <div role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-red-500/40 bg-red-950/90 px-4 py-3 text-xs text-red-100 shadow-xl">
@@ -715,6 +747,7 @@ export default function App() {
           onComplete={handleCompleteOnboarding}
           onOpenLegal={() => setShowLegalModal(true)}
           onClose={isOperatorRegistered ? () => setShowProfileModal(false) : undefined}
+          onLogout={handleLogout}
         />
       )}
 

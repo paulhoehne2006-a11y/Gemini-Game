@@ -16,6 +16,7 @@ export interface LegalConsentRecord {
 interface AuthResponse {
   user?: AuthUser;
   account?: AuthUser;
+  token?: string;
   error?: string;
 }
 
@@ -29,18 +30,44 @@ export class AuthRequestError extends Error {
   }
 }
 
+export const AUTH_TOKEN_KEY = 'na_auth_token';
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredToken(token: string): void {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {}
+}
+
+export function removeStoredToken(): void {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {}
+}
+
 function normalizeUser(response: AuthResponse): AuthUser | null {
   return response.user || response.account || null;
 }
 
 async function requestAuth(path: string, init?: RequestInit): Promise<AuthResponse> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+
   const response = await fetch(path, {
     ...init,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
+    headers,
   });
 
   let body: AuthResponse = {};
@@ -51,7 +78,14 @@ async function requestAuth(path: string, init?: RequestInit): Promise<AuthRespon
   }
 
   if (!response.ok) {
-    throw new AuthRequestError(body.error || 'Die Anmeldung konnte nicht verarbeitet werden.', response.status);
+    if (response.status === 401) {
+      removeStoredToken();
+    }
+    throw new AuthRequestError(body.error || 'Die Anfrage konnte nicht verarbeitet werden.', response.status);
+  }
+
+  if (body.token) {
+    setStoredToken(body.token);
   }
 
   return body;
@@ -67,12 +101,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function login(username: string, password: string): Promise<AuthUser> {
-  const user = normalizeUser(
-    await requestAuth('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, email: username, password }),
-    })
-  );
+  const res = await requestAuth('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, email: username, password }),
+  });
+  const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Anmeldung hat kein Benutzerkonto zurückgegeben.', 502);
   return user;
 }
@@ -82,16 +115,47 @@ export async function register(
   password: string,
   legalConsent: LegalConsentRecord
 ): Promise<AuthUser> {
-  const user = normalizeUser(
-    await requestAuth('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ username, email: username, password, legalConsent }),
-    })
-  );
+  const res = await requestAuth('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, email: username, password, legalConsent }),
+  });
+  const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);
   return user;
 }
 
 export async function logout(): Promise<void> {
-  await requestAuth('/api/auth/logout', { method: 'POST' });
+  try {
+    await requestAuth('/api/auth/logout', { method: 'POST' });
+  } finally {
+    removeStoredToken();
+  }
+}
+
+export async function exportUserData(): Promise<any> {
+  const res = await fetch('/api/auth/export', {
+    credentials: 'include',
+    headers: {
+      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
+    },
+  });
+  if (!res.ok) throw new Error('Export fehlgeschlagen.');
+  return await res.json();
+}
+
+export async function deleteUserAccount(password: string): Promise<void> {
+  const res = await fetch('/api/auth/delete', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
+    },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Kontolöschung fehlgeschlagen.');
+  }
+  removeStoredToken();
 }
