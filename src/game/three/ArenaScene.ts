@@ -136,6 +136,28 @@ export interface WaveInfo {
   bossInfo?: { name: string; health: number; maxHealth: number } | null;
 }
 
+export interface ControlSettings {
+  forward: string;
+  backward: string;
+  left: string;
+  right: string;
+  reload: string;
+  jump: string;
+  sprint: string;
+  crouch: string;
+}
+
+export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
+  forward: 'w',
+  backward: 's',
+  left: 'a',
+  right: 'd',
+  reload: 'r',
+  jump: ' ',
+  sprint: 'shift',
+  crouch: 'control',
+};
+
 export interface GameEventCallbacks {
   onHealthChange: (hp: number, maxHp: number, shield: number, maxShield: number) => void;
   onKillsChange: (kills: number) => void;
@@ -196,6 +218,9 @@ export class ArenaSceneManager {
   private camera: THREE.PerspectiveCamera;
   private callbacks: GameEventCallbacks;
   private peacefulMode: boolean;
+  private trainingMode: boolean;
+  private mouseSensitivity: number;
+  private controls: ControlSettings;
 
   private clock = new THREE.Clock();
   private animationFrameId: number | null = null;
@@ -314,6 +339,9 @@ export class ArenaSceneManager {
       maxHpBonus?: number;
       speedMultiplier?: number;
       peacefulMode?: boolean;
+      trainingMode?: boolean;
+      mouseSensitivity?: number;
+      controls?: Partial<ControlSettings>;
       weaponUpgrades?: AllWeaponsUpgrades;
     } = {}
   ) {
@@ -321,6 +349,9 @@ export class ArenaSceneManager {
     this.currentArenaId = arenaId;
     this.callbacks = callbacks;
     this.peacefulMode = !!initialPerks.peacefulMode;
+    this.trainingMode = !!initialPerks.trainingMode;
+    this.mouseSensitivity = THREE.MathUtils.clamp(initialPerks.mouseSensitivity ?? 1, 0.25, 3);
+    this.controls = { ...DEFAULT_CONTROL_SETTINGS, ...(initialPerks.controls || {}) };
     if (initialPerks.weaponUpgrades) {
       this.weaponUpgrades = JSON.parse(JSON.stringify(initialPerks.weaponUpgrades));
       if (this.weaponUpgrades[this.currentWeapon.id]) {
@@ -427,7 +458,7 @@ export class ArenaSceneManager {
     });
     this.stormMesh = new THREE.Mesh(stormGeo, stormMat);
     this.stormMesh.position.y = 14;
-    this.stormMesh.visible = !this.peacefulMode;
+    this.stormMesh.visible = !this.peacefulMode && !this.trainingMode;
     this.scene.add(this.stormMesh);
 
     // 8. Target Highlight Reticle above Active Enemy
@@ -449,6 +480,8 @@ export class ArenaSceneManager {
     // 10. Spawn Wehrheim Invaders Wave OR Peaceful Neu-Anspach Taler Exploration Coins
     if (this.peacefulMode) {
       this.spawnPeacefulCityTaler();
+    } else if (this.trainingMode) {
+      this.spawnTrainingTargets();
     } else {
       this.spawnWehrheimerWave(this.wave);
     }
@@ -578,7 +611,7 @@ export class ArenaSceneManager {
   public addCameraLookDelta(dxPixels: number, dyPixels: number) {
     const clampedDx = THREE.MathUtils.clamp(dxPixels, -60, 60);
     const clampedDy = THREE.MathUtils.clamp(dyPixels, -60, 60);
-    const sensitivity = 0.0042;
+    const sensitivity = 0.0042 * this.mouseSensitivity;
 
     this.cameraYaw -= clampedDx * sensitivity;
     // Wrap cameraYaw cleanly in [-PI, PI] so it never overflows or bugs out!
@@ -925,6 +958,11 @@ export class ArenaSceneManager {
     this.refreshPlayer3DWeapon();
   }
 
+  public setInputSettings(mouseSensitivity: number, controls: Partial<ControlSettings>) {
+    this.mouseSensitivity = THREE.MathUtils.clamp(mouseSensitivity, 0.25, 3);
+    this.controls = { ...this.controls, ...controls };
+  }
+
   public requestLock() {
     if (!this.isGameOver && !this.isPaused && !this.peacefulMode) {
       try {
@@ -983,24 +1021,24 @@ export class ArenaSceneManager {
         e.preventDefault();
       }
 
-      if (e.code === 'Space') {
+      if (this.isKey(e, this.controls.jump)) {
         e.preventDefault();
         this.triggerJump();
       }
 
-      if (!e.repeat && lowerKey === 'r') {
+      if (!e.repeat && this.isKey(e, this.controls.reload)) {
         this.reloadWeapon();
       }
 
       // SHIFT = SPRINT
-      if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      if (this.isKey(e, this.controls.sprint)) {
         this.isSprinting = true;
         this.crouchToggle = false;
         this.isCrouching = false;
       }
 
       // STRG (Control) = CROUCH (Hold)
-      if (e.key === 'Control' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+      if (this.isKey(e, this.controls.crouch)) {
         e.preventDefault();
         this.isCrouching = true;
         this.isSprinting = false;
@@ -1033,10 +1071,10 @@ export class ArenaSceneManager {
       const lowerKey = e.key.toLowerCase();
       this.keys[lowerKey] = false;
 
-      if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      if (this.isKey(e, this.controls.sprint)) {
         this.isSprinting = false;
       }
-      if (e.key === 'Control' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+      if (this.isKey(e, this.controls.crouch)) {
         this.crouchToggle = false;
         this.isCrouching = false;
       }
@@ -1085,12 +1123,13 @@ export class ArenaSceneManager {
       dy = THREE.MathUtils.clamp(dy, -65, 65);
 
       if (dx !== 0 || dy !== 0) {
-        const sensitivity = this.isAiming ? 0.0018 : 0.0028;
+        const sensitivity = (this.isAiming ? 0.0018 : 0.0028) * this.mouseSensitivity;
         this.cameraYaw -= dx * sensitivity;
         // Normalize yaw to [-PI, PI] so continuous 360° rotation never overflows or glitches
         this.cameraYaw = Math.atan2(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw));
         this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + dy * sensitivity, -0.52, 1.12);
       }
+
     };
     window.addEventListener('mousemove', onMouseMove);
     this.cleanupListeners.push(() => window.removeEventListener('mousemove', onMouseMove));
@@ -1128,6 +1167,47 @@ export class ArenaSceneManager {
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
     window.addEventListener('contextmenu', onContextMenu);
     this.cleanupListeners.push(() => window.removeEventListener('contextmenu', onContextMenu));
+  }
+
+  private isKey(event: KeyboardEvent, binding: string): boolean {
+    const normalized = binding.toLowerCase();
+    if (normalized === ' ') return event.code === 'Space';
+    if (normalized === 'shift') return event.key === 'Shift' || event.code.startsWith('Shift');
+    if (normalized === 'control' || normalized === 'ctrl') {
+      return event.key === 'Control' || event.code.startsWith('Control');
+    }
+    return event.key.toLowerCase() === normalized || event.code.toLowerCase() === normalized;
+  }
+
+  private spawnTrainingTargets() {
+    const targetCount = 6;
+    this.currentWaveTotalEnemies = targetCount;
+    for (let i = 0; i < targetCount; i++) {
+      const x = (i - (targetCount - 1) / 2) * 4.2;
+      const z = -8 - (i % 2) * 3;
+      const mesh = createWehrheimerMesh('flanker');
+      mesh.position.set(x, 0, z);
+      this.scene.add(mesh);
+      this.agents.push({
+        id: `training_${i}`,
+        role: 'flanker',
+        name: `Zielscheibe ${i + 1}`,
+        faction: 'wehrheim',
+        mesh,
+        position: new THREE.Vector3(x, 0, z),
+        velocity: new THREE.Vector3(),
+        health: 100,
+        maxHealth: 100,
+        speed: 0,
+        damage: 0,
+        range: 0,
+        attackCooldown: 999,
+        currentOrder: 'Bewegt sich auf der Schießbahn',
+        lastBark: '',
+        lastBarkTime: 0,
+      });
+    }
+    this.notifyWaveState();
   }
 
   public firePlayerWeapon() {
@@ -1429,12 +1509,15 @@ export class ArenaSceneManager {
     }
 
     this.updatePlayer(delta, elapsed);
-    if (!this.peacefulMode) {
+    if (!this.peacefulMode && !this.trainingMode) {
       this.updateStormZone(delta);
       this.updateAgents(delta, elapsed);
       this.updateTargeting();
-      this.updateBullets(delta);
+    } else if (this.trainingMode) {
+      this.updateAgents(delta, elapsed);
+      this.updateTargeting();
     }
+    this.updateBullets(delta);
     this.updateAllies(delta, elapsed);
     this.updateFloatingDamages(delta);
     this.updateImpactParticles(delta);
@@ -1526,10 +1609,10 @@ export class ArenaSceneManager {
     _forward.set(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw)).normalize();
     _right.set(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw)).normalize();
 
-    if (this.keys['w'] || this.keys['arrowup']) _playerMove.add(_forward);
-    if (this.keys['s'] || this.keys['arrowdown']) _playerMove.sub(_forward);
-    if (this.keys['a'] || this.keys['arrowleft']) _playerMove.sub(_right);
-    if (this.keys['d'] || this.keys['arrowright']) _playerMove.add(_right);
+    if (this.keys[this.controls.forward] || this.keys['arrowup']) _playerMove.add(_forward);
+    if (this.keys[this.controls.backward] || this.keys['arrowdown']) _playerMove.sub(_forward);
+    if (this.keys[this.controls.left] || this.keys['arrowleft']) _playerMove.sub(_right);
+    if (this.keys[this.controls.right] || this.keys['arrowright']) _playerMove.add(_right);
 
     // Combine with Mobile Virtual Analog Thumbstick (supports analog slow walking!)
     let inputMagnitude = 1.0;
@@ -1777,6 +1860,16 @@ export class ArenaSceneManager {
     for (let i = this.agents.length - 1; i >= 0; i--) {
       const ag = this.agents[i];
 
+      if (this.trainingMode) {
+        const lane = i - (this.agents.length - 1) / 2;
+        ag.position.x = lane * 4.2 + Math.sin(elapsed * 0.9 + i) * 4;
+        ag.position.z = -8 - (i % 2) * 3 + Math.cos(elapsed * 0.7 + i) * 1.5;
+        ag.mesh.position.copy(ag.position);
+        ag.mesh.lookAt(this.playerPos.x, ag.position.y, this.playerPos.z);
+        animateCharacterRig(ag.mesh, elapsed + i * 0.7, true, 0, 0.85);
+        continue;
+      }
+
       let targetPos = this.playerPos;
       let minDist = ag.position.distanceTo(this.playerPos);
 
@@ -1951,6 +2044,19 @@ export class ArenaSceneManager {
             this.bullets.splice(i, 1);
 
             if (ag.health <= 0) {
+              if (this.trainingMode) {
+                this.score += 50;
+                this.kills += 1;
+                this.callbacks.onKillsChange(this.kills);
+                this.callbacks.onScoreChange(this.score);
+                soundFx.playKill();
+                ag.health = ag.maxHealth;
+                ag.position.x = (Math.random() - 0.5) * 18;
+                ag.position.z = -8 - Math.random() * 5;
+                ag.mesh.position.copy(ag.position);
+                this.notifyWaveState();
+                continue;
+              }
               this.awardExperience(100);
               this.kills += 1;
               this.score += ag.role === 'boss' ? 500 : 100;

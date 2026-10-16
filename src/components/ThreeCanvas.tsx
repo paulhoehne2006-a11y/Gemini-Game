@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArenaSceneManager, TargetInfo, AllyStatusInfo, WaveInfo } from '../game/three/ArenaScene';
+import {
+  ArenaSceneManager,
+  ControlSettings,
+  DEFAULT_CONTROL_SETTINGS,
+  TargetInfo,
+  AllyStatusInfo,
+  WaveInfo,
+} from '../game/three/ArenaScene';
 import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from '../game/three/arenas';
 import { WEAPONS, getEffectiveWeaponStats, INITIAL_WEAPON_UPGRADES } from '../game/weapons';
 import { WeaponAttachments, AllWeaponsUpgrades } from '../types';
@@ -23,6 +30,8 @@ import {
   Lock,
   Unlock,
   Trophy,
+  Settings,
+  Keyboard,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 import { DailyMissionsState } from '../game/missions';
@@ -164,6 +173,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     stats: { kills: number; score: number; wave: number };
   } | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [isTrainingMode, setIsTrainingMode] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [mouseSensitivity, setMouseSensitivity] = useState(() => {
+    const saved = localStorage.getItem('na_mouse_sensitivity');
+    return saved ? Number(saved) : 1;
+  });
+  const [controlSettings, setControlSettings] = useState<ControlSettings>(() => {
+    try {
+      const saved = localStorage.getItem('na_control_settings');
+      return saved ? { ...DEFAULT_CONTROL_SETTINGS, ...JSON.parse(saved) } : DEFAULT_CONTROL_SETTINGS;
+    } catch {
+      return DEFAULT_CONTROL_SETTINGS;
+    }
+  });
+  const [capturingControl, setCapturingControl] = useState<keyof ControlSettings | null>(null);
 
   const maxHpBonus = (unlockedFacilities.waldschwimmbad || 0) * 15;
   const speedMultiplier = 1 + (unlockedFacilities.breitband || 0) * 0.05;
@@ -307,7 +331,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           setStance(nextStance);
         },
       },
-      { maxHpBonus, speedMultiplier, peacefulMode: isMobileMode, weaponUpgrades }
+      {
+        maxHpBonus,
+        speedMultiplier,
+        peacefulMode: isMobileMode,
+        trainingMode: isTrainingMode,
+        mouseSensitivity,
+        controls: controlSettings,
+        weaponUpgrades,
+      }
     );
 
     managerRef.current = manager;
@@ -316,7 +348,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       manager.destroy();
       managerRef.current = null;
     };
-  }, [currentArena, matchRound, isMobileMode]);
+  }, [currentArena, matchRound, isMobileMode, isTrainingMode]);
+
+  useEffect(() => {
+    managerRef.current?.setInputSettings(mouseSensitivity, controlSettings);
+  }, [mouseSensitivity, controlSettings]);
 
   useEffect(() => {
     if (isMobileMode || isMultiplayerMatch) return;
@@ -482,6 +518,43 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const activeArenaDef = ARENAS[currentArena] || ARENAS.hessenpark;
   const activeWeaponObj = WEAPONS[activeWeapon] || WEAPONS.bembel;
   const activeWeaponStats = getEffectiveWeaponStats(activeWeaponObj, weaponUpgrades[activeWeapon]);
+  const controlLabels: Record<keyof ControlSettings, string> = {
+    forward: 'Vorwärts',
+    backward: 'Rückwärts',
+    left: 'Links',
+    right: 'Rechts',
+    reload: 'Nachladen',
+    jump: 'Springen',
+    sprint: 'Sprint',
+    crouch: 'Ducken',
+  };
+
+  const displayBinding = (binding: string) => (binding === ' ' ? 'LEERTASTE' : binding.toUpperCase());
+
+  const toggleTrainingMode = () => {
+    managerRef.current?.unlockPointer();
+    setIsTrainingMode((active) => !active);
+    setIsPaused(false);
+    onMatchStateChange?.('active');
+  };
+
+  const updateSensitivity = (value: number) => {
+    const next = Math.min(3, Math.max(0.25, value));
+    setMouseSensitivity(next);
+    localStorage.setItem('na_mouse_sensitivity', String(next));
+  };
+
+  const captureControl = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!capturingControl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const binding =
+      event.key === ' ' ? ' ' : event.key === 'Shift' ? 'shift' : event.key === 'Control' ? 'control' : event.key.toLowerCase();
+    const next = { ...controlSettings, [capturingControl]: binding };
+    setControlSettings(next);
+    localStorage.setItem('na_control_settings', JSON.stringify(next));
+    setCapturingControl(null);
+  };
 
   return (
     <div
@@ -526,6 +599,34 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           )}
         </div>
       </div>
+
+      {!isMobileMode && (
+        <div className="absolute top-2 right-4 z-30 flex items-center gap-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={toggleTrainingMode}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide shadow-lg transition-colors ${
+              isTrainingMode
+                ? 'border-emerald-300 bg-emerald-500 text-slate-950'
+                : 'border-white/15 bg-slate-950/85 text-slate-200 hover:border-emerald-400 hover:text-emerald-300'
+            }`}
+          >
+            <Target className="h-3.5 w-3.5" />
+            {isTrainingMode ? 'Schießstand aktiv' : 'Schießstand'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              managerRef.current?.unlockPointer();
+              setShowSettings(true);
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-slate-950/85 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-200 shadow-lg transition-colors hover:border-amber-400 hover:text-amber-300"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Einstellungen
+          </button>
+        </div>
+      )}
 
       {/* ===================================================================== */}
       {/* MODE A: MOBILE EXPLORATION HUD (OHNE BATTLE ROYALE!)                  */}
@@ -652,7 +753,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         /* ===================================================================== */
         <>
           {/* WAVE ANNOUNCEMENT BANNER (TOP CENTER) */}
-          {waveInfo && (
+          {isTrainingMode ? (
+            <div className="absolute top-11 left-1/2 z-20 flex w-full max-w-lg -translate-x-1/2 flex-col items-center px-4 pointer-events-none">
+              <div className="flex w-full items-center justify-between rounded-2xl border border-emerald-400/50 bg-slate-950/90 px-4 py-2 shadow-xl backdrop-blur-md">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-black tracking-wide text-emerald-300">
+                    <Target className="h-4 w-4" />
+                    SCHIESSSTAND
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-300">Keine Gegner greifen an · bewegte Ziele zum Testen</div>
+                </div>
+                <div className="text-right font-mono">
+                  <div className="text-[10px] uppercase text-slate-400">Treffer</div>
+                  <div className="text-lg font-black tabular-nums text-white">{kills}</div>
+                </div>
+              </div>
+            </div>
+          ) : waveInfo && (
             <div className="absolute top-11 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-lg px-4">
               {waveInfo.status === 'cleared' ? (
                 <div className="flex flex-col items-center gap-1 p-2.5 rounded-2xl bg-amber-500/95 backdrop-blur-md text-slate-950 font-black shadow-2xl border border-white/50 text-center w-full">
@@ -885,10 +1002,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 shadow-xl text-white font-mono">
               <div className="flex flex-col items-end">
                 <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
-                  Taunus-Nebel ({zoneRadius}m)
+                  {isTrainingMode ? 'Freies Training' : `Taunus-Nebel (${zoneRadius}m)`}
                 </span>
                 <span className="text-sm font-black tabular-nums text-white">
-                  {zoneTimer > 0 ? `${zoneTimer}s` : 'ZONE VERENGT'}
+                  {isTrainingMode ? 'Keine Zone' : zoneTimer > 0 ? `${zoneTimer}s` : 'ZONE VERENGT'}
                 </span>
               </div>
               <div className="w-[1px] h-6 bg-slate-800" />
@@ -1202,6 +1319,102 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           );
         })}
       </div>
+
+      {showSettings && (
+        <div
+          className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border border-amber-400/40 bg-slate-900 p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={captureControl}
+            tabIndex={-1}
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-amber-400">
+                  <Settings className="h-4 w-4" />
+                  Steuerung & Maus
+                </div>
+                <h2 className="mt-1 text-2xl font-black text-white">Taktik-Einstellungen</h2>
+                <p className="mt-1 text-xs text-slate-400">Änderungen werden automatisch auf diesem Gerät gespeichert.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettings(false)}
+                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                aria-label="Einstellungen schließen"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mb-6 rounded-2xl border border-sky-400/20 bg-sky-950/30 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <label htmlFor="mouse-sensitivity" className="flex items-center gap-2 text-sm font-bold text-sky-200">
+                  <Crosshair className="h-4 w-4" />
+                  Maus-Sensitivität
+                </label>
+                <span className="rounded-lg bg-slate-950 px-2 py-1 font-mono text-sm font-black text-white">
+                  {mouseSensitivity.toFixed(2)}x
+                </span>
+              </div>
+              <input
+                id="mouse-sensitivity"
+                type="range"
+                min="0.25"
+                max="3"
+                step="0.05"
+                value={mouseSensitivity}
+                onChange={(event) => updateSensitivity(Number(event.target.value))}
+                className="w-full accent-sky-400"
+              />
+              <div className="mt-1 flex justify-between font-mono text-[10px] text-slate-500">
+                <span>Präzise</span>
+                <span>Schnell</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(controlLabels) as Array<keyof ControlSettings>).map((control) => (
+                <button
+                  key={control}
+                  type="button"
+                  onClick={() => setCapturingControl(control)}
+                  className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                    capturingControl === control
+                      ? 'border-amber-300 bg-amber-500/20 text-amber-200'
+                      : 'border-white/10 bg-slate-950/60 text-slate-200 hover:border-white/30'
+                  }`}
+                >
+                  <span className="text-xs font-bold">{controlLabels[control]}</span>
+                  <span className="flex items-center gap-1 rounded-md bg-slate-800 px-2 py-1 font-mono text-[10px] font-black text-amber-300">
+                    <Keyboard className="h-3 w-3" />
+                    {capturingControl === control ? 'DRÜCKEN…' : displayBinding(controlSettings[control])}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <span className="text-[10px] font-mono text-slate-500">Tipp: Klicke eine Taste und drücke danach die gewünschte Belegung.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setControlSettings(DEFAULT_CONTROL_SETTINGS);
+                  localStorage.setItem('na_control_settings', JSON.stringify(DEFAULT_CONTROL_SETTINGS));
+                  setMouseSensitivity(1);
+                  localStorage.setItem('na_mouse_sensitivity', '1');
+                }}
+                className="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-[10px] font-black uppercase text-slate-300 hover:bg-slate-700"
+              >
+                Zurücksetzen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isPaused && !isMultiplayerMatch && !gameOverState?.over && (
         <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
