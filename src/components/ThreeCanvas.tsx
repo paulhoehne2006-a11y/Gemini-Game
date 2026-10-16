@@ -23,18 +23,18 @@ import {
   Lock,
   Unlock,
   Trophy,
-  Award,
-  CheckCircle2,
-  Gift,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
-import { DailyMissionsState, DailyMission } from '../game/missions';
+import { DailyMissionsState } from '../game/missions';
 import { AgentRole } from '../game/agents/microAgents';
 
 interface ThreeCanvasProps {
   currentArena: string;
   onChangeArena: (arenaId: string) => void;
   onMatchComplete: (victory: boolean, stats: { kills: number; score: number; wave: number }) => void;
+  onMatchStateChange?: (state: 'active' | 'paused' | 'complete') => void;
+  isMultiplayerMatch?: boolean;
+  matchReward?: number;
   unlockedFacilities: Record<string, number>;
   latestCommanderBark?: string;
   commanderDirectives?: any;
@@ -63,13 +63,15 @@ interface ThreeCanvasProps {
   onStreakAchieved?: (count: number) => void;
   onWaveAdvanced?: (wave: number) => void;
   onOpenDailyMissions?: () => void;
-  onClaimDailyMission?: (missionId: string) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   currentArena,
   onChangeArena,
   onMatchComplete,
+  onMatchStateChange,
+  isMultiplayerMatch = false,
+  matchReward = 0,
   unlockedFacilities,
   latestCommanderBark,
   commanderDirectives,
@@ -91,7 +93,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onStreakAchieved,
   onWaveAdvanced,
   onOpenDailyMissions,
-  onClaimDailyMission,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<ArenaSceneManager | null>(null);
@@ -162,6 +163,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     victory: boolean;
     stats: { kills: number; score: number; wave: number };
   } | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
 
   const maxHpBonus = (unlockedFacilities.waldschwimmbad || 0) * 15;
   const speedMultiplier = 1 + (unlockedFacilities.breitband || 0) * 0.05;
@@ -186,6 +188,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     setCollectedRunTaler(0);
     setElevation(0);
     setGameOverState(null);
+    setIsPaused(false);
+    onMatchStateChange?.('active');
     setCurrentTarget(null);
     setKillStreakNotice(null);
     setLockedArenaPrompt(null);
@@ -241,6 +245,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         },
         onGameOver: (victory, stats) => {
           setGameOverState({ over: true, victory, stats });
+          setIsPaused(false);
+          onMatchStateChange?.('complete');
           onMatchComplete(victory, stats);
         },
         onCombatBark: () => {},
@@ -312,6 +318,24 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     };
   }, [currentArena, matchRound, isMobileMode]);
 
+  useEffect(() => {
+    if (isMobileMode || isMultiplayerMatch) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || gameOverState?.over) return;
+      event.preventDefault();
+      setIsPaused((paused) => {
+        const next = !paused;
+        managerRef.current?.setPaused(next);
+        onMatchStateChange?.(next ? 'paused' : 'active');
+        return next;
+      });
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [gameOverState?.over, isMobileMode, isMultiplayerMatch, onMatchStateChange]);
+
   // Sync live Cold War Gunsmith & Pack-a-Punch upgrades into running 3D scene
   useEffect(() => {
     if (managerRef.current && weaponUpgrades) {
@@ -361,6 +385,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       document.exitPointerLock?.();
     }
     setGameOverState(null);
+    setIsPaused(false);
+    onMatchStateChange?.('active');
     setMatchRound((prev) => prev + 1);
   };
 
@@ -1177,6 +1203,31 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         })}
       </div>
 
+      {isPaused && !isMultiplayerMatch && !gameOverState?.over && (
+        <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="max-w-sm w-full rounded-3xl border-2 border-amber-500/60 bg-slate-900 p-8 text-center shadow-2xl">
+            <div className="mb-2 text-xs font-mono font-black uppercase tracking-[0.25em] text-amber-400">
+              Einsatz pausiert
+            </div>
+            <h2 className="mb-3 text-3xl font-black text-white">Taktische Pause</h2>
+            <p className="mb-6 text-sm text-slate-300">
+              Die Arena ist eingefroren. Hub-Bereiche bleiben während des Einsatzes gesperrt.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                managerRef.current?.setPaused(false);
+                setIsPaused(false);
+                onMatchStateChange?.('active');
+              }}
+              className="w-full rounded-2xl bg-amber-500 py-3.5 text-xs font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-amber-400"
+            >
+              Einsatz fortsetzen
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* VICTORY ROYALE MODAL OVERLAY (PC Mode Only) */}
       {!isMobileMode && gameOverState?.over && (
         <div
@@ -1234,76 +1285,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
             </div>
 
-            {/* Daily Missions Progress Summary in Game Over Modal */}
-            {dailyMissionsState && (
-              <div className="mb-6 p-3.5 bg-slate-950 rounded-2xl border border-slate-800 text-left">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400">
-                    <Target className="w-3.5 h-3.5" />
-                    <span>TAGESBEFEHLE STATUS</span>
-                  </div>
-                  {onOpenDailyMissions && (
-                    <button
-                      type="button"
-                      onClick={onOpenDailyMissions}
-                      className="text-[10px] font-mono text-slate-400 hover:text-white underline cursor-pointer"
-                    >
-                      Alle ansehen
-                    </button>
-                  )}
+            <div className="mb-6 flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 text-left">
+              <div>
+                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-300">
+                  Einsatzbelohnung
                 </div>
-
-                <div className="space-y-2">
-                  {dailyMissionsState.missions.slice(0, 3).map((m) => {
-                    const isDone = m.completed;
-                    return (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between text-xs font-mono bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-white/5"
-                      >
-                        <div className="flex items-center gap-1.5 truncate max-w-[200px]">
-                          {isDone ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          ) : (
-                            <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                          )}
-                          <span
-                            className={`truncate text-[11px] ${
-                              isDone ? 'text-white font-bold' : 'text-slate-300'
-                            }`}
-                          >
-                            {m.title}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] text-slate-400 tabular-nums">
-                            {m.currentProgress}/{m.targetCount}
-                          </span>
-                          {isDone && !m.claimed && onClaimDailyMission ? (
-                            <button
-                              type="button"
-                              onClick={() => onClaimDailyMission(m.id)}
-                              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] cursor-pointer"
-                            >
-                              +{m.rewardNAT} NAT
-                            </button>
-                          ) : isDone && m.claimed ? (
-                            <span className="text-[10px] text-emerald-400 font-bold">
-                              Eingelöst
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-amber-400 font-bold">
-                              +{m.rewardNAT}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <div className="text-xs text-slate-300">Automatisch deinem NAT-Guthaben gutgeschrieben</div>
               </div>
-            )}
+              <div className="text-xl font-black tabular-nums text-emerald-400">+{matchReward} NAT</div>
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-2.5">
               {onOpenGunsmith && (

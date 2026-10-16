@@ -263,6 +263,7 @@ export class ArenaSceneManager {
   private currentFov = 68;
   private isPointerLocked = false;
   private isGameOver = false;
+  private isPaused = false;
   private lastMouseX = 0;
   private lastMouseY = 0;
   private hasValidLastMouse = false;
@@ -925,7 +926,7 @@ export class ArenaSceneManager {
   }
 
   public requestLock() {
-    if (!this.isGameOver && !this.peacefulMode) {
+    if (!this.isGameOver && !this.isPaused && !this.peacefulMode) {
       try {
         this.container.requestPointerLock?.();
       } catch {}
@@ -942,6 +943,18 @@ export class ArenaSceneManager {
     this.callbacks.onPointerLockChange(false);
   }
 
+  public setPaused(paused: boolean) {
+    if (this.isGameOver || this.peacefulMode) return;
+    this.isPaused = paused;
+    this.keys = {};
+    this.isMouseDown = false;
+    this.isSprinting = false;
+    this.isCrouching = false;
+    if (paused) {
+      this.unlockPointer();
+    }
+  }
+
   private initControls() {
     const onLockChange = () => {
       this.isPointerLocked = document.pointerLockElement === this.container;
@@ -952,7 +965,7 @@ export class ArenaSceneManager {
     this.cleanupListeners.push(() => document.removeEventListener('pointerlockchange', onLockChange));
 
     const onContainerClick = () => {
-      if (!this.isGameOver && !this.isPointerLocked && !this.peacefulMode) {
+      if (!this.isGameOver && !this.isPaused && !this.isPointerLocked && !this.peacefulMode) {
         try {
           this.container.requestPointerLock?.();
         } catch {}
@@ -1364,6 +1377,11 @@ export class ArenaSceneManager {
 
     const delta = Math.min(this.clock.getDelta(), 0.1);
     const elapsed = this.clock.getElapsedTime();
+
+    if (this.isPaused) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
 
     if (this.arenaUpdateFn) {
       this.arenaUpdateFn(delta);

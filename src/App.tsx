@@ -142,6 +142,8 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [lastMatchScore, setLastMatchScore] = useState(0);
   const [lastMatchKills, setLastMatchKills] = useState(0);
+  const [lastMatchReward, setLastMatchReward] = useState(0);
+  const [matchState, setMatchState] = useState<'inactive' | 'active' | 'paused' | 'complete'>('inactive');
 
   // Gemini Pro Master-Commander State
   const [isCommanderThinking, setIsCommanderThinking] = useState(false);
@@ -655,6 +657,7 @@ export default function App() {
     const scoreBonus = Math.round(stats.score * 0.06);
     const winBonus = victory ? 45 : 12;
     const reward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    setLastMatchReward(reward);
     setBudget((prev) => prev + reward);
 
     let nextWins = totalWins;
@@ -707,6 +710,9 @@ export default function App() {
   };
 
   const openTab = (tab: AppTab) => {
+    if (matchState === 'active' || matchState === 'paused') {
+      return;
+    }
     setActiveTab(tab);
     setShowHome(false);
   };
@@ -859,6 +865,7 @@ export default function App() {
           unclaimedMissionsCount={unclaimedMissionsCount}
           completedMissionsCount={completedMissionsCount}
           totalMissionsCount={dailyMissionsState.missions.length}
+          navigationDisabled={matchState === 'active' || matchState === 'paused'}
         />
       )}
 
@@ -947,14 +954,17 @@ export default function App() {
               currentArena={currentArena}
               onChangeArena={(arenaId) => setCurrentArena(arenaId)}
               onMatchComplete={handleMatchComplete}
+              onMatchStateChange={setMatchState}
+              isMultiplayerMatch={activeRoom !== null}
+              matchReward={lastMatchReward}
               unlockedFacilities={facilityLevels}
               latestCommanderBark={latestCommanderBark}
               commanderDirectives={commanderDirectives}
               isMobileMode={false}
               onCollectTaler={handleCollectTaler}
-              onOpenTycoon={() => setActiveTab('tycoon')}
-              onOpenGunsmith={() => setActiveTab('gunsmith')}
-              onOpenLeaderboard={() => setActiveTab('leaderboard')}
+              onOpenTycoon={() => openTab('tycoon')}
+              onOpenGunsmith={() => openTab('gunsmith')}
+              onOpenLeaderboard={() => openTab('leaderboard')}
               weaponUpgrades={weaponUpgrades}
               onLootAttachmentUpdate={handleLootAttachmentUpdate}
               totalWins={totalWins}
@@ -968,7 +978,6 @@ export default function App() {
               onStreakAchieved={handleStreakAchieved}
               onWaveAdvanced={handleWaveAdvanced}
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-              onClaimDailyMission={handleClaimMission}
             />
           )
         )}

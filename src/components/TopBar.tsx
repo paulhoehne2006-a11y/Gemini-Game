@@ -40,6 +40,7 @@ interface TopBarProps {
   unclaimedMissionsCount?: number;
   completedMissionsCount?: number;
   totalMissionsCount?: number;
+  navigationDisabled?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -61,6 +62,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   unclaimedMissionsCount = 0,
   completedMissionsCount = 0,
   totalMissionsCount = 4,
+  navigationDisabled = false,
 }) => {
   const toggleMute = () => {
     const next = soundFx.toggleMute();
@@ -123,7 +125,10 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (!navigationDisabled) setActiveTab(item.id);
+                }}
+                aria-disabled={navigationDisabled}
                 className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 border-b-2 ${
                   isActive
                     ? 'text-white border-amber-400 font-semibold'
@@ -266,7 +271,10 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               key={item.id}
               type="button"
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                if (!navigationDisabled) setActiveTab(item.id);
+              }}
+              aria-disabled={navigationDisabled}
               className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 isActive ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-white'
               }`}
