@@ -138,6 +138,9 @@ export interface GameEventCallbacks {
   onElevationChange?: (elevationMeters: number) => void;
   onToggleGunsmith?: () => void;
   onStanceChange?: (stance: 'standing' | 'sprinting' | 'crouching') => void;
+  onAmmoChange?: (magazine: number, reserve: number, capacity: number) => void;
+  onReloadStateChange?: (isReloading: boolean, secondsRemaining: number) => void;
+  onLevelChange?: (level: number, experience: number, experienceToNextLevel: number) => void;
   onEnemyKilled?: (details: {
     arenaId: string;
     role: AgentRole;
@@ -221,6 +224,13 @@ export class ArenaSceneManager {
   private totalWaves = 5;
   private waveIntermissionTimer = 0;
   private currentWaveTotalEnemies = 4;
+  private magazineAmmo = 0;
+  private reserveAmmo = 0;
+  private reloadTimer = 0;
+  private reloadDuration = 1.65;
+  private playerLevel = 1;
+  private playerExperience = 0;
+  private experienceToNextLevel = 500;
 
   // Over-The-Shoulder Camera (with spike-free mouse rotation & throttled compass telemetry)
   private cameraYaw = 0;
@@ -310,6 +320,7 @@ export class ArenaSceneManager {
       const cappedMult = 1 + Math.min(0.2, (initialPerks.speedMultiplier - 1) * 0.5);
       this.playerSpeed *= cappedMult;
     }
+    this.resetWeaponAmmo();
 
     // 1. Setup WebGL Renderer with Realistic Tone Mapping & Soft Shadows
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -419,6 +430,8 @@ export class ArenaSceneManager {
     // Initial HUD notifications
     this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
     this.callbacks.onAttachmentsChange?.({ ...this.attachments });
+    this.notifyAmmoState();
+    this.notifyLevelState();
 
     // Initialize camera position cleanly behind player
     this.camera.position.set(this.playerPos.x + 1.15, this.playerPos.y + 2.2, this.playerPos.z + 4.3);
@@ -757,7 +770,8 @@ export class ArenaSceneManager {
       mesh.position.set(spawnX, 0, spawnZ);
       this.scene.add(mesh);
 
-      const maxHp = role === 'boss' ? 480 : role === 'shocktrooper' ? 85 : role === 'sniper' ? 75 : 85;
+      const baseHp = role === 'boss' ? 600 : role === 'shocktrooper' ? 115 : role === 'sniper' ? 95 : 105;
+      const maxHp = Math.round(baseHp * (1 + (waveNumber - 1) * 0.08));
       // Realistic human enemy speeds (much slower and grounded!)
       const speed = role === 'flanker' ? 4.3 : role === 'shocktrooper' ? 4.6 : role === 'boss' ? 3.2 : 3.3;
       const damage = role === 'boss' ? 30 : role === 'sniper' ? 20 : 12;
@@ -807,12 +821,70 @@ export class ArenaSceneManager {
   public setWeapon(weaponKey: string) {
     if (WEAPONS[weaponKey]) {
       this.currentWeapon = WEAPONS[weaponKey];
+      this.reloadTimer = 0;
+      this.callbacks.onReloadStateChange?.(false, 0);
       if (this.weaponUpgrades[weaponKey]) {
         this.attachments = { ...this.weaponUpgrades[weaponKey].attachments };
       }
+      this.resetWeaponAmmo();
       this.refreshPlayer3DWeapon();
       this.callbacks.onAttachmentsChange?.({ ...this.attachments }, weaponKey);
     }
+  }
+
+  private getMagazineCapacity(): number {
+    const baseCapacity = this.currentWeapon.id === 'handkaes' ? 6 : this.currentWeapon.id === 'spritzer' ? 8 : 30;
+    return baseCapacity + (this.attachments.mag || 0) * 4;
+  }
+
+  private resetWeaponAmmo() {
+    this.magazineAmmo = this.getMagazineCapacity();
+    this.reserveAmmo = this.getMagazineCapacity() * 3;
+    this.notifyAmmoState();
+  }
+
+  private notifyAmmoState() {
+    this.callbacks.onAmmoChange?.(this.magazineAmmo, this.reserveAmmo, this.getMagazineCapacity());
+  }
+
+  private notifyLevelState() {
+    this.callbacks.onLevelChange?.(this.playerLevel, this.playerExperience, this.experienceToNextLevel);
+  }
+
+  public reloadWeapon() {
+    if (this.peacefulMode || this.isGameOver || this.reloadTimer > 0) return;
+    const capacity = this.getMagazineCapacity();
+    if (this.magazineAmmo >= capacity || this.reserveAmmo <= 0) return;
+    this.reloadTimer = this.reloadDuration;
+    this.isMouseDown = false;
+    this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
+  }
+
+  private finishReload() {
+    const needed = this.getMagazineCapacity() - this.magazineAmmo;
+    const loaded = Math.min(needed, this.reserveAmmo);
+    this.magazineAmmo += loaded;
+    this.reserveAmmo -= loaded;
+    this.reloadTimer = 0;
+    this.callbacks.onReloadStateChange?.(false, 0);
+    this.notifyAmmoState();
+  }
+
+  private awardExperience(amount: number) {
+    if (this.peacefulMode || amount <= 0) return;
+    this.playerExperience += amount;
+    while (this.playerExperience >= this.experienceToNextLevel) {
+      this.playerExperience -= this.experienceToNextLevel;
+      this.playerLevel += 1;
+      this.experienceToNextLevel = Math.round(this.experienceToNextLevel * 1.18);
+      this.playerMaxHealth += 5;
+      this.playerMaxShield += 5;
+      this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + 5);
+      this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 5);
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+      soundFx.playLevelUp();
+    }
+    this.notifyLevelState();
   }
 
   public setWeaponUpgrades(upgrades: AllWeaponsUpgrades) {
@@ -872,6 +944,10 @@ export class ArenaSceneManager {
       if (e.code === 'Space') {
         e.preventDefault();
         this.triggerJump();
+      }
+
+      if (!e.repeat && lowerKey === 'r') {
+        this.reloadWeapon();
       }
 
       // SHIFT = SPRINT
@@ -1014,6 +1090,7 @@ export class ArenaSceneManager {
 
   public firePlayerWeapon() {
     if (this.peacefulMode || this.isGameOver) return;
+    if (this.reloadTimer > 0) return;
 
     const upgState = this.weaponUpgrades[this.currentWeapon.id] || {
       rarityTier: 1,
@@ -1030,6 +1107,12 @@ export class ArenaSceneManager {
     if (now - this.lastFireTime < 1 / effectiveFireRate) {
       return;
     }
+    if (this.magazineAmmo <= 0) {
+      this.reloadWeapon();
+      return;
+    }
+    this.magazineAmmo -= 1;
+    this.notifyAmmoState();
     this.lastFireTime = now;
     soundFx.playShoot();
 
@@ -1264,6 +1347,14 @@ export class ArenaSceneManager {
       this.muzzleFlashTimer -= delta;
       if (this.muzzleFlashTimer <= 0) {
         this.muzzleLight.intensity = 0;
+      }
+
+      if (this.reloadTimer > 0) {
+        this.reloadTimer = Math.max(0, this.reloadTimer - delta);
+        this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
+        if (this.reloadTimer === 0) {
+          this.finishReload();
+        }
       }
     }
 
@@ -1734,6 +1825,15 @@ export class ArenaSceneManager {
       b.mesh.position.copy(b.position);
       _line.set(_prevPos, b.position);
 
+      // Arena geometry is a hard projectile barrier. Check the travelled segment
+      // before agents so shots cannot damage targets through buildings or walls.
+      if (this.bulletHitObstacle(_prevPos, b.position)) {
+        this.spawnImpactSparks(b.position, 0xB45309, 4);
+        this.scene.remove(b.mesh);
+        this.bullets.splice(i, 1);
+        continue;
+      }
+
       if (b.life <= 0 || b.position.y < -0.5) {
         this.scene.remove(b.mesh);
         this.bullets.splice(i, 1);
@@ -1801,6 +1901,7 @@ export class ArenaSceneManager {
             this.bullets.splice(i, 1);
 
             if (ag.health <= 0) {
+              this.awardExperience(100);
               this.kills += 1;
               this.score += ag.role === 'boss' ? 500 : 100;
               this.callbacks.onKillsChange(this.kills);
@@ -1820,6 +1921,7 @@ export class ArenaSceneManager {
               this.agents.splice(j, 1);
 
               if (this.agents.length === 0) {
+                this.awardExperience(250 + this.wave * 50);
                 if (this.wave < this.totalWaves) {
                   this.waveIntermissionTimer = 5.0;
                   soundFx.playWaveVictory();
@@ -1834,6 +1936,7 @@ export class ArenaSceneManager {
                   soundFx.playLevelUp();
                   this.callbacks.onGameOver(true, { kills: this.kills, score: this.score, wave: this.wave });
                 }
+
               } else {
                 this.notifyWaveState();
               }
@@ -1876,6 +1979,22 @@ export class ArenaSceneManager {
         }
       }
     }
+  }
+
+  private bulletHitObstacle(start: THREE.Vector3, end: THREE.Vector3): boolean {
+    const direction = end.clone().sub(start);
+    const distance = direction.length();
+    if (distance <= 0.001) return false;
+    direction.normalize();
+    const ray = new THREE.Ray(start, direction);
+    const hit = new THREE.Vector3();
+    for (const obstacle of this.obstacles) {
+      const expanded = obstacle.clone().expandByScalar(0.08);
+      if (ray.intersectBox(expanded, hit) && hit.distanceTo(start) <= distance + 0.001) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private updateImpactParticles(delta: number) {
@@ -1959,7 +2078,9 @@ export class ArenaSceneManager {
           this.notifyAllies();
           this.callbacks.onLootPickup('health', 35);
         } else if (item.type === 'ammo') {
-          this.callbacks.onLootPickup('ammo', 20);
+          this.reserveAmmo = Math.min(this.getMagazineCapacity() * 4, this.reserveAmmo + this.getMagazineCapacity());
+          this.notifyAmmoState();
+          this.callbacks.onLootPickup('ammo', this.getMagazineCapacity());
         }
 
         this.scene.remove(item.mesh);

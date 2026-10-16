@@ -801,14 +801,27 @@ app.get('/api/multiplayer/rooms', (_req, res) => {
   res.json({ rooms: Object.values(rooms) });
 });
 
+app.get('/api/multiplayer/rooms/:code', (req, res) => {
+  const roomCode = String(req.params.code || '').trim().toUpperCase();
+  const room = rooms[roomCode];
+  if (!room || Date.now() - room.updatedAt > 600000) {
+    if (room) delete rooms[roomCode];
+    return res.status(404).json({ success: false, error: 'Raum nicht gefunden oder abgelaufen' });
+  }
+  res.json({ success: true, room });
+});
+
 app.post('/api/multiplayer/join', (req, res) => {
-  const { code, playerName, clanTag, arena = 'Freilichtmuseum Hessenpark' } = req.body;
-  const roomCode = (code || Math.floor(1000 + Math.random() * 9000).toString()).toUpperCase();
+  const requestedCode = String(req.body?.code || '').trim().toUpperCase();
+  const roomCode = requestedCode || Math.floor(1000 + Math.random() * 9000).toString();
+  const playerName = String(req.body?.playerName || 'Operator').trim().slice(0, 20) || 'Operator';
+  const clanTag = String(req.body?.clanTag || '61267').trim().slice(0, 12);
+  const arena = String(req.body?.arena || 'hessenpark').trim();
 
   if (!rooms[roomCode]) {
     rooms[roomCode] = {
       code: roomCode,
-      host: playerName || 'Operator',
+      host: playerName,
       arena,
       players: {},
       wave: 1,
@@ -821,8 +834,8 @@ app.post('/api/multiplayer/join', (req, res) => {
   const playerId = 'p_' + Math.random().toString(36).substring(2, 9);
   rooms[roomCode].players[playerId] = {
     id: playerId,
-    name: playerName || 'Operator',
-    clanTag: clanTag || '61267',
+    name: playerName,
+    clanTag,
     kills: 0,
     health: 100,
     score: 0,
@@ -839,20 +852,32 @@ app.post('/api/multiplayer/join', (req, res) => {
 });
 
 app.post('/api/multiplayer/update', (req, res) => {
-  const { roomCode, playerId, kills, health, score, wave } = req.body;
+  const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+  const playerId = String(req.body?.playerId || '').trim();
+  const { kills, health, score, wave } = req.body || {};
   if (!roomCode || !rooms[roomCode] || !playerId) {
     return res.status(404).json({ error: 'Raum oder Spieler nicht gefunden' });
   }
 
   const room = rooms[roomCode];
-  if (room.players[playerId]) {
-    room.players[playerId].kills = kills ?? room.players[playerId].kills;
-    room.players[playerId].health = health ?? room.players[playerId].health;
-    room.players[playerId].score = score ?? room.players[playerId].score;
-    room.players[playerId].lastSeen = Date.now();
+  if (!room.players[playerId]) {
+    return res.status(404).json({ error: 'Spieler nicht gefunden' });
   }
-  if (typeof wave === 'number') {
-    room.wave = Math.max(room.wave, wave);
+  if (room.players[playerId]) {
+    if (typeof kills === 'number' && Number.isFinite(kills)) {
+      room.players[playerId].kills = Math.max(0, Math.floor(kills));
+    }
+    if (typeof health === 'number' && Number.isFinite(health)) {
+      room.players[playerId].health = Math.max(0, Math.min(1000, health));
+    }
+    if (typeof score === 'number' && Number.isFinite(score)) {
+      room.players[playerId].score = Math.max(0, Math.floor(score));
+    }
+    room.players[playerId].lastSeen = Date.now();
+    room.status = 'in_game';
+  }
+  if (typeof wave === 'number' && Number.isFinite(wave)) {
+    room.wave = Math.max(room.wave, Math.max(1, Math.floor(wave)));
   }
   room.totalKills = Object.values(room.players).reduce((acc, p) => acc + (p.kills || 0), 0);
   room.updatedAt = Date.now();

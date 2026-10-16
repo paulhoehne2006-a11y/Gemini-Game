@@ -103,6 +103,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [maxShield, setMaxShield] = useState(100);
   const [kills, setKills] = useState(0);
   const [score, setScore] = useState(0);
+  const [ammo, setAmmo] = useState({ magazine: 30, reserve: 90, capacity: 30 });
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadSeconds, setReloadSeconds] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
+  const [playerExperience, setPlayerExperience] = useState(0);
+  const [experienceToNextLevel, setExperienceToNextLevel] = useState(500);
   const [collectedRunTaler, setCollectedRunTaler] = useState(0);
   const [zoneTimer, setZoneTimer] = useState(260);
   const [zoneRadius, setZoneRadius] = useState(56);
@@ -219,6 +225,16 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           lastKillTimeRef.current = now;
         },
         onScoreChange: (s) => setScore(s),
+        onAmmoChange: (magazine, reserve, capacity) => setAmmo({ magazine, reserve, capacity }),
+        onReloadStateChange: (reloading, secondsRemaining) => {
+          setIsReloading(reloading);
+          setReloadSeconds(secondsRemaining);
+        },
+        onLevelChange: (level, experience, experienceToNext) => {
+          setPlayerLevel(level);
+          setPlayerExperience(experience);
+          setExperienceToNextLevel(experienceToNext);
+        },
         onZoneTimer: (sec, rad) => {
           setZoneTimer(sec);
           setZoneRadius(rad);
@@ -705,6 +721,30 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 <span className="text-emerald-400 font-bold tabular-nums">
                   {Math.round(health)} HP
                 </span>
+              </div>
+
+              {!isMobileMode && (
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className={isReloading ? 'text-amber-300 animate-pulse' : 'text-sky-300'}>
+                    {isReloading ? `NACHLADEN ${reloadSeconds.toFixed(1)}s` : 'MUNITION [R]'}
+                  </span>
+                  <span className="text-white font-black tabular-nums">
+                    {ammo.magazine}/{ammo.reserve}
+                  </span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
+                  <span>LEVEL {playerLevel}</span>
+                  <span>{playerExperience}/{experienceToNextLevel} XP</span>
+                </div>
+                <div className="w-full h-1 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 transition-all duration-200"
+                    style={{ width: `${Math.min(100, (playerExperience / experienceToNextLevel) * 100)}%` }}
+                  />
+                </div>
               </div>
               <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
                 <div

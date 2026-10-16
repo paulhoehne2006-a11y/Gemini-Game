@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MultiplayerRoom, joinMultiplayerRoom } from '../game/multiplayer';
+import React, { useEffect, useState } from 'react';
+import { fetchMultiplayerRoom, MultiplayerRoom, joinMultiplayerRoom } from '../game/multiplayer';
 import { Users, Play, Copy, Check, Radio, Swords, ShieldAlert, Trophy } from 'lucide-react';
 import { ARENAS, checkArenaUnlocked } from '../game/three/arenas';
 
@@ -29,6 +29,25 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const [copied, setCopied] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentRoom) return;
+    let disposed = false;
+    const syncRoom = async () => {
+      try {
+        const room = await fetchMultiplayerRoom(currentRoom.code);
+        if (!disposed) setCurrentRoom(room);
+      } catch (error) {
+        if (!disposed) setErrorMsg(error instanceof Error ? error.message : 'Lobby-Verbindung verloren');
+      }
+    };
+    const timer = window.setInterval(syncRoom, 2000);
+    syncRoom();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [currentRoom?.code]);
 
   const handleJoinOrCreate = async (codeToUse?: string) => {
     try {
