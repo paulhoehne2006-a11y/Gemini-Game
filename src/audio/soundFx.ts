@@ -378,6 +378,115 @@ class SoundEffectsManager {
       osc.stop(startTime + 0.22);
     });
   }
+
+  // Weapon Reload: Realistic mechanical magazine latch & slide chamber sound
+  public playReload() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+
+    // Stage 1: Magazine eject click (t = 0)
+    const osc1 = this.ctx.createOscillator();
+    const gain1 = this.ctx.createGain();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(580, now);
+    osc1.frequency.exponentialRampToValueAtTime(160, now + 0.08);
+    gain1.gain.setValueAtTime(0.28, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc1.connect(gain1);
+    gain1.connect(this.ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.08);
+
+    // Stage 2: Magazine insert click (t = 0.45s)
+    const tInsert = now + 0.45;
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(320, tInsert);
+    osc2.frequency.exponentialRampToValueAtTime(680, tInsert + 0.09);
+    gain2.gain.setValueAtTime(0.32, tInsert);
+    gain2.gain.exponentialRampToValueAtTime(0.001, tInsert + 0.09);
+    osc2.connect(gain2);
+    gain2.connect(this.ctx.destination);
+    osc2.start(tInsert);
+    osc2.stop(tInsert + 0.09);
+
+    // Stage 3: Bolt slide lock / chamber sound (t = 0.95s)
+    const tSlide = now + 0.95;
+    const osc3 = this.ctx.createOscillator();
+    const gain3 = this.ctx.createGain();
+    osc3.type = 'square';
+    osc3.frequency.setValueAtTime(840, tSlide);
+    osc3.frequency.exponentialRampToValueAtTime(280, tSlide + 0.12);
+    gain3.gain.setValueAtTime(0.24, tSlide);
+    gain3.gain.exponentialRampToValueAtTime(0.001, tSlide + 0.12);
+    osc3.connect(gain3);
+    gain3.connect(this.ctx.destination);
+    osc3.start(tSlide);
+    osc3.stop(tSlide + 0.12);
+  }
+
+  // Brawl Stars Style Victory Fanfare
+  public playVictory() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const chords = [
+      { f: 523.25, t: 0, d: 0.18 }, // C5
+      { f: 659.25, t: 0.12, d: 0.18 }, // E5
+      { f: 783.99, t: 0.24, d: 0.22 }, // G5
+      { f: 1046.5, t: 0.42, d: 0.65 }, // C6
+      { f: 1318.5, t: 0.54, d: 0.8 }, // E6
+    ];
+    const now = this.ctx.currentTime;
+
+    chords.forEach((chord) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const start = now + chord.t;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(chord.f, start);
+      gain.gain.setValueAtTime(0.28, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + chord.d);
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(start);
+      osc.stop(start + chord.d);
+    });
+  }
+
+  // Brawl Stars Style Defeat Tone
+  public playDefeat() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const notes = [
+      { f: 392.0, t: 0, d: 0.3 }, // G4
+      { f: 369.99, t: 0.28, d: 0.35 }, // F#4
+      { f: 349.23, t: 0.6, d: 0.4 }, // F4
+      { f: 311.13, t: 0.95, d: 0.75 }, // D#4
+    ];
+    const now = this.ctx.currentTime;
+
+    notes.forEach((note) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const start = now + note.t;
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(note.f, start);
+      gain.gain.setValueAtTime(0.24, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + note.d);
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(start);
+      osc.stop(start + note.d);
+    });
+  }
 }
 
 export const soundFx = new SoundEffectsManager();

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ARENAS } from './arenas';
-import { DestructibleProp } from './textures';
+import { DestructibleProp, createElectricStormTexture } from './textures';
 import { WEAPONS, Weapon, INITIAL_WEAPON_UPGRADES, getEffectiveWeaponStats } from '../weapons';
 import { WalkableSurface, WeaponAttachments, AttachmentType, AllWeaponsUpgrades } from '../../types';
 import {
@@ -18,6 +18,7 @@ import {
   AgentRole,
 } from '../agents/microAgents';
 import { soundFx } from '../../audio/soundFx';
+import { DetailedMatchStats, MatchParticipantStats } from '../../components/BrawlStarsEndScreen';
 
 // Reusable math vectors (Zero GC discipline)
 const _playerMove = new THREE.Vector3();
@@ -31,13 +32,15 @@ const _desiredCamPos = new THREE.Vector3();
 const _skyGradientCanvas = document.createElement('canvas');
 
 function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
-  _skyGradientCanvas.width = 2;
+  _skyGradientCanvas.width = 4;
   _skyGradientCanvas.height = 512;
   const context = _skyGradientCanvas.getContext('2d')!;
   const gradient = context.createLinearGradient(0, 0, 0, _skyGradientCanvas.height);
-  gradient.addColorStop(0, topColor);
-  gradient.addColorStop(0.68, horizonColor);
-  gradient.addColorStop(1, '#0F172A');
+  gradient.addColorStop(0, '#0284C7'); // Vibrant Azure Blue Zenith
+  gradient.addColorStop(0.35, '#38BDF8'); // Sky Cyan
+  gradient.addColorStop(0.65, '#FDE68A'); // Warm Peach-Gold Sun Horizon
+  gradient.addColorStop(0.85, '#FB923C'); // Taunus Sunset Ember
+  gradient.addColorStop(1, '#0F172A'); // Ground Base
   context.fillStyle = gradient;
   context.fillRect(0, 0, _skyGradientCanvas.width, _skyGradientCanvas.height);
   const texture = new THREE.CanvasTexture(_skyGradientCanvas);
@@ -163,7 +166,7 @@ export interface GameEventCallbacks {
   onKillsChange: (kills: number) => void;
   onScoreChange: (score: number) => void;
   onZoneTimer: (seconds: number, radius: number) => void;
-  onGameOver: (victory: boolean, stats: { kills: number; score: number; wave: number }) => void;
+  onGameOver: (victory: boolean, stats: DetailedMatchStats) => void;
   onCombatBark: (agentName: string, text: string) => void;
   onLootPickup: (type: 'ammo' | 'health' | 'taler' | 'shield' | 'attachment', amount: number, label?: string) => void;
   onTargetUpdate: (target: TargetInfo | null) => void;
@@ -273,6 +276,24 @@ export class ArenaSceneManager {
   private playerExperience = 0;
   private experienceToNextLevel = 500;
 
+  // Brawl Stars Detailed Combat Tracking (Player, Allies, Bots)
+  private matchStartTime = performance.now();
+  private playerParticipantStats: MatchParticipantStats = {
+    id: 'player_local',
+    name: 'Operator',
+    role: 'Sturmtrupp-Scharfschütze',
+    faction: 'neu-anspach',
+    isPlayer: true,
+    isBot: false,
+    kills: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    deaths: 0,
+  };
+  private allAlliesStats = new Map<string, MatchParticipantStats>();
+  private allEnemiesStats = new Map<string, MatchParticipantStats>();
+  private clouds: THREE.Group[] = [];
+
   // Over-The-Shoulder Camera (with spike-free mouse rotation & throttled compass telemetry)
   private cameraYaw = 0;
   private cameraPitch = 0.12;
@@ -343,6 +364,8 @@ export class ArenaSceneManager {
       mouseSensitivity?: number;
       controls?: Partial<ControlSettings>;
       weaponUpgrades?: AllWeaponsUpgrades;
+      playerName?: string;
+      clanTag?: string;
     } = {}
   ) {
     this.container = container;
@@ -350,6 +373,9 @@ export class ArenaSceneManager {
     this.callbacks = callbacks;
     this.peacefulMode = !!initialPerks.peacefulMode;
     this.trainingMode = !!initialPerks.trainingMode;
+    if (initialPerks.playerName) {
+      this.playerParticipantStats.name = initialPerks.playerName;
+    }
     this.mouseSensitivity = THREE.MathUtils.clamp(initialPerks.mouseSensitivity ?? 1, 0.25, 3);
     this.controls = { ...DEFAULT_CONTROL_SETTINGS, ...(initialPerks.controls || {}) };
     if (initialPerks.weaponUpgrades) {
@@ -384,14 +410,15 @@ export class ArenaSceneManager {
     // 2. Setup Scene & Camera
     const arenaDef = ARENAS[arenaId] || ARENAS.hessenpark;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(arenaDef.skyColor || 0x0F172A);
-    this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0x1E293B, 0.0075);
+    this.scene.background = new THREE.Color(arenaDef.skyColor || 0x0284C7);
+    this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0x1E3A8A, 0.0055);
+
     const skyDome = new THREE.Mesh(
-      new THREE.SphereGeometry(145, 32, 16),
+      new THREE.SphereGeometry(150, 32, 16),
       new THREE.MeshBasicMaterial({
         map: createSkyGradientTexture(
-          `#${new THREE.Color(arenaDef.skyColor || 0x0F172A).getHexString()}`,
-          `#${new THREE.Color(arenaDef.fogColor || 0x1E293B).getHexString()}`
+          `#${new THREE.Color(arenaDef.skyColor || 0x0284C7).getHexString()}`,
+          `#${new THREE.Color(arenaDef.fogColor || 0xFDE68A).getHexString()}`
         ),
         side: THREE.BackSide,
         depthWrite: false,
@@ -399,6 +426,30 @@ export class ArenaSceneManager {
     );
     skyDome.renderOrder = -10;
     this.scene.add(skyDome);
+
+    // Glowing Stylized 3D Sun with radiant corona
+    const sunGroup = new THREE.Group();
+    const sunMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(7, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xFFFBEB })
+    );
+    const sunCorona = new THREE.Mesh(
+      new THREE.RingGeometry(7, 14, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xFDE047,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+      })
+    );
+    sunGroup.add(sunMesh);
+    sunGroup.add(sunCorona);
+    sunGroup.position.set(65, 78, 55);
+    sunCorona.lookAt(0, 0, 0);
+    this.scene.add(sunGroup);
+
+    // Floating Stylized Low-Poly Puffy Clouds
+    this.createStylizedSkyClouds();
 
     this.camera = new THREE.PerspectiveCamera(
       this.currentFov,
@@ -412,12 +463,12 @@ export class ArenaSceneManager {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
 
-    // 4. Dynamic Sunlight, Sky Hemisphere & Rim Lighting Rig
-    const hemiLight = new THREE.HemisphereLight(0xE0F2FE, 0x334155, 0.78);
+    // 4. Dynamic Sunlight, Sky Hemisphere & Rim Lighting Rig (Fortnite Palette)
+    const hemiLight = new THREE.HemisphereLight(0xBAE6FD, 0x1E293B, 0.88);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xFEF3C7, 1.45);
-    dirLight.position.set(32, 54, 26);
+    const dirLight = new THREE.DirectionalLight(0xFFF7ED, 1.75);
+    dirLight.position.set(38, 58, 28);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
@@ -426,10 +477,11 @@ export class ArenaSceneManager {
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.0005;
+    dirLight.shadow.bias = -0.0004;
+    dirLight.shadow.radius = 2.5;
     this.scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38BDF8, 0.45);
+    const rimLight = new THREE.DirectionalLight(0x38BDF8, 0.65);
     rimLight.position.set(-28, 30, -25);
     this.scene.add(rimLight);
 
@@ -448,16 +500,23 @@ export class ArenaSceneManager {
     this.muzzleLight = new THREE.PointLight(0xFDE047, 0, 8);
     this.scene.add(this.muzzleLight);
 
-    // 7. Taunus Fog Storm Wall (Hidden in Peaceful Mobile Mode!)
-    const stormGeo = new THREE.CylinderGeometry(this.stormRadius, this.stormRadius, 28, 48, 1, true);
-    const stormMat = new THREE.MeshBasicMaterial({
-      color: 0x93C5FD,
+    // 7. Fortnite-Style Electric Storm Barrier
+    const stormGeo = new THREE.CylinderGeometry(this.stormRadius, this.stormRadius, 32, 64, 1, true);
+    const stormTexture = createElectricStormTexture();
+    const stormMat = new THREE.MeshStandardMaterial({
+      map: stormTexture,
+      color: 0xC084FC,
+      emissive: 0x9333EA,
+      emissiveIntensity: 0.9,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.65,
       side: THREE.DoubleSide,
+      roughness: 0.3,
+      metalness: 0.6,
+      depthWrite: false,
     });
     this.stormMesh = new THREE.Mesh(stormGeo, stormMat);
-    this.stormMesh.position.y = 14;
+    this.stormMesh.position.y = 16;
     this.stormMesh.visible = !this.peacefulMode && !this.trainingMode;
     this.scene.add(this.stormMesh);
 
@@ -501,6 +560,72 @@ export class ArenaSceneManager {
 
     // 12. Start Animation Loop
     this.tick();
+  }
+
+  private createStylizedSkyClouds() {
+    this.clouds = [];
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xFFFFFF,
+      emissive: 0xBAE6FD,
+      emissiveIntensity: 0.18,
+      roughness: 0.9,
+      flatShading: true,
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const cloud = new THREE.Group();
+      const puffCount = 5;
+      for (let p = 0; p < puffCount; p++) {
+        const radius = 3.2 + Math.random() * 2.2;
+        const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 1), cloudMat);
+        puff.position.set(
+          (p - puffCount / 2) * 4.2 + (Math.random() - 0.5) * 1.5,
+          (Math.random() - 0.5) * 1.2,
+          (Math.random() - 0.5) * 2.5
+        );
+        cloud.add(puff);
+      }
+      const angle = (i / 8) * Math.PI * 2 + (i % 2) * 0.3;
+      const dist = 52 + (i % 3) * 18;
+      cloud.position.set(Math.cos(angle) * dist, 32 + (i % 3) * 5, Math.sin(angle) * dist);
+      this.scene.add(cloud);
+      this.clouds.push(cloud);
+    }
+  }
+
+  public getDetailedMatchStats(victory: boolean): DetailedMatchStats {
+    const duration = Math.round((performance.now() - this.matchStartTime) / 1000);
+    const alliesList = Array.from(this.allAlliesStats.values());
+    const enemiesList = Array.from(this.allEnemiesStats.values());
+    const allList = [this.playerParticipantStats, ...alliesList, ...enemiesList];
+
+    let starPlayer = this.playerParticipantStats;
+    let bestScore = -1;
+    for (const p of allList) {
+      const pScore = p.kills * 300 + p.damageDealt;
+      if (pScore > bestScore) {
+        bestScore = pScore;
+        starPlayer = p;
+      }
+    }
+    for (const p of allList) {
+      p.isStarPlayer = p.id === starPlayer.id;
+    }
+
+    return {
+      kills: this.kills,
+      score: this.score,
+      wave: this.wave,
+      maxWave: this.totalWaves,
+      victory,
+      durationSeconds: duration,
+      playerStats: { ...this.playerParticipantStats },
+      alliesStats: alliesList.map((a) => ({ ...a })),
+      enemiesStats: enemiesList.map((e) => ({ ...e })),
+      totalDamageDealt: this.playerParticipantStats.damageDealt,
+      totalDamageTaken: this.playerParticipantStats.damageTaken,
+      starPlayerId: starPlayer.id,
+    };
   }
 
   private createPlayerMesh(): THREE.Group {
@@ -700,8 +825,22 @@ export class ArenaSceneManager {
       mesh.position.copy(spawnPos);
       this.scene.add(mesh);
 
+      const allyId = `ally_${idx}`;
+      this.allAlliesStats.set(allyId, {
+        id: allyId,
+        name: cfg.name,
+        role: cfg.role.toUpperCase(),
+        faction: 'neu-anspach',
+        isPlayer: false,
+        isBot: true,
+        kills: 0,
+        damageDealt: 0,
+        damageTaken: 0,
+        deaths: 0,
+      });
+
       return {
-        id: `ally_${idx}`,
+        id: allyId,
         name: cfg.name,
         role: cfg.role,
         faction: 'neu-anspach' as const,
@@ -782,8 +921,22 @@ export class ArenaSceneManager {
       mesh.position.copy(spawnPos);
       this.scene.add(mesh);
 
+      const allyId = `ally_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      this.allAlliesStats.set(allyId, {
+        id: allyId,
+        name: cfg.name,
+        role: cfg.role.toUpperCase(),
+        faction: 'neu-anspach',
+        isPlayer: false,
+        isBot: true,
+        kills: 0,
+        damageDealt: 0,
+        damageTaken: 0,
+        deaths: 0,
+      });
+
       this.allies.push({
-        id: `ally_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: allyId,
         name: cfg.name,
         role: cfg.role,
         faction: 'neu-anspach',
@@ -859,6 +1012,20 @@ export class ArenaSceneManager {
         lastBarkTime: 0,
       };
 
+      this.allEnemiesStats.set(agent.id, {
+        id: agent.id,
+        name: agent.name,
+        role: role.toUpperCase(),
+        faction: 'wehrheim',
+        isPlayer: false,
+        isBot: true,
+        isBoss: role === 'boss',
+        kills: 0,
+        damageDealt: 0,
+        damageTaken: 0,
+        deaths: 0,
+      });
+
       this.agents.push(agent);
     });
 
@@ -920,6 +1087,7 @@ export class ArenaSceneManager {
     if (this.magazineAmmo >= capacity || this.reserveAmmo <= 0) return;
     this.reloadTimer = this.reloadDuration;
     this.isMouseDown = false;
+    soundFx.playReload();
     this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
   }
 
@@ -1379,6 +1547,7 @@ export class ArenaSceneManager {
       life: 1.5,
       fromPlayer: false,
       fromAlly: true,
+      fromAllyId: ally.id,
       color: '#38BDF8',
       splashRadius: 1.5,
     });
@@ -1472,14 +1641,28 @@ export class ArenaSceneManager {
       if (this.muzzleFlashTimer <= 0) {
         this.muzzleLight.intensity = 0;
       }
+    }
 
-      if (this.reloadTimer > 0) {
-        this.reloadTimer = Math.max(0, this.reloadTimer - delta);
-        this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
-        if (this.reloadTimer === 0) {
-          this.finishReload();
-        }
+    // Weapon Reload countdown (Runs continuously independent of muzzle flash!)
+    if (this.reloadTimer > 0) {
+      this.reloadTimer = Math.max(0, this.reloadTimer - delta);
+      this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
+      if (this.reloadTimer === 0) {
+        this.finishReload();
       }
+    }
+
+    // Animate Electric Fortnite Storm Wall Texture & Floating Clouds
+    if (this.stormMesh && this.stormMesh.material) {
+      const mat = this.stormMesh.material as THREE.MeshStandardMaterial;
+      if (mat.map) {
+        mat.map.offset.y += delta * 0.18;
+        mat.map.offset.x += delta * 0.05;
+      }
+    }
+    for (const cloud of this.clouds) {
+      cloud.position.x += delta * 1.4;
+      if (cloud.position.x > 115) cloud.position.x = -115;
     }
 
     // Gun recoil decay
@@ -1950,6 +2133,7 @@ export class ArenaSceneManager {
       damage: agent.damage,
       life: agent.range / speed,
       fromPlayer: false,
+      fromEnemyId: agent.id,
       color: '#EF4444',
       splashRadius: isBoss ? 2.5 : 0.8,
     });
@@ -2033,6 +2217,16 @@ export class ArenaSceneManager {
             const finalDmg = isCrit ? Math.round(b.damage * 1.5) : b.damage;
             ag.health -= finalDmg;
 
+            if (b.fromPlayer) {
+              this.playerParticipantStats.damageDealt += finalDmg;
+            } else if (b.fromAllyId && this.allAlliesStats.has(b.fromAllyId)) {
+              this.allAlliesStats.get(b.fromAllyId)!.damageDealt += finalDmg;
+            }
+            const enemyStats = this.allEnemiesStats.get(ag.id);
+            if (enemyStats) {
+              enemyStats.damageTaken += finalDmg;
+            }
+
             soundFx.playHit();
             this.spawnImpactSparks(_closest, isCrit ? 0xEF4444 : 0x38BDF8, 6);
             this.spawnDamageNumber(ag.position, finalDmg, isCrit);
@@ -2044,6 +2238,15 @@ export class ArenaSceneManager {
             this.bullets.splice(i, 1);
 
             if (ag.health <= 0) {
+              if (b.fromPlayer) {
+                this.playerParticipantStats.kills += 1;
+              } else if (b.fromAllyId && this.allAlliesStats.has(b.fromAllyId)) {
+                this.allAlliesStats.get(b.fromAllyId)!.kills += 1;
+              }
+              if (enemyStats) {
+                enemyStats.deaths += 1;
+              }
+
               if (this.trainingMode) {
                 this.score += 50;
                 this.kills += 1;
@@ -2090,7 +2293,7 @@ export class ArenaSceneManager {
                   this.isGameOver = true;
                   this.unlockPointer();
                   soundFx.playLevelUp();
-                  this.callbacks.onGameOver(true, { kills: this.kills, score: this.score, wave: this.wave });
+                  this.callbacks.onGameOver(true, this.getDetailedMatchStats(true));
                 }
 
               } else {
@@ -2108,6 +2311,12 @@ export class ArenaSceneManager {
         const playerChest = this.playerPos.clone().add(new THREE.Vector3(0, chestHeight, 0));
         _line.closestPointToPoint(playerChest, true, _closest);
         if (_closest.distanceTo(playerChest) <= hitRadius) {
+          const shooterStats = b.fromEnemyId ? this.allEnemiesStats.get(b.fromEnemyId) : null;
+          if (shooterStats) {
+            shooterStats.damageDealt += b.damage;
+          }
+          this.playerParticipantStats.damageTaken += b.damage;
+
           this.damagePlayer(b.damage, 'Wehrheimer Apfelgeschoss');
           this.scene.remove(b.mesh);
           this.bullets.splice(i, 1);
@@ -2119,12 +2328,23 @@ export class ArenaSceneManager {
           const allyChest = ally.position.clone().add(new THREE.Vector3(0, 1.1, 0));
           _line.closestPointToPoint(allyChest, true, _closest);
           if (_closest.distanceTo(allyChest) <= 1.25) {
+            const shooterStats = b.fromEnemyId ? this.allEnemiesStats.get(b.fromEnemyId) : null;
+            if (shooterStats) {
+              shooterStats.damageDealt += b.damage;
+            }
+            const allyStats = this.allAlliesStats.get(ally.id);
+            if (allyStats) {
+              allyStats.damageTaken += b.damage;
+            }
+
             ally.health -= b.damage;
             soundFx.playHit();
             this.scene.remove(b.mesh);
             this.bullets.splice(i, 1);
 
             if (ally.health <= 0) {
+              if (shooterStats) shooterStats.kills += 1;
+              if (allyStats) allyStats.deaths += 1;
               this.callbacks.onCombatBark(ally.name, 'Ich bin getroffen! Kämpft weiter für Neu-Anspach!');
               this.scene.remove(ally.mesh);
               this.allies.splice(k, 1);
@@ -2285,7 +2505,8 @@ export class ArenaSceneManager {
       this.isGameOver = true;
       this.unlockPointer();
       soundFx.playZoneWarning();
-      this.callbacks.onGameOver(false, { kills: this.kills, score: this.score, wave: this.wave });
+      this.playerParticipantStats.deaths += 1;
+      this.callbacks.onGameOver(false, this.getDetailedMatchStats(false));
     }
   }
 

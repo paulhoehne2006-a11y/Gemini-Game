@@ -19,6 +19,7 @@ interface AuthResponse {
   user?: AuthUser;
   account?: AuthUser;
   token?: string;
+  csrfToken?: string;
   error?: string;
 }
 
@@ -32,23 +33,30 @@ export class AuthRequestError extends Error {
   }
 }
 
+// In-memory CSRF token storage (safe from persistent disk XSS extraction)
+let inMemoryCsrfToken: string | null = null;
+
+export function getCsrfToken(): string | null {
+  return inMemoryCsrfToken;
+}
+
+export function setCsrfToken(token: string | null): void {
+  inMemoryCsrfToken = token;
+}
+
+// Backward-compatible stubs (session token is now managed strictly via HttpOnly cookie)
 export const AUTH_TOKEN_KEY = 'na_auth_token';
 
 export function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
-export function setStoredToken(token: string): void {
-  try {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  } catch {}
+export function setStoredToken(_token: string): void {
+  // Session tokens are now securely stored in HttpOnly cookies, no-op
 }
 
 export function removeStoredToken(): void {
+  setCsrfToken(null);
   try {
     localStorage.removeItem(AUTH_TOKEN_KEY);
   } catch {}
@@ -58,11 +66,13 @@ function normalizeUser(response: AuthResponse): AuthUser | null {
   return response.user || response.account || null;
 }
 
-async function requestAuth(path: string, init?: RequestInit): Promise<AuthResponse> {
-  const token = getStoredToken();
+export async function requestAuth(path: string, init?: RequestInit): Promise<AuthResponse> {
+  const method = (init?.method || 'GET').toUpperCase();
+  const isMutating = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(isMutating && inMemoryCsrfToken ? { 'X-CSRF-Token': inMemoryCsrfToken } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   };
 
@@ -76,7 +86,7 @@ async function requestAuth(path: string, init?: RequestInit): Promise<AuthRespon
   try {
     body = (await response.json()) as AuthResponse;
   } catch {
-    // The status code still provides a useful error for malformed responses.
+    // Keep empty object
   }
 
   if (!response.ok) {
@@ -86,8 +96,8 @@ async function requestAuth(path: string, init?: RequestInit): Promise<AuthRespon
     throw new AuthRequestError(body.error || 'Die Anfrage konnte nicht verarbeitet werden.', response.status);
   }
 
-  if (body.token) {
-    setStoredToken(body.token);
+  if (body.csrfToken) {
+    setCsrfToken(body.csrfToken);
   }
 
   return body;
@@ -95,7 +105,8 @@ async function requestAuth(path: string, init?: RequestInit): Promise<AuthRespon
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
   try {
-    return normalizeUser(await requestAuth('/api/auth/me'));
+    const res = await requestAuth('/api/auth/me');
+    return normalizeUser(res);
   } catch (error) {
     if (error instanceof AuthRequestError && error.status === 401) return null;
     throw error;
@@ -105,7 +116,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 export async function login(username: string, password: string): Promise<AuthUser> {
   const res = await requestAuth('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, email: username, password }),
+    body: JSON.stringify({ username, password }),
   });
   const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Anmeldung hat kein Benutzerkonto zurückgegeben.', 502);
@@ -121,7 +132,7 @@ export async function register(
 ): Promise<AuthUser> {
   const res = await requestAuth('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ username, email: username, password, clanTag, faction, legalConsent }),
+    body: JSON.stringify({ username, password, clanTag, faction, legalConsent }),
   });
   const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);
@@ -139,22 +150,21 @@ export async function logout(): Promise<void> {
 export async function exportUserData(): Promise<any> {
   const res = await fetch('/api/auth/export', {
     credentials: 'include',
-    headers: {
-      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
-    },
   });
   if (!res.ok) throw new Error('Export fehlgeschlagen.');
   return await res.json();
 }
 
 export async function deleteUserAccount(password: string): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(inMemoryCsrfToken ? { 'X-CSRF-Token': inMemoryCsrfToken } : {}),
+  };
+
   const res = await fetch('/api/auth/delete', {
     method: 'POST',
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
-    },
+    headers,
     body: JSON.stringify({ password }),
   });
   const data = await res.json().catch(() => ({}));

@@ -13,6 +13,11 @@ import {
   create3DVehicle,
   createEnterableBuilding,
   createDestructibleProp,
+  createStylizedTree,
+  createStylizedGrassClump,
+  createWildflowerClump,
+  createStylizedRock,
+  createFortniteGoldenChest,
 } from './textures';
 
 export interface ArenaBuildResult {
@@ -105,45 +110,86 @@ export function checkArenaUnlocked(
   return totalWins >= rule.requiredWins;
 }
 
-
-function addTaunusTreeRing(scene: THREE.Scene, obstacles: THREE.Box3[], innerRadius = 46, count = 42) {
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451A03, roughness: 0.9 });
-  const leafDark = new THREE.MeshStandardMaterial({ color: 0x14532D, roughness: 0.8 });
-  const leafMid = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.75 });
-
+/**
+ * Places lush Fortnite-style stylized trees, boulders, and foliage perimeter.
+ */
+function addTaunusTreeRing(scene: THREE.Scene, obstacles: THREE.Box3[], innerRadius = 46, count = 38) {
   for (let i = 0; i < count; i++) {
-    const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.04;
-    const dist = innerRadius + (i % 4) * 3.8;
+    const angle = (i / count) * Math.PI * 2 + (i % 3) * 0.05;
+    const dist = innerRadius + (i % 4) * 3.5;
     const x = Math.cos(angle) * dist;
     const z = Math.sin(angle) * dist;
-    const scale = 0.85 + (i % 5) * 0.16;
+    const scale = 0.95 + (i % 5) * 0.15;
 
-    const tree = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.32 * scale, 0.48 * scale, 2.8 * scale, 7), trunkMat);
-    trunk.position.y = 1.4 * scale;
-    trunk.castShadow = true;
-    tree.add(trunk);
-
-    const c1 = new THREE.Mesh(new THREE.ConeGeometry(2.1 * scale, 4.2 * scale, 7), leafDark);
-    c1.position.y = 3.6 * scale;
-    c1.castShadow = true;
-    tree.add(c1);
-
-    const c2 = new THREE.Mesh(new THREE.ConeGeometry(1.6 * scale, 3.5 * scale, 7), leafMid);
-    c2.position.y = 5.6 * scale;
-    c2.castShadow = true;
-    tree.add(c2);
-
+    // Stylized cartoon tree
+    const tree = createStylizedTree(scale);
     tree.position.set(x, 0, z);
     scene.add(tree);
 
+    // Natural rock or grass tuft next to some trees
+    if (i % 2 === 0) {
+      const rock = createStylizedRock(0.7 + (i % 3) * 0.3);
+      rock.position.set(x + (Math.random() - 0.5) * 2, 0, z + (Math.random() - 0.5) * 2);
+      scene.add(rock);
+    }
+
+    const grass = createStylizedGrassClump(1.2);
+    grass.position.set(x + 1.2, 0, z - 1.2);
+    scene.add(grass);
+
     obstacles.push(
       new THREE.Box3(
-        new THREE.Vector3(x - 0.8, 0, z - 0.8),
-        new THREE.Vector3(x + 0.8, 6, z + 0.8)
+        new THREE.Vector3(x - 0.9, 0, z - 0.9),
+        new THREE.Vector3(x + 0.9, 6.5, z + 0.9)
       )
     );
   }
+}
+
+/**
+ * Scatters 3D grass tufts, wildflowers, and glowing golden supply chests around the arena ground!
+ */
+export function scatterArenaEnvironment(
+  scene: THREE.Scene,
+  destructibles: DestructibleProp[],
+  chestPositions: Array<[number, number]> = [[-12, 12], [14, -10], [6, 18]]
+) {
+  // Scatter 3D grass tufts & flowers in open areas
+  for (let i = 0; i < 28; i++) {
+    const x = (Math.sin(i * 1.7) * 32) + (Math.cos(i * 0.9) * 8);
+    const z = (Math.cos(i * 1.7) * 32) + (Math.sin(i * 0.9) * 8);
+
+    const grass = createStylizedGrassClump(0.8 + (i % 3) * 0.2);
+    grass.position.set(x, 0, z);
+    scene.add(grass);
+
+    if (i % 3 === 0) {
+      const flowers = createWildflowerClump(i % 2 === 0 ? 0xFACC15 : 0xEF4444);
+      flowers.position.set(x + 0.8, 0, z + 0.6);
+      scene.add(flowers);
+    }
+  }
+
+  // Spawn Fortnite-style Golden Supply Chests
+  chestPositions.forEach(([cx, cz], idx) => {
+    const chest = createFortniteGoldenChest(cx, 0, cz, idx * 0.8);
+    scene.add(chest.group);
+    scene.add(chest.beaconLight);
+
+    destructibles.push({
+      id: `golden_chest_${idx}`,
+      mesh: chest.group,
+      box: new THREE.Box3(
+        new THREE.Vector3(cx - 0.9, 0, cz - 0.9),
+        new THREE.Vector3(cx + 0.9, 2.2, cz + 0.9)
+      ),
+      position: new THREE.Vector3(cx, 0, cz),
+      hp: 25,
+      maxHp: 25,
+      kind: 'tech_case',
+      lootBias: 'attachment',
+    });
+  });
 }
 
 function addDistantFeldbergBackdrop(scene: THREE.Scene, zOffset = -95) {
@@ -376,6 +422,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 46, 44);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [0, -14]]);
 
       return {
         obstacles,

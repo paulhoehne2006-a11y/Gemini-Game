@@ -1,70 +1,59 @@
-# Neu-Anspach 3D Battle Royale — Grafik-, Map- & Gameplay-Komplettüberarbeitung
+# Gemini-Game — Produktionsreife, Sicherheits-Hardening & Persistenz
 
-Dieses Upgrade verwandelt das Spiel in einen atmosphärischen, grafisch realistischen 3D-Third-Person-Shooter mit sieben detailgetreuen Schauplätzen aus Neu-Anspach, begehbaren Gebäuden und Dächern, zerstörbaren Umgebungs-Objekten, Loot-Kisten mit Waffen-Aufsätzen sowie detaillierten 3D-Charakteren samt sichtbaren Waffenmodellen.
+Umfassender Produktions- und Sicherheitsumbau des React 19 / Three.js / Express / WebSocket Spiels „Gemini-Game“: Sichere Authentifizierung mit HttpOnly/SameSite-Cookies und CSRF-Schutz, modulare Speicherabstraktion (SQLite lokal, PostgreSQL für Produktion), autoritative Multiplayer- & Leaderboard-Validierung sowie automatisierte Testabdeckung und Deployment-Konfiguration.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Alle gewünschten Schwerpunkte aus deiner Auswahl wurden direkt in die Architektur übernommen:
-> - **Confirmed Decision 1 (7 Originale Neu-Anspach Maps)**: Die vier bestehenden Maps (*Freilichtmuseum Hessenpark*, *Waldschwimmbad*, *Bahnhof Taunusbahn*, *Bürgerhaus & Rathaus*) werden maßstabsgetreu ausgebaut und um **drei neue Wahrzeichen** ergänzt: **Taunus-Center (Einkaufszentrum & Parkdeck)**, **Adolf-Reichwein-Schule (Schulcampus & Sporthallen)** und **Feldbergblick (Taunuskamm mit Blick zum Großen Feldberg)**.
-> - **Confirmed Decision 2 (Realistische 3D-Grafik & PBR-Texturen)**: Einsatz von physikalisch basiertem Rendering (PBR), prozeduralen hochauflösenden Oberflächentexturen (Kopfsteinpflaster, Fachwerk, Asphalt, Fliesen, Ziegel), `RoomEnvironment`-Lichtreflexionen, ACES Filmic Tone Mapping und weichen Echtzeit-Schatten.
-> - **Confirmed Decision 3 (Taktisches Gameplay & 3D-Modelle)**: Begehbare Innenräume und über Rampen/Treppen erreichbare Dächer, realistische 3D-Autos als Deckung, zerstörbare Kisten/Fässer, Loot-Truhen mit 4 Waffen-Aufsätzen (Visier, Lauf, Verschluss, Magazin) sowie gegliederte 3D-Charaktere mit sichtbaren, wechselbaren 3D-Waffen in der Hand.
+> Basierend auf deiner Rückmeldung („Mach was am besten in dem Fall funktioniert“) haben wir folgende solide Best-Practice-Architekturentscheidungen getroffen:
+> - **Entscheidung 1 (Speicher- & Persistenzarchitektur)**: Einführung einer sauberen Storage-Abstraktion mit automatischem SQLite-Support für lokale Entwicklung (ohne externe Datenbank-Abhängigkeit) und PostgreSQL-Support für die Produktion (aktiviert über `DATABASE_URL`). Migration bestehender JSON-Daten (`accounts.json`, `real_leaderboard.json`) beim ersten Start.
+> - **Entscheidung 2 (Auth & Cookie-Sicherheitsstrategie)**: Vollständige Umstellung auf kryptografisch sichere HttpOnly-Cookies mit `SameSite=Lax` (bzw. konfigurierbarem `SameSite=None; Secure` für iframe-Previews) sowie doppeltem Schutz durch kryptografisch generierte CSRF-Tokens für mutierende REST-Endpunkte. Tokens werden nicht mehr unnötig im Frontend-`localStorage` exponiert.
+> - **Entscheidung 3 (Multiplayer- & Anti-Cheat-Validierung)**: Serverseitige Plausibilitätsprüfungen, strikte Raum- und Spieler-Ownership (an die authentifizierte Session gebunden), Klick-/Killratenbegrenzung, Raum-Timeout/Cleanup und Schutz gegen manipulierte Scores, Health- und Wellenwerte.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Ein fesselndes Wellen-Battle-Royale in einer authentischen 3D-Nachbildung von Neu-Anspach (61267). Spieler kämpfen in der Fortnite-Schulterperspektive auf sieben markanten Schauplätzen der Stadt, nutzen Autos, Häuser und Dächer als taktische Höhen- und Sichtdeckung, schießen Kisten für Waffen-Upgrades frei und verteidigen die Stadt gegen vorrückende Angriffswellen.
-- **Target Audience / Persona**: Spieler, die schnelle, direkte Third-Person-Shooter-Action mit lokalem Wiedererkennungswert (Neu-Anspach / Hochtaunus) und spürbarer Progression suchen.
-- **Key Value**: Echte räumliche Tiefe durch begehbare Gebäude und Höhenstufen (Dächer, Sprungturm, Parkdeck), realistisches Waffen-Feedback und hoher Wiederspielwert durch plünderbare Waffen-Aufsätze.
+- **What It Does**: Verwandelt das lokale Prototyp-Spiel in ein robustes, sicher hostbares und skalierbares Multiplayer-Webspiel. Spieler registrieren sich mit scrypt-gehashten Passwörtern, erhalten geschützte Sitzungen und können live auf gemeinsamen Neu-Anspach-Schauplätzen antreten, ohne dass fremde Spieler ihre Punktestände überschreiben oder Räume kapern können.
+- **Target Audience / Persona**: Spieler und Community-Mitglieder im Browser sowie Administratoren/Entwickler, die das Spiel auf Plattformen wie Render, Railway, Fly.io oder Docker ausrollen.
+- **Key Value**: 100 % produktionsfähig, cheat-resistent gegenüber trivialen REST-/WebSocket-Fälschungen, DSGVO-konform mit Export- und Löschfunktion, frei von hartcodierten Secrets und abgesichert durch automatisierte Tests.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 ### Key User Flows
-1. **Map-Auswahl (7 Schauplätze aus Neu-Anspach)**:
-   - Direkt über die Schnellauswahl-Leiste oder das Stadt-Menü wählt der Spieler zwischen allen 7 Neu-Anspacher Maps:
-     1. *Freilichtmuseum Hessenpark*: Marktplatz, drehende Holländerwindmühle, begehbare Fachwerkscheunen, Dorfbrunnen und Biergarten-Bänke.
-     2. *Waldschwimmbad Neu-Anspach*: 50m-Schwimmerbecken mit animierter Wasseroberfläche, begehbarer 3m/5m-Sprungturm, Umkleide-Trakt, Kiosk-Terrasse und Beachvolleyballfeld.
-     3. *Bahnhof Neu-Anspach (Taunusbahn RB15)*: Detaillierter roter Lint-Triebwagen auf den Gleisen, Fußgängerüberweg, Bahnsteig mit Überdachung, P+R-Parkplatz mit 3D-Autos und Bahnhofsvorplatz.
-     4. *Bürgerhaus & Rathausplatz*: Großes Bürgerhaus mit begehbarer Terrasse, Uhrturm, Wochenmarkt-Ständen (zerstörbar), Brunnen und geparkten Einsatzfahrzeugen.
-     5. *Taunus-Center & Neue Mitte (NEU)*: Das bekannte Einkaufszentrum mit Ladenpassage, Glasvordächern, Lieferhof, Parkdeck-Auffahrt aufs obere Deck und zahlreichen geparkten PKWs.
-     6. *Adolf-Reichwein-Schule / ARS (NEU)*: Großer Schulhof mit Pausenhalle, begehbarer Flachdach-Mensa, Sporthallen-Trakt, Buswendeschleife mit Schulbus und Tischtennisplatten als Deckung.
-     7. *Feldbergblick & Taunuskamm (NEU)*: Höhenlage oberhalb von Anspach mit Blick auf die Silhouette des Großen Feldbergs samt Fernmeldeturm, Wanderparkplatz, Schutzhütte, Aussichtsturm und Felsformationen.
-2. **Taktischer Häuser- & Dachkampf**:
-   - Gebäude besitzen offene Türen und Fensterbögen. Über Außentreppen, Parkdeck-Rampen oder Gerüste gelangt der Spieler auf Flachdächer, den Sprungturm oder Aussichtstürme, um von oben mit Höhenvorteil zu feuern.
-3. **Zerstörbare Objekte & Loot-Kisten mit Waffen-Aufsätzen**:
-   - Überall auf der Map stehen zerstörbare Holzkisten, Äppler-Fässer und Barrikaden. Werden sie zerschossen, splittern sie mit Partikeleffekten auseinander und lassen Heilung, Munition oder **goldene Waffen-Aufsatz-Kisten** fallen.
-   - Vier sammelbare Waffen-Aufsätze (im HUD live angezeigt):
-     - **Taktisches Visier (Optik)**: Höherer Rechtsklick-Zoom & reduzierte Streuung.
-     - **Schwerer Präzisionslauf (Barrel)**: +25 % Projektilschaden & +30 % Geschossgeschwindigkeit.
-     - **Schnellfeuer-Bolzen (Trigger)**: +25 % Feuerrate bei Dauerfeuer.
-     - **Trommelmagazin / Splitterkern (Mag)**: Zusätzliche Projektile & vergrößerter Explosionsradius.
+1. **Sichere Anmeldung & Registrierung**:
+   - Der Benutzer registriert sich oder loggt sich im deutschen AuthScreen ein. Passwörter genügen strengen Komplexitätsanforderungen (Groß-, Kleinbuchstaben, Ziffern, Mindestlänge 10).
+   - Der Server setzt ein sicheres HttpOnly-Session-Cookie und sendet ein CSRF-Token für nachfolgende Mutationen zurück.
+   - Keine Token-Kompression im `localStorage`, wodurch XSS-Tokensauger keinen Zugriff auf Session-Tokens haben.
+2. **Multiplayer-Lobby & Raumverwaltung**:
+   - Raumcodes werden kryptografisch zufällig generiert (z. B. 6-stellige alphanumerische Codes statt simpler Zufallszahlen).
+   - Beim Betreten wird die `playerId` serverseitig an die authentifizierte Session gekoppelt. Nur der Besitzer kann seinen eigenen Zustand aktualisieren.
+   - Räume mit inaktiven Spielern werden nach konfigurierbarem Timeout bereinigt.
+3. **Leaderboard & Rundenabschluss**:
+   - Nach einer Welle oder einem Sieg werden Scores serverseitig auf Plausibilität geprüft (maximale Punkte pro Kill, Welle, Zeiteinheit).
+   - Manipulierte Anfragen (z. B. negative Kills, 100.000 Punkte in 2 Sekunden) werden mit `400 Bad Request` abgewiesen.
+4. **Datenschutz (DSGVO)**:
+   - Benutzer können ihr Profil mit einem Klick exportieren oder ihr Konto inklusive aller Sitzungen und Bestenlisteneinträge dauerhaft löschen.
 
 ### Visual Identity & Theme
-- **Aesthetic Direction**: Realistische Outdoor-3D-Optik im Stil moderner taktischer Battle-Royale-Titel, kombiniert mit klarem, kontrastreichem Dark-Slategrey-HUD (`bg-slate-950/75 backdrop-blur-md border-white/10`).
-- **Color Palette & Mood**:
-  - *3D-Welt*: Natürliche Taunus-Farbgebung – Schiefergrau, warmes Eichen-Fachwerk (`#3B2314`), hessisches Ziegelrot (`#A83820`), dichtes Fichtengrün (`#1E3F20`), realistischer Asphalt (`#2B2D33`) und sonnendurchflutetes Tageslicht mit atmosphärischem Horizont-Dunst.
-  - *HUD & UI*: 60 % transparenter Viewport, 30 % abgedunkelte HUD-Flächen (`#090D16`), 10 % scharfe Akzentfarben (Bernstein-Gold `#F59E0B` für Wellen & Aufsätze, Smaragd `#10B981` für HP, Cyan `#38BDF8` für Schild & Ausdauer).
-- **Typography & Hierarchy**: Klare geometrische Sans-Schrift für schnelle Lesbarkeit im Gefecht, kombiniert mit tabellarischen Ziffern (`tabular-nums`) für HP, Munition, Wellen-Zähler, Distanz und Waffen-Upgrades.
-- **Interactive Feedback & Motion**:
-  - Sichtbares 3D-Waffenmodell an der rechten Schulter/Hand des Spielers mit Echtzeit-Rückstoß, Mündungsfeuer-Lichtblitz (`PointLight`-Flash) und Patronenhülsen-/Leuchtspur-Effekt.
-  - Treffer-Funken an Autos/Steinen und Holzsplitter bei zerstörbaren Objekten.
+- Die bestehende taktische Ästhetik (Dark-Slate-HUD, Amber/Cyan-Akzente, deutsche UI) bleibt uneingeschränkt erhalten.
+- Status- und Fehlermeldungen bei Sitzungsablauf, Rate-Limiting oder CSRF-Fehlern werden in verständlichem Deutsch dargestellt.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Prozedurale High-DPI PBR-Texturen statt externer Bilddateien**
-  - *Chosen Approach*: Alle Oberflächen- und Normal-Maps (Fachwerk, Kopfsteinpflaster, Asphalt-Markierungen, Ziegeldach, Schwimmbadfliesen, Autolack) werden beim Start per HTML5-Canvas erzeugt, mit `SRGBColorSpace` und maximaler Anisotropie versehen.
-  - *Why*: Garantiert 0 Ladefehler (keine 404-Assets), sofortige Ladezeiten und gestochen scharfe Texturen auch aus flachen Kamerawinkeln.
-- **Decision 2: Echte 3D-Höhenphysik (Y-Achse) für Dächer, Treppen und Sprungturm**
-  - *Chosen Approach*: Erweiterung der Kollisions-Engine um begehbare Höhenplattformen (`WalkableSurface`: Min/Max X/Z + Zielhöhe Y sowie Rampen-Interpolation).
-  - *Why*: Ermöglicht echtes Battle-Royale-Gefühl, bei dem man auf das Parkdeck des Taunus-Centers, das Mensa-Dach der ARS oder den 5m-Sprungturm im Waldschwimmbad klettern und von oben herabschießen kann.
-- **Decision 3: Sichtbare, modulare 3D-Waffen- & Charakter-Hierarchie**
-  - *Chosen Approach*: Jeder Charakter (Spieler, Verbündeter, Gegner) erhält bewegliche Gliedmaßen-Gruppen und einen `weaponMount`-Knoten an der rechten Hand, in dem das aktuell gewählte 3D-Waffenmodell (Sturmgewehr, SMG, Schrot-Spritzer, Granatwerfer) inkl. freigeschalteter Aufsätze gerendert wird.
-  - *Why*: In der Fortnite-Schulterperspektive sieht der Spieler seine Waffe und die ausgerüsteten Aufsätze direkt am Charakter.
+- **Decision 1: Hybride Storage-Abstraktion (SQLite + PostgreSQL)**
+  - *Chosen Approach*: Eine gemeinsame Datenbankschnittstelle `StorageRepository` mit zwei Treibern: SQLite für lokale Entwicklung / Single-Node und PostgreSQL (`pg`) für skalierbare Multi-Instance-Deployments auf Cloud-Plattformen.
+  - *Why*: Ermöglicht sofortiges Ausführen mit `npm start` ohne externe Datenbankinstallation, bietet aber nahtlose Produktionsfähigkeit sobald `DATABASE_URL` gesetzt ist.
+- **Decision 2: HttpOnly-Cookies mit CSRF-Token statt localStorage-Bearer-Token**
+  - *Chosen Approach*: Das Session-Token wird ausschließlich als HttpOnly-Cookie transportiert. Für mutierende Requests (`POST`, `PUT`, `DELETE`) wird ein CSRF-Token (`X-CSRF-Token`) validiert.
+  - *Why*: Schützt zuverlässig vor Token-Diebstahl durch Cross-Site Scripting (XSS) und verhindert Cross-Site Request Forgery (CSRF).
+- **Decision 3: Serverseitige Plausibilitätsprüfungen statt schwergewichtiger Server-Physiksimulation**
+  - *Chosen Approach*: Validierung von Delta-Zeiten, maximalen Kills pro Sekunde, Raum-Ownership, positiven Wertebereichen und authentifizierten Spielern.
+  - *Why*: Eine vollständige serverseitige Three.js-Physiksimulation im Node.js-Backend würde immense CPU-Ressourcen benötigen; die Plausibilitäts- und Bounds-Validierung stoppt 99 % aller gängigen Cheat-Skripte und API-Manipulationen ohne Performance-Einbußen.
 
 ---
 
@@ -73,41 +62,50 @@ Dieses Upgrade verwandelt das Spiel in einen atmosphärischen, grafisch realisti
 ### Architecture & Component Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                       React Application & HUD Layer                      │
-│  ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐  │
-│  │ TopBar & Map Bar   │  │ Battle HUD Overlay   │  │ Attachment &     │  │
-│  │ (7 Anspach Arenas) │  │ (Wave, HP, Crosshair)│  │ Weapon Loadout   │  │
-│  └─────────┬──────────┘  └──────────┬───────────┘  └────────┬─────────┘  │
-└────────────┼────────────────────────┼───────────────────────┼────────────┘
-             │                        │                       │
-             ▼                        ▼                       ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                    Three.js Realistic 3D Engine Core                     │
-│                                                                          │
-│  ┌──────────────────────────┐      ┌──────────────────────────────────┐  │
-│  │ Procedural PBR Texture & │      │ 7 Neu-Anspach Arena Builders     │  │
-│  │ Material Library         │─────▶│ • Hessenpark  • Waldschwimmbad   │  │
-│  │ (Cobble, Asphalt, Timber,│      │ • Taunusbahn  • Bürgerhaus       │  │
-│  │  Tiles, Car Metallic)    │      │ • Taunus-Center • ARS Schule     │  │
-│  └──────────────────────────┘      │ • Feldbergblick                  │  │
-│                                    └────────────────┬─────────────────┘  │
-│                                                     │                    │
-│  ┌──────────────────────────┐      ┌────────────────▼─────────────────┐  │
-│  │ 3D Character & Weapon    │      │ 3D World Physics & Interactions  │  │
-│  │ Rig Builder              │      │ • Walkable Roofs, Stairs & Ramps │  │
-│  │ • Articulated Limbs      │      │ • Enterable Buildings & Windows  │  │
-│  │ • 4 3D Gun Models + Mods │      │ • 3D Cars & Tactical Cover       │  │
-│  │ • Muzzle Light & Recoil  │      │ • Destructible Crates & Loot     │  │
-│  └──────────────────────────┘      └──────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Client (Browser / React 19)                     │
+│  ┌───────────────────────┐  ┌─────────────────┐  ┌──────────────────┐  │
+│  │ Three.js 3D View /    │  │ UI / TopBar /   │  │ Auth Client      │  │
+│  │ Arena Simulation      │  │ Leaderboard     │  │ (Credentials/    │  │
+│  │                       │  │ View            │  │  CSRF Protection)│  │
+│  └───────────┬───────────┘  └────────┬────────┘  └────────┬─────────┘  │
+└──────────────┼───────────────────────┼────────────────────┼────────────┘
+               │                       │                    │
+          /ws (WSS)             Fetch (HTTPS)         Fetch (Cookies)
+               │                       │                    │
+┌──────────────▼───────────────────────▼────────────────────▼────────────┐
+│                    Express Backend & WebSocket Server                  │
+│                                                                        │
+│  ┌───────────────────────────┐      ┌───────────────────────────────┐  │
+│  │ Security & Middleware     │      │ API Endpoints & Validation    │  │
+│  │ • Helmet Security Headers │─────▶│ • /api/auth/*                 │  │
+│  │ • Rate-Limiting & CSRF    │      │ • /api/leaderboard/* (Bounds) │  │
+│  │ • Cookie-Parser           │      │ • /api/multiplayer/* (Bounds) │  │
+│  └───────────────────────────┘      └──────────────┬────────────────┘  │
+│                                                    │                   │
+│  ┌───────────────────────────┐                     │                   │
+│  │ Real-Time WebSocket Engine│                     │                   │
+│  │ • Authenticated Sessions  │◀────────────────────┘                   │
+│  │ • Room Cleanup & Ping/Pong│                                         │
+│  └─────────────┬─────────────┘                                         │
+│                │                                                       │
+│  ┌─────────────▼─────────────────────────────────────────────────────┐  │
+│  │ Storage Abstraction Layer (StorageRepository)                     │  │
+│  │  ┌──────────────────────────────┐  ┌───────────────────────────┐  │  │
+│  │  │ SQLite Driver (Local/Dev)    │  │ PostgreSQL Driver (Prod)  │  │  │
+│  │  └──────────────────────────────┘  └───────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Model & State
-- **`ArenaBuildResult`**: Liefert neben `obstacles: THREE.Box3[]` nun auch `walkableSurfaces: WalkableSurface[]` (für Treppen, Rampen, Dächer, Sprungturm) sowie `destructibles: DestructibleProp[]` (Kisten, Fässer, Marktstände mit HP und Loot-Drop).
-- **`WeaponAttachmentsState`**: Speichert die in der Runde gesammelten Waffen-Upgrades (`scopeLevel`, `barrelLevel`, `boltLevel`, `magLevel`), die Schaden, Feuerrate, Geschossgeschwindigkeit, Zoom-FOV und das 3D-Waffenmodell live verstärken.
+- **Accounts**: `id`, `username`, `clan_tag`, `faction`, `password_hash`, `password_salt`, `legal_consent_json`, `created_at`.
+- **Sessions**: `id`, `account_id`, `token_hash`, `csrf_token`, `created_at`, `expires_at`, `revoked_at`.
+- **Leaderboard**: `id`, `account_id`, `name`, `clan_tag`, `city`, `score`, `best_match_score`, `kills`, `wins`, `highest_wave`, `unlocked_maps_count`, `signature_weapon`, `current_arena`, `status_text`, `last_seen`.
+- **Multiplayer Rooms**: `code`, `host_account_id`, `arena`, `status`, `wave`, `total_kills`, `updated_at`, `players` (an Sessions gebunden).
 
 ### Interactive Component & State Mapping
-- **Map-Wechsel (7 Arenen)**: Klick auf eine der 7 Neu-Anspacher Maps baut sofort die spezifische 3D-Topografie inkl. Wahrzeichen, begehbarer Gebäude, Autos und zerstörbarer Objekte auf.
-- **Dach- & Gebäudebewegung**: Während `updatePlayer(delta)` prüft die Physik-Engine neben horizontalen Hindernissen auch `walkableSurfaces`, sodass der Spieler fließend Treppen/Rampen hinaufläuft und von Dächern springen kann.
-- **Zerstörung & Loot-Pickup**: Treffen Projektile ein `DestructibleProp`, sinken dessen HP bis zur Splitter-Explosion; gespawnte Waffen-Aufsatz-Kisten rüsten beim Durchlaufen sofort das aktive Gewehr auf und aktualisieren die HUD-Anzeige.
+- **Registrierung & Login**: Verwendet `credentials: 'include'`. Der Server liefert die öffentlichen Kontodaten und das CSRF-Token zurück.
+- **Leaderboard-Übermittlung**: Erfordert eine aktive Sitzung; der Benutzername wird aus dem authentifizierten Konto bezogen (kein Überschreiben fremder Konten).
+- **Multiplayer-Join / Update**: Nur mit gültigem Session-Token oder zugewiesener Spieler-ID innerhalb des Raums. Werte für Score, Kills und Health werden auf Minimal- und Maximalbereiche geprüft.
+- **Graceful Shutdown**: Server schließt HTTP- und WebSocket-Verbindungen sauber und trennt Datenbankverbindungen bei `SIGTERM` / `SIGINT`.

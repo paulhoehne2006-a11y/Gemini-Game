@@ -1,3 +1,5 @@
+import { getCsrfToken } from '../auth';
+
 export interface RoomPlayer {
   id: string;
   name: string;
@@ -11,7 +13,8 @@ export interface RoomPlayer {
 
 export interface MultiplayerRoom {
   code: string;
-  host: string;
+  hostName?: string;
+  host?: string;
   arena: string;
   players: Record<string, RoomPlayer>;
   wave: number;
@@ -70,6 +73,14 @@ export interface OperatorProfileConsent {
   termsVersion: string;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const csrf = getCsrfToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+  };
+}
+
 export async function registerOperatorProfile(payload: {
   name: string;
   clanTag?: string;
@@ -79,16 +90,27 @@ export async function registerOperatorProfile(payload: {
   signatureWeapon?: string;
   currentArena?: string;
 }): Promise<LeaderboardPayload> {
-  const res = await fetch('/api/leaderboard/register', {
+  const res = await fetch('/api/leaderboard/submit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    credentials: 'include',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      ...payload,
+      score: 0,
+      kills: 0,
+      wave: 1,
+      victory: false,
+    }),
   });
+  if (!res.ok) {
+    // If not authenticated yet, fallback to fetching current leaderboard
+    return fetchLeaderboard();
+  }
   return res.json();
 }
 
 export async function fetchLeaderboard(): Promise<LeaderboardPayload> {
-  const res = await fetch('/api/leaderboard');
+  const res = await fetch('/api/leaderboard', { credentials: 'include' });
   return res.json();
 }
 
@@ -107,7 +129,8 @@ export async function submitScore(payload: {
 }): Promise<LeaderboardPayload> {
   const res = await fetch('/api/leaderboard/submit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
   return res.json();
@@ -121,7 +144,8 @@ export async function joinMultiplayerRoom(
 ): Promise<{ room: MultiplayerRoom; playerId: string }> {
   const res = await fetch('/api/multiplayer/join', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: getAuthHeaders(),
     body: JSON.stringify({ code, playerName, clanTag, arena }),
   });
   const data = await res.json();
@@ -132,7 +156,9 @@ export async function joinMultiplayerRoom(
 }
 
 export async function fetchMultiplayerRoom(roomCode: string): Promise<MultiplayerRoom> {
-  const res = await fetch(`/api/multiplayer/rooms/${encodeURIComponent(roomCode)}`);
+  const res = await fetch(`/api/multiplayer/rooms/${encodeURIComponent(roomCode)}`, {
+    credentials: 'include',
+  });
   const data = await res.json();
   if (!res.ok || !data.success || !data.room) {
     throw new Error(data.error || 'Raum nicht gefunden');
@@ -150,7 +176,8 @@ export async function updateMultiplayerState(
 ): Promise<MultiplayerRoom> {
   const res = await fetch('/api/multiplayer/update', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: getAuthHeaders(),
     body: JSON.stringify({ roomCode, playerId, kills, health, score, wave }),
   });
   const data = await res.json();
@@ -181,10 +208,6 @@ export function connectLeaderboardSocket(
 
       ws.onopen = () => {
         onStatusChange?.(true);
-        const storedToken = localStorage.getItem('na_auth_token');
-        if (storedToken && ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'auth:bind_session', token: storedToken }));
-        }
       };
 
       ws.onmessage = (event) => {

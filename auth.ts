@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
+import { GameStorage, LegalConsentRecord, StoredAccount, StoredSession } from './src/server/storage.ts';
 
 export interface PublicAccount {
   id: string;
@@ -11,32 +11,7 @@ export interface PublicAccount {
 }
 
 export type Faction = 'neu-anspach' | 'wehrheim';
-
-export interface LegalConsentRecord {
-  acceptedAt: string;
-  noticeVersion: string;
-  privacyPolicyVersion: string;
-  termsVersion: string;
-}
-
-interface StoredAccount extends PublicAccount {
-  passwordSalt: string;
-  passwordHash: string;
-  legalConsent: LegalConsentRecord;
-}
-
-interface StoredSession {
-  accountId: string;
-  tokenHash: string;
-  createdAt: string;
-  expiresAt: string;
-  revokedAt?: string;
-}
-
-interface AuthDatabase {
-  accounts: StoredAccount[];
-  sessions: StoredSession[];
-}
+export type { LegalConsentRecord };
 
 const PASSWORD_MIN_LENGTH = 10;
 const PASSWORD_MAX_LENGTH = 128;
@@ -45,22 +20,26 @@ const CLAN_TAG_PATTERN = /^[a-zA-Z0-9_-]{2,6}$/;
 const FACTIONS: readonly Faction[] = ['neu-anspach', 'wehrheim'];
 const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
 
+// Constant dummy salt & hash for timing-attack protection against user enumeration
+const DUMMY_SALT = crypto.randomBytes(16);
+const DUMMY_HASH = crypto.scryptSync('dummy_password_for_timing_safety_123', DUMMY_SALT, 64, SCRYPT_OPTIONS);
+
 export class AuthValidationError extends Error {}
 export class AuthConflictError extends Error {}
 
-function createEmptyDatabase(): AuthDatabase {
-  return { accounts: [], sessions: [] };
-}
-
-function hashPassword(password: string, salt: Buffer): Buffer {
+export function hashPassword(password: string, salt: Buffer): Buffer {
   return crypto.scryptSync(password, salt, 64, SCRYPT_OPTIONS);
 }
 
-function hashSessionToken(token: string): string {
+export function hashSessionToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-function toPublicAccount(account: StoredAccount): PublicAccount {
+export function generateCsrfToken(): string {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+export function toPublicAccount(account: StoredAccount): PublicAccount {
   return {
     id: account.id,
     username: account.username,
@@ -71,26 +50,23 @@ function toPublicAccount(account: StoredAccount): PublicAccount {
 }
 
 export class AuthStore {
-  private database: AuthDatabase;
+  constructor(private readonly storage: GameStorage) {}
 
-  constructor(private readonly filePath: string) {
-    this.database = this.load();
-  }
-
-  register(
+  async register(
     usernameInput: string,
     password: string,
     clanTagInput: string,
     factionInput: string,
     legalConsent: LegalConsentRecord
-  ): PublicAccount {
-    const username = usernameInput.trim();
-    const clanTag = clanTagInput.trim().toUpperCase();
+  ): Promise<PublicAccount> {
+    const username = (usernameInput || '').trim();
+    const clanTag = (clanTagInput || '').trim().toUpperCase();
     this.validateCredentials(username, password);
     this.validateProfile(clanTag, factionInput);
     this.validateLegalConsent(legalConsent);
 
-    if (this.database.accounts.some((account) => account.username.toLowerCase() === username.toLowerCase())) {
+    const existing = await this.storage.getAccountByUsername(username);
+    if (existing) {
       throw new AuthConflictError('Ein Konto mit diesem Benutzernamen existiert bereits.');
     }
 
@@ -105,89 +81,99 @@ export class AuthStore {
       legalConsent,
       createdAt: new Date().toISOString(),
     };
-    this.database.accounts.push(account);
-    this.save();
+
+    await this.storage.saveAccount(account);
     return toPublicAccount(account);
   }
 
-  verifyCredentials(usernameInput: string, password: string): PublicAccount | null {
-    const username = usernameInput.trim();
-    const account = this.database.accounts.find(
-      (candidate) => candidate.username.toLowerCase() === username.toLowerCase()
-    );
-    if (!account || typeof password !== 'string' || password.length > PASSWORD_MAX_LENGTH) {
+  async verifyCredentials(usernameInput: string, password: string): Promise<PublicAccount | null> {
+    const username = (usernameInput || '').trim();
+    if (!username || typeof password !== 'string' || password.length > PASSWORD_MAX_LENGTH) {
+      // Run dummy hash to prevent timing differentiation
+      crypto.timingSafeEqual(DUMMY_HASH, hashPassword(password || '', DUMMY_SALT));
+      return null;
+    }
+
+    const account = await this.storage.getAccountByUsername(username);
+    if (!account) {
+      // Run dummy scrypt hash to equalize timing with valid accounts
+      crypto.timingSafeEqual(DUMMY_HASH, hashPassword(password, DUMMY_SALT));
       return null;
     }
 
     const salt = Buffer.from(account.passwordSalt, 'base64url');
     const expected = Buffer.from(account.passwordHash, 'base64url');
     const actual = hashPassword(password, salt);
-    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
-      ? toPublicAccount(account)
-      : null;
-  }
 
-  createSession(accountId: string, ttlMs: number): { token: string; expiresAt: string } {
-    const token = crypto.randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
-    const now = new Date().toISOString();
-
-    // Enforce 1 active session per account: revoke any existing active sessions
-    for (const session of this.database.sessions) {
-      if (session.accountId === accountId && !session.revokedAt) {
-        session.revokedAt = now;
-      }
+    if (expected.length === actual.length && crypto.timingSafeEqual(expected, actual)) {
+      return toPublicAccount(account);
     }
 
-    // Clean up expired or older revoked sessions
-    this.database.sessions = this.database.sessions.filter(
-      (session) => session.expiresAt > now && (!session.revokedAt || Date.parse(session.revokedAt) > Date.now() - 86400000)
-    );
+    return null;
+  }
 
-    this.database.sessions.push({
+  async createSession(
+    accountId: string,
+    ttlMs: number
+  ): Promise<{ token: string; csrfToken: string; expiresAt: string }> {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const csrfToken = generateCsrfToken();
+    const tokenHash = hashSessionToken(token);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+
+    // Revoke any previous active sessions for this account (1 active session policy)
+    await this.storage.revokeActiveSessionsForAccount(accountId);
+
+    const session: StoredSession = {
+      id: `sess_${crypto.randomUUID()}`,
       accountId,
-      tokenHash: hashSessionToken(token),
+      tokenHash,
+      csrfToken,
       createdAt: now,
       expiresAt,
-    });
-    this.save();
-    return { token, expiresAt };
+    };
+
+    await this.storage.createSession(session);
+    return { token, csrfToken, expiresAt };
   }
 
-  getAccountBySession(token: string): PublicAccount | null {
-    const session = this.database.sessions.find(
-      (candidate) =>
-        candidate.tokenHash === hashSessionToken(token) &&
-        !candidate.revokedAt &&
-        candidate.expiresAt > new Date().toISOString()
-    );
-    if (!session) return null;
-    const account = this.database.accounts.find((candidate) => candidate.id === session.accountId);
-    return account ? toPublicAccount(account) : null;
-  }
-
-  getAccountIdBySession(token: string): string | null {
-    const session = this.database.sessions.find(
-      (candidate) =>
-        candidate.tokenHash === hashSessionToken(token) &&
-        !candidate.revokedAt &&
-        candidate.expiresAt > new Date().toISOString()
-    );
-    return session ? session.accountId : null;
-  }
-
-  revokeSession(token: string): void {
+  async getSession(token: string): Promise<{ account: PublicAccount; csrfToken: string; session: StoredSession } | null> {
+    if (!token || typeof token !== 'string') return null;
     const tokenHash = hashSessionToken(token);
-    const session = this.database.sessions.find((candidate) => candidate.tokenHash === tokenHash);
-    if (session && !session.revokedAt) {
-      session.revokedAt = new Date().toISOString();
-      this.save();
-    }
+    const session = await this.storage.getSessionByTokenHash(tokenHash);
+    if (!session) return null;
+
+    const account = await this.storage.getAccountById(session.accountId);
+    if (!account) return null;
+
+    return {
+      account: toPublicAccount(account),
+      csrfToken: session.csrfToken,
+      session,
+    };
   }
 
-  exportAccountData(accountId: string): any | null {
-    const account = this.database.accounts.find((candidate) => candidate.id === accountId);
+  async getAccountBySession(token: string): Promise<PublicAccount | null> {
+    const result = await this.getSession(token);
+    return result ? result.account : null;
+  }
+
+  async getAccountIdBySession(token: string): Promise<string | null> {
+    const result = await this.getSession(token);
+    return result ? result.account.id : null;
+  }
+
+  async revokeSession(token: string): Promise<void> {
+    if (!token) return;
+    const tokenHash = hashSessionToken(token);
+    await this.storage.revokeSessionByTokenHash(tokenHash);
+  }
+
+  async exportAccountData(accountId: string): Promise<any | null> {
+    const account = await this.storage.getAccountById(accountId);
     if (!account) return null;
+
     return {
       id: account.id,
       username: account.username,
@@ -204,8 +190,8 @@ export class AuthStore {
     };
   }
 
-  deleteAccount(accountId: string, passwordInput: string): boolean {
-    const account = this.database.accounts.find((candidate) => candidate.id === accountId);
+  async deleteAccount(accountId: string, passwordInput: string): Promise<boolean> {
+    const account = await this.storage.getAccountById(accountId);
     if (!account || typeof passwordInput !== 'string') return false;
 
     const salt = Buffer.from(account.passwordSalt, 'base64url');
@@ -216,10 +202,7 @@ export class AuthStore {
       return false;
     }
 
-    // Permanently remove account and sessions
-    this.database.accounts = this.database.accounts.filter((candidate) => candidate.id !== accountId);
-    this.database.sessions = this.database.sessions.filter((candidate) => candidate.accountId !== accountId);
-    this.save();
+    await this.storage.deleteAccount(accountId);
     return true;
   }
 
@@ -258,49 +241,19 @@ export class AuthStore {
   private validateProfile(clanTag: string, faction: string): void {
     if (!CLAN_TAG_PATTERN.test(clanTag)) {
       throw new AuthValidationError(
-        'Der Clan-Tag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.'
+        'Das Clantag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.'
       );
     }
     if (!FACTIONS.includes(faction as Faction)) {
       throw new AuthValidationError('Bitte wähle eine gültige Fraktion: Neu-Anspach oder Wehrheim.');
     }
   }
-
-  private load(): AuthDatabase {
-    try {
-      const raw = fs.readFileSync(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw) as AuthDatabase;
-      if (Array.isArray(parsed.accounts) && Array.isArray(parsed.sessions)) {
-        return {
-          accounts: parsed.accounts.map((account) => ({
-            ...account,
-            clanTag: account.clanTag || '61267',
-            faction: account.faction || 'neu-anspach',
-          })),
-          sessions: parsed.sessions,
-        };
-      }
-    } catch {
-      // Missing or invalid local state starts empty; writes surface errors explicitly.
-    }
-    return createEmptyDatabase();
-  }
-
-  private save(): void {
-    const directory = path.dirname(this.filePath);
-    fs.mkdirSync(directory, { recursive: true });
-    const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
-    fs.writeFileSync(temporaryPath, JSON.stringify(this.database, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-    fs.renameSync(temporaryPath, this.filePath);
-  }
 }
 
 export const authConfig = {
   dataFile: process.env.AUTH_DATA_FILE || path.join(process.cwd(), 'data', 'accounts.json'),
   cookieName: process.env.AUTH_COOKIE_NAME || 'gemini_game_session',
+  csrfHeaderName: 'x-csrf-token',
   sessionTtlMs: Number(process.env.AUTH_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000),
   secureCookie:
     process.env.AUTH_SECURE_COOKIE === 'true' ||

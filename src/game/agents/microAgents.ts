@@ -51,6 +51,8 @@ export interface AgentBullet {
   life: number;
   fromPlayer: boolean;
   fromAlly?: boolean;
+  fromAllyId?: string;
+  fromEnemyId?: string;
   color: string;
   splashRadius: number;
 }

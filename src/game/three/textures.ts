@@ -46,8 +46,9 @@ function getCachedTexture(
 }
 
 export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.CanvasTexture {
-  return getCachedTexture('cobble', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    ctx.fillStyle = '#3B3F46';
+  return getCachedTexture('cobble_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Rich slate mortar base
+    ctx.fillStyle = '#2A303C';
     ctx.fillRect(0, 0, w, h);
 
     const rows = 8;
@@ -58,60 +59,97 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
     for (let r = 0; r < rows; r++) {
       const offset = (r % 2) * (cellW * 0.5);
       for (let c = -1; c <= cols; c++) {
-        const x = c * cellW + offset + 3;
-        const y = r * cellH + 3;
-        const cw = cellW - 6;
-        const ch = cellH - 6;
+        const x = c * cellW + offset + 4;
+        const y = r * cellH + 4;
+        const cw = cellW - 8;
+        const ch = cellH - 8;
 
-        const shade = 78 + ((r * 17 + c * 31) % 36);
-        const warm = (r + c) % 3 === 0 ? 8 : 0;
-        ctx.fillStyle = `rgb(${shade + warm}, ${shade + 2}, ${shade - 4})`;
+        // Multi-toned stylized pavers with ambient occlusion rim and bevel highlights
+        const stoneHues = ['#64748B', '#475569', '#5B6B7C', '#6A7D8F', '#4A5568'];
+        const baseColor = stoneHues[(r * 3 + c * 7) % stoneHues.length];
+        
+        // Soft drop shadow
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
         ctx.beginPath();
-        ctx.roundRect(x, y, cw, ch, 8);
+        ctx.roundRect(x + 2, y + 2, cw, ch, 10);
         ctx.fill();
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-        ctx.lineWidth = 2;
+        // Main stone body
+        ctx.fillStyle = baseColor;
+        ctx.beginPath();
+        ctx.roundRect(x, y, cw, ch, 10);
+        ctx.fill();
+
+        // Top-left bevel highlight
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.roundRect(x + 2, y + 2, cw - 4, ch - 4, 8);
         ctx.stroke();
+
+        // Subtle moss/lichen accents in crevices
+        if ((r + c * 3) % 4 === 0) {
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+          ctx.beginPath();
+          ctx.arc(x + cw - 6, y + ch - 6, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
   });
 }
 
 export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTexture {
-  return getCachedTexture('asphalt', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    ctx.fillStyle = '#252830';
+  return getCachedTexture('asphalt_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Deep rich charcoal asphalt
+    ctx.fillStyle = '#1E232A';
     ctx.fillRect(0, 0, w, h);
 
-    for (let i = 0; i < 3500; i++) {
+    // Fine speckled aggregate texture
+    for (let i = 0; i < 2800; i++) {
       const x = (i * 73) % w;
       const y = (i * 139) % h;
-      const v = 30 + (i % 32);
-      ctx.fillStyle = `rgb(${v},${v + 2},${v + 5})`;
-      ctx.fillRect(x, y, 2, 2);
+      const v = 42 + (i % 24);
+      ctx.fillStyle = `rgb(${v}, ${v + 4}, ${v + 8})`;
+      ctx.fillRect(x, y, 2.5, 2.5);
     }
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, h * 0.5);
-    ctx.lineTo(w, h * 0.5);
-    ctx.stroke();
+    // Crisp stylized white road center-dash marking
+    ctx.fillStyle = '#F8FAFC';
+    ctx.shadowColor = '#0F172A';
+    ctx.shadowBlur = 4;
+    ctx.fillRect(w * 0.46, h * 0.15, w * 0.08, h * 0.7);
+    ctx.shadowBlur = 0;
   });
 }
 
 export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.CanvasTexture {
-  return getCachedTexture('grass', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    ctx.fillStyle = '#2B4C28';
+  return getCachedTexture('grass_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Vibrant Fortnite-style lush emerald base
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#1E6F34');
+    grad.addColorStop(0.5, '#26803D');
+    grad.addColorStop(1, '#1A612E');
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    for (let i = 0; i < 4000; i++) {
+    // Multi-shade stylized grass tufts & lawn texture
+    for (let i = 0; i < 3500; i++) {
       const x = (i * 97) % w;
       const y = (i * 181) % h;
-      const g = 65 + (i % 40);
-      const r = 34 + (i % 20);
-      ctx.fillStyle = `rgb(${r}, ${g}, 32)`;
-      ctx.fillRect(x, y, 3, 4);
+      const light = i % 3 === 0;
+      ctx.fillStyle = light ? 'rgba(74, 222, 128, 0.45)' : 'rgba(22, 101, 52, 0.45)';
+      ctx.fillRect(x, y, 3, 5);
+    }
+
+    // Tiny clover & wildflower dots (yellow & white)
+    for (let i = 0; i < 180; i++) {
+      const fx = (i * 163) % w;
+      const fy = (i * 257) % h;
+      ctx.fillStyle = i % 2 === 0 ? '#FACC15' : '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
   });
 }
@@ -834,4 +872,252 @@ export function createDestructibleProp(
     kind,
     lootBias,
   };
+}
+
+/**
+ * Creates a high-energy animated electric storm grid texture for the Fortnite Battle Royale storm wall.
+ */
+export function createElectricStormTexture(): THREE.CanvasTexture {
+  return getCachedTexture('storm_electric_grid', 512, 512, 4, 8, (ctx, w, h) => {
+    ctx.fillStyle = 'rgba(88, 28, 135, 0.45)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Glowing electric diagonal grid
+    ctx.strokeStyle = '#C084FC';
+    ctx.lineWidth = 3;
+    const step = 64;
+    for (let x = -w; x < w * 2; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + h, h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x, h);
+      ctx.lineTo(x + h, 0);
+      ctx.stroke();
+    }
+
+    // Horizontal energy pulse bands (Cyan & Magenta)
+    for (let y = 32; y < h; y += 128) {
+      const grad = ctx.createLinearGradient(0, y - 16, 0, y + 16);
+      grad.addColorStop(0, 'rgba(6, 182, 212, 0)');
+      grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.85)');
+      grad.addColorStop(1, 'rgba(6, 182, 212, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, y - 16, w, 32);
+    }
+
+    // Glowing lightning spark nodes
+    for (let i = 0; i < 40; i++) {
+      const sx = (i * 127) % w;
+      const sy = (i * 91) % h;
+      ctx.fillStyle = '#E879F9';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+/**
+ * Creates a Fortnite-style stylized cartoon tree with volumetric puffy leaf canopies and tapered trunk.
+ */
+export function createStylizedTree(scale = 1.0): THREE.Group {
+  const tree = new THREE.Group();
+
+  const trunkMat = new THREE.MeshStandardMaterial({
+    color: 0x5C381E,
+    roughness: 0.85,
+  });
+
+  const leafLight = new THREE.MeshStandardMaterial({
+    color: 0x4ADE80, // Bright vibrant lime sunlit foliage
+    roughness: 0.72,
+    flatShading: true,
+  });
+
+  const leafDeep = new THREE.MeshStandardMaterial({
+    color: 0x166534, // Rich deep forest green underside
+    roughness: 0.78,
+    flatShading: true,
+  });
+
+  // Tapered trunk with root flare
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.38 * scale, 0.65 * scale, 3.4 * scale, 7),
+    trunkMat
+  );
+  trunk.position.y = 1.7 * scale;
+  trunk.castShadow = true;
+  trunk.receiveShadow = true;
+  tree.add(trunk);
+
+  // Root flares at base
+  for (let r = 0; r < 3; r++) {
+    const angle = (r * Math.PI * 2) / 3;
+    const root = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12 * scale, 0.28 * scale, 0.9 * scale, 5),
+      trunkMat
+    );
+    root.rotation.z = Math.PI / 4;
+    root.rotation.y = angle;
+    root.position.set(Math.cos(angle) * 0.45 * scale, 0.25 * scale, Math.sin(angle) * 0.45 * scale);
+    tree.add(root);
+  }
+
+  // Volumetric puffy leaf clumps (Multi-sphere cluster with low-poly Dodecahedron styling)
+  const puffs = [
+    { x: 0, y: 3.8 * scale, z: 0, r: 2.2 * scale, mat: leafDeep },
+    { x: -0.6 * scale, y: 4.6 * scale, z: 0.5 * scale, r: 1.8 * scale, mat: leafLight },
+    { x: 0.7 * scale, y: 4.8 * scale, z: -0.4 * scale, r: 1.7 * scale, mat: leafLight },
+    { x: 0, y: 5.8 * scale, z: 0, r: 1.5 * scale, mat: leafLight },
+  ];
+
+  puffs.forEach((p) => {
+    const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(p.r, 1), p.mat);
+    puff.position.set(p.x, p.y, p.z);
+    puff.castShadow = true;
+    puff.receiveShadow = true;
+    tree.add(puff);
+  });
+
+  return tree;
+}
+
+/**
+ * Creates 3D volumetric grass blade tufts with crossed alpha-masked planes.
+ */
+export function createStylizedGrassClump(size = 0.8): THREE.Group {
+  const group = new THREE.Group();
+
+  const grassMat = new THREE.MeshStandardMaterial({
+    color: 0x4ADE80,
+    roughness: 0.8,
+    side: THREE.DoubleSide,
+    flatShading: true,
+  });
+
+  for (let i = 0; i < 3; i++) {
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.08 * size, 0.6 * size, 3), grassMat);
+    blade.position.set((Math.random() - 0.5) * 0.3 * size, 0.3 * size, (Math.random() - 0.5) * 0.3 * size);
+    blade.rotation.x = (Math.random() - 0.5) * 0.3;
+    blade.rotation.z = (Math.random() - 0.5) * 0.3;
+    blade.rotation.y = Math.random() * Math.PI;
+    group.add(blade);
+  }
+
+  return group;
+}
+
+/**
+ * Creates 3D stylized wildflowers (yellow or red daisies).
+ */
+export function createWildflowerClump(colorHex = 0xFACC15): THREE.Group {
+  const group = new THREE.Group();
+
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x22C55E, roughness: 0.9 });
+  const flowerMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.3 });
+
+  for (let i = 0; i < 3; i++) {
+    const flower = new THREE.Group();
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 4), stemMat);
+    stem.position.y = 0.22;
+    flower.add(stem);
+
+    const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.09, 0), flowerMat);
+    head.position.y = 0.45;
+    flower.add(head);
+
+    flower.position.set((Math.random() - 0.5) * 0.4, 0, (Math.random() - 0.5) * 0.4);
+    group.add(flower);
+  }
+
+  return group;
+}
+
+/**
+ * Creates a low-poly stylized rock/boulder with chamfered faces.
+ */
+export function createStylizedRock(radius = 1.0): THREE.Mesh {
+  const rockGeo = new THREE.DodecahedronGeometry(radius, 0);
+  const rockMat = new THREE.MeshStandardMaterial({
+    color: 0x64748B,
+    roughness: 0.88,
+    flatShading: true,
+  });
+  const rock = new THREE.Mesh(rockGeo, rockMat);
+  rock.scale.set(1.1, 0.65, 0.9);
+  rock.position.y = radius * 0.4;
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  return rock;
+}
+
+/**
+ * Creates a Fortnite-style Golden Supply Chest with golden trim, glowing latch, and vertical sky beacon beam.
+ */
+export function createFortniteGoldenChest(x: number, y: number, z: number, rotationY = 0): {
+  group: THREE.Group;
+  beaconLight: THREE.PointLight;
+} {
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+  group.rotation.y = rotationY;
+
+  const woodMat = new THREE.MeshStandardMaterial({
+    color: 0x78350F,
+    roughness: 0.7,
+  });
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xF59E0B,
+    emissive: 0xD97706,
+    emissiveIntensity: 0.8,
+    metalness: 0.9,
+    roughness: 0.2,
+  });
+
+  // Chest body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.85, 1.0), woodMat);
+  body.position.y = 0.425;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // Gold corner brackets
+  const goldBrackets = new THREE.Mesh(new THREE.BoxGeometry(1.54, 0.87, 1.04), goldMat);
+  goldBrackets.position.copy(body.position);
+  group.add(goldBrackets);
+
+  // Arched chest lid
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.52, 12, 1, false, 0, Math.PI), woodMat);
+  lid.rotation.z = Math.PI / 2;
+  lid.position.set(0, 0.85, 0);
+  lid.castShadow = true;
+  group.add(lid);
+
+  // Glowing center latch
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, 0.12), goldMat);
+  latch.position.set(0, 0.65, 0.52);
+  group.add(latch);
+
+  // Vertical sky beacon light beam (Fortnite chest aura)
+  const beamGeo = new THREE.CylinderGeometry(0.25, 0.85, 38, 16, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xFDE047,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.y = 19;
+  group.add(beam);
+
+  // Point light for ground illumination
+  const beaconLight = new THREE.PointLight(0xF59E0B, 1.8, 12);
+  beaconLight.position.set(x, y + 1.2, z);
+
+  return { group, beaconLight };
 }
