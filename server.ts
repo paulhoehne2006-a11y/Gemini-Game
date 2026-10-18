@@ -978,6 +978,7 @@ export async function startServer(portToListen?: number, customDbPath?: string) 
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
+        allowedHosts: true,
         hmr: process.env.DISABLE_HMR !== 'true',
         watch: process.env.DISABLE_HMR === 'true' ? null : {},
       },
