@@ -36,11 +36,12 @@ import {
 import { soundFx } from '../audio/soundFx';
 import { DailyMissionsState } from '../game/missions';
 import { AgentRole } from '../game/agents/microAgents';
+import { BrawlStarsEndScreen, DetailedMatchStats } from './BrawlStarsEndScreen';
 
 interface ThreeCanvasProps {
   currentArena: string;
   onChangeArena: (arenaId: string) => void;
-  onMatchComplete: (victory: boolean, stats: { kills: number; score: number; wave: number }) => void;
+  onMatchComplete: (victory: boolean, stats: DetailedMatchStats | { kills: number; score: number; wave: number }) => void;
   onMatchStateChange?: (state: 'active' | 'paused' | 'complete') => void;
   isMultiplayerMatch?: boolean;
   matchReward?: number;
@@ -170,7 +171,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [gameOverState, setGameOverState] = useState<{
     over: boolean;
     victory: boolean;
-    stats: { kills: number; score: number; wave: number };
+    stats: DetailedMatchStats;
   } | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [isTrainingMode, setIsTrainingMode] = useState(false);
@@ -848,6 +849,36 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               <div className="absolute h-2.5 w-[2px] bg-white/90 bottom-0 shadow-sm" />
               <div className="w-1 h-1 rounded-full bg-white shadow-sm" />
 
+              {/* Fortnite Circular Reload Ring around Reticle */}
+              {isReloading && (
+                <div className="absolute -inset-5 flex items-center justify-center pointer-events-none">
+                  <svg className="w-16 h-16 -rotate-90 animate-spin" style={{ animationDuration: '1.6s' }} viewBox="0 0 36 36">
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="rgba(245, 158, 11, 0.25)"
+                      strokeWidth="3.5"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#F59E0B"
+                      strokeWidth="3.5"
+                      strokeDasharray="88"
+                      strokeDashoffset="28"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="absolute -bottom-6 text-[10px] font-mono font-black text-amber-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] tracking-widest whitespace-nowrap">
+                    LÄDT NACH…
+                  </span>
+                </div>
+              )}
+
               {hitMarkerActive && (
                 <div className="absolute inset-0 flex items-center justify-center animate-ping">
                   <div className="w-6 h-6 border-2 border-red-500 rotate-45" />
@@ -1081,16 +1112,17 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           )}
 
           {/* HEALTH, SHIELD & LIVE STANCE STACK (BOTTOM LEFT) */}
-          <div className="absolute bottom-14 left-6 flex flex-col gap-2 w-64 md:w-72 pointer-events-auto z-20">
-            {/* Live Tactical Stance Badge (Shift Sprint / Strg Crouch) */}
-            <div className="flex items-center justify-between px-3 py-1 rounded-lg bg-slate-950/90 backdrop-blur-md border border-white/10 font-mono text-[10px]">
+          {/* FORTNITE STYLE HEALTH & SHIELD STACK (BOTTOM LEFT) */}
+          <div className="absolute bottom-14 left-6 flex flex-col gap-2 w-64 md:w-80 pointer-events-auto z-20">
+            {/* Live Tactical Stance Badge */}
+            <div className="flex items-center justify-between px-3 py-1 rounded-xl bg-slate-950/90 backdrop-blur-md border border-white/10 font-mono text-[10px]">
               <span className="text-slate-400 uppercase font-bold">HALTUNG:</span>
               {stance === 'sprinting' ? (
-                <span className="text-amber-400 font-black tracking-wider">
+                <span className="text-amber-400 font-black tracking-wider flex items-center gap-1">
                   ⚡ TAKTISCHER SPRINT [SHIFT]
                 </span>
               ) : stance === 'crouching' ? (
-                <span className="text-cyan-400 font-black tracking-wider">
+                <span className="text-cyan-400 font-black tracking-wider flex items-center gap-1">
                   🛡️ GEDUCKT [STRG] (-35% Rückstoß)
                 </span>
               ) : (
@@ -1100,46 +1132,79 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               )}
             </div>
 
+            {/* Fortnite Shield Bar (Electric Cyan) */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono font-bold text-cyan-300">
+              <div className="flex items-center justify-between text-xs font-mono font-black text-cyan-300 drop-shadow">
                 <div className="flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 fill-cyan-400 text-cyan-400" />
-                  <span>SCHILD</span>
+                  <Shield className="w-4 h-4 fill-cyan-400 text-cyan-300 animate-pulse" />
+                  <span className="tracking-wider">SCHILD</span>
                 </div>
-                <span className="tabular-nums text-sm font-black text-white">
-                  {Math.round(shield)}/{maxShield}
+                <span className="tabular-nums text-base font-black text-white">
+                  {Math.round(shield)} <span className="text-xs text-cyan-400/80 font-normal">/ {maxShield}</span>
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-900 border border-cyan-500/30 p-0.5 overflow-hidden">
+              <div className="w-full h-4 rounded-xl bg-slate-950/90 border-2 border-cyan-400/60 p-0.5 shadow-[0_0_15px_rgba(6,182,212,0.35)] overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-cyan-400 transition-all duration-200"
+                  className="h-full rounded-lg bg-gradient-to-r from-cyan-500 via-sky-400 to-cyan-300 transition-all duration-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.6)]"
                   style={{ width: `${(shield / maxShield) * 100}%` }}
                 />
               </div>
             </div>
 
+            {/* Fortnite Health Bar (Lime Green) */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono font-bold text-emerald-300">
+              <div className="flex items-center justify-between text-xs font-mono font-black text-emerald-300 drop-shadow">
                 <div className="flex items-center gap-1.5">
-                  <Heart className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
-                  <span>LEBEN</span>
+                  <Heart className="w-4 h-4 fill-emerald-400 text-emerald-300" />
+                  <span className="tracking-wider">LEBEN</span>
                 </div>
-                <span className="tabular-nums text-sm font-black text-white">
-                  {Math.round(health)}/{maxHealth}
+                <span className="tabular-nums text-base font-black text-white">
+                  {Math.round(health)} <span className="text-xs text-emerald-400/80 font-normal">/ {maxHealth}</span>
                 </span>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-900 border border-emerald-500/30 p-0.5 overflow-hidden">
+              <div className="w-full h-4 rounded-xl bg-slate-950/90 border-2 border-emerald-400/60 p-0.5 shadow-[0_0_15px_rgba(16,185,129,0.35)] overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-200"
+                  className="h-full rounded-lg bg-gradient-to-r from-emerald-600 via-green-500 to-lime-400 transition-all duration-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.6)]"
                   style={{ width: `${(health / maxHealth) * 100}%` }}
                 />
               </div>
             </div>
           </div>
 
-          {/* COD COLD WAR GUNSMITH & 4-SLOT INVENTORY HOTBAR (BOTTOM RIGHT) */}
+          {/* FORTNITE WEAPONS & BIG AMMO HUD (BOTTOM RIGHT) */}
           <div className="absolute bottom-14 right-6 flex flex-col items-end gap-2 pointer-events-auto z-20">
-            {/* Live CoD Cold War Gunsmith Attachments & Pack-a-Punch Bar */}
+            {/* BIG FORTNITE AMMO DISPLAY (Above Weapon Hotbar) */}
+            {!isMobileMode && (
+              <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-slate-950/92 backdrop-blur-md border-2 border-slate-700/80 shadow-2xl font-mono text-right">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    {isReloading ? (
+                      <span className="text-amber-400 animate-pulse flex items-center gap-1 justify-end">
+                        ⚡ NACHLADEN [{reloadSeconds.toFixed(1)}s]
+                      </span>
+                    ) : ammo.magazine === 0 ? (
+                      <span className="text-red-400 animate-bounce font-black flex items-center gap-1 justify-end">
+                        ⚠️ LEER · DRÜCKE [R]
+                      </span>
+                    ) : (
+                      <span className="text-sky-300">MAGAZIN · [R] LÄDT</span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline justify-end gap-1.5">
+                    <span className={`text-4xl sm:text-5xl font-black tabular-nums tracking-tight ${
+                      isReloading ? 'text-amber-400 animate-pulse' : ammo.magazine <= 3 ? 'text-red-400 animate-pulse' : 'text-white'
+                    }`}>
+                      {ammo.magazine}
+                    </span>
+                    <span className="text-xl font-bold text-slate-400 tabular-nums">
+                      / {ammo.reserve}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Gunsmith Attachments Bar */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-800 text-[10px] font-mono shadow-lg">
               <span
                 className="font-bold mr-1"
@@ -1186,34 +1251,49 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               )}
             </div>
 
-            {/* Weapons Hotbar */}
-            <div className="flex items-center gap-2 p-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-white/10 shadow-2xl">
+            {/* Fortnite 4-Slot Weapons Hotbar */}
+            <div className="flex items-center gap-2 p-2 rounded-2xl bg-slate-950/92 backdrop-blur-md border-2 border-white/20 shadow-2xl">
               {Object.values(WEAPONS).map((w, idx) => {
                 const isSelected = activeWeapon === w.id;
                 const wState = weaponUpgrades[w.id];
                 const wStats = getEffectiveWeaponStats(w, wState);
+
+                // Fortnite-like gradient backgrounds based on weapon rarity
+                const tier = wStats.rarityObj.tier;
+                const rarityBg =
+                  tier === 5
+                    ? 'bg-gradient-to-b from-amber-500/35 via-yellow-500/20 to-amber-950/70 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                    : tier === 4
+                    ? 'bg-gradient-to-b from-purple-500/35 via-fuchsia-500/20 to-purple-950/70 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                    : tier === 3
+                    ? 'bg-gradient-to-b from-sky-500/35 via-cyan-500/20 to-blue-950/70 border-sky-400 shadow-[0_0_15px_rgba(14,165,233,0.4)]'
+                    : tier === 2
+                    ? 'bg-gradient-to-b from-emerald-500/35 via-green-500/20 to-emerald-950/70 border-emerald-400'
+                    : 'bg-gradient-to-b from-slate-700/35 via-slate-800/20 to-slate-950/70 border-slate-600';
 
                 return (
                   <button
                     key={w.id}
                     type="button"
                     onClick={() => selectWeapon(w.id)}
-                    className={`relative flex flex-col items-center justify-between w-16 h-16 md:w-20 md:h-20 p-2 rounded-xl border-2 transition-all cursor-pointer ${wStats.rarityObj.borderClass} ${
+                    className={`relative flex flex-col items-center justify-between w-18 h-18 sm:w-20 sm:h-20 p-2 rounded-2xl border-2 transition-all cursor-pointer ${rarityBg} ${
                       isSelected
-                        ? 'scale-105 shadow-xl ring-2 ring-white bg-slate-900'
-                        : 'opacity-75 hover:opacity-100 bg-slate-950'
+                        ? 'scale-105 shadow-2xl ring-4 ring-white border-white'
+                        : 'opacity-80 hover:opacity-100 hover:scale-102'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full text-[9px] font-mono font-bold">
-                      <span className="text-slate-400">[{idx + 1}]</span>
+                    <div className="flex items-center justify-between w-full text-[10px] font-mono font-black">
+                      <span className="px-1.5 py-0.5 rounded-md bg-slate-900/90 text-white shadow">
+                        [{idx + 1}]
+                      </span>
                       {(wState?.papLevel || 0) > 0 && (
-                        <span className="text-fuchsia-400">PaP{wState?.papLevel}</span>
+                        <span className="text-fuchsia-300 font-bold">PaP{wState?.papLevel}</span>
                       )}
                     </div>
-                    <span className="text-[11px] font-bold text-white text-center leading-tight truncate w-full">
+                    <span className="text-[11px] sm:text-xs font-black text-white text-center leading-tight truncate w-full drop-shadow">
                       {wStats.displayName.split(' ')[0]}
                     </span>
-                    <span className="text-[10px] font-mono text-amber-400 tabular-nums font-bold">
+                    <span className="text-[10px] font-mono text-amber-300 tabular-nums font-black drop-shadow">
                       {wStats.damage} DMG
                     </span>
                   </button>
@@ -1441,93 +1521,22 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         </div>
       )}
 
-      {/* VICTORY ROYALE MODAL OVERLAY (PC Mode Only) */}
-      {!isMobileMode && gameOverState?.over && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 cursor-default"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="max-w-md w-full bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-8 shadow-2xl text-center pointer-events-auto"
-          >
-            {gameOverState.victory ? (
-              <>
-                <div className="inline-block px-4 py-1 rounded-full bg-amber-500 text-slate-950 font-black text-sm uppercase tracking-widest mb-3">
-                  VICTORY ROYALE!
-                </div>
-                <h2 className="text-3xl font-black text-white tracking-tight mb-2">
-                  NEU-ANSPACH TRIUMPHIERT!
-                </h2>
-                <p className="text-xs text-slate-300 mb-6">
-                  Dein Ergebnis wurde automatisch im echten Live-Leaderboard für [{clanTag}] {playerName} gespeichert und schaltet das nächste Einsatzgebiet frei!
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="inline-block px-4 py-1 rounded-full bg-red-600 text-white font-black text-sm uppercase tracking-widest mb-3">
-                  ELIMINIERT!
-                </div>
-                <h2 className="text-3xl font-black text-white tracking-tight mb-2">
-                  VOM APFELDORF ÜBERRANNT
-                </h2>
-                <p className="text-xs text-slate-300 mb-6">
-                  Rüste deine Waffen in der CoD Waffenschmiede auf und starte den Gegenangriff!
-                </p>
-              </>
-            )}
-
-            <div className="grid grid-cols-3 gap-3 p-4 bg-slate-950 rounded-2xl mb-6 font-mono border border-slate-800">
-              <div>
-                <div className="text-[10px] text-slate-400">ELIMINIERUNGEN</div>
-                <div className="text-xl font-black text-red-400 tabular-nums">
-                  {gameOverState.stats.kills}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400">WELLE</div>
-                <div className="text-xl font-black text-amber-400 tabular-nums">
-                  {gameOverState.stats.wave} / 5
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400">PUNKTE</div>
-                <div className="text-xl font-black text-emerald-400 tabular-nums">
-                  +{gameOverState.stats.score}
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-6 flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 text-left">
-              <div>
-                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-300">
-                  Einsatzbelohnung
-                </div>
-                <div className="text-xs text-slate-300">Automatisch deinem NAT-Guthaben gutgeschrieben</div>
-              </div>
-              <div className="text-xl font-black tabular-nums text-emerald-400">+{matchReward} NAT</div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              {onOpenGunsmith && (
-                <button
-                  type="button"
-                  onClick={onOpenGunsmith}
-                  className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-2xl transition-colors cursor-pointer uppercase tracking-wider"
-                >
-                  Waffenschmiede
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={restartMatch}
-                className="flex-1 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-2xl shadow-lg transition-all cursor-pointer uppercase tracking-wider"
-              >
-                Nächste Runde starten
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* BRAWL STARS END SCREEN (Won or Lost - Complete Stats for Players & Attacker Bots) */}
+      {gameOverState?.over && (
+        <BrawlStarsEndScreen
+          victory={gameOverState.victory}
+          stats={gameOverState.stats}
+          matchReward={matchReward || (gameOverState.victory ? 150 : 50)}
+          playerName={playerName || 'Operator'}
+          clanTag={clanTag || 'NA'}
+          currentArenaName={ARENAS[currentArena]?.name || currentArena}
+          onPlayAgain={() => restartMatch()}
+          onOpenGunsmith={onOpenGunsmith}
+          onExitToMenu={() => {
+            setGameOverState(null);
+            onMatchStateChange?.('complete');
+          }}
+        />
       )}
     </div>
   );

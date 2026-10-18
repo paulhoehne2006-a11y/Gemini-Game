@@ -245,8 +245,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Authentischer Nachbau des Freilichtmuseums Hessenpark: Kämpfe zwischen historischen Fachwerkhäusern, erklimme den Scheunen-Dachboden über die Außentreppe und nutze die Holländer-Windmühle als Deckung.',
     district: 'Neu-Anspach Süd · Laubweg',
-    skyColor: 0x1E293B,
-    fogColor: 0x1E293B,
+    skyColor: 0x38BDF8,
+    fogColor: 0xBAE6FD,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -442,8 +442,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Das beliebte Freibad am Waldrand: Klettere auf den 5-Meter-Sprungturm für freies Schussfeld über das gesamte Becken oder verschanze dich auf der Kiosk-Sonnenterrasse.',
     district: 'Anspach Waldrand · Fasanenweg',
-    skyColor: 0x0F172A,
-    fogColor: 0x1E293B,
+    skyColor: 0x0284C7,
+    fogColor: 0xBAE6FD,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -610,6 +610,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 46, 44);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 10], [14, 12], [-8, -14]]);
 
       let elapsed = 0;
       return {
@@ -631,8 +632,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Der Bahnhof Neu-Anspach an der Taunusbahn-Strecke RB15: Nutze den wartenden LINT-Zug und die geparkten Pendler-Autos als Deckung oder sichere dir das Dach des Bahnhofsgebäudes.',
     district: 'Bahnhofstraße · Gleis 1 & 2',
-    skyColor: 0x0F172A,
-    fogColor: 0x1E293B,
+    skyColor: 0x2563EB,
+    fogColor: 0xDBEAFE,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -773,6 +774,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 48, 38);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 8], [12, -8], [0, 14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -785,8 +787,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Das gesellschaftliche Zentrum von Neu-Anspach: Verteidige das Bürgerhaus und das Rathaus, klettere über die Freitreppe auf die Dachterrasse und nutze das Feuerwehr-Einsatzfahrzeug als Deckung.',
     district: 'stadtmitte · Gustav-Heinemann-Straße',
-    skyColor: 0x0F172A,
-    fogColor: 0x1E293B,
+    skyColor: 0x0284C7,
+    fogColor: 0xE0F2FE,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -878,6 +880,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 48, 36);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 12], [14, -10], [-6, -14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -890,8 +893,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Das bekannte Einkaufszentrum in der Neuen Mitte von Neu-Anspach: Stürme über die Auffahrtsrampe auf das obere Parkdeck des Taunus-Centers und nutze die geparkten PKWs als taktische Deckung!',
     district: 'Neue Mitte · Rudolf-Diesel-Straße',
-    skyColor: 0x0F172A,
-    fogColor: 0x1E293B,
+    skyColor: 0x0284C7,
+    fogColor: 0xBAE6FD,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -985,6 +988,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 50, 36);
+      scatterArenaEnvironment(scene, destructibles, [[-14, 10], [12, 12], [0, -12]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -1117,6 +1121,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 50, 40);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 8], [14, 10], [8, -14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -1129,8 +1134,8 @@ export const ARENAS: Record<string, ArenaConfig> = {
     description:
       'Die malerische Höhenlage oberhalb von Anspach mit direktem Blick auf den Großen Feldberg (879m): Erklimme den hölzernen Taunus-Aussichtsturm in der Kartenmitte oder verteidige die Schutzhütte am Wanderparkplatz.',
     district: 'Taunuskamm · Richtung Großer Feldberg',
-    skyColor: 0x0F172A,
-    fogColor: 0x1E293B,
+    skyColor: 0x0284C7,
+    fogColor: 0xCFFAFE,
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -1287,6 +1292,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       // Massive, closer Großer Feldberg (879m) Mountain Panorama directly North!
       addDistantFeldbergBackdrop(scene, -75);
       addTaunusTreeRing(scene, obstacles, 45, 48);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [0, 14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },

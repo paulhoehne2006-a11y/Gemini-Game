@@ -315,6 +315,8 @@ export class ArenaSceneManager {
   private hasValidLastMouse = false;
   private lastReportedHeading = -1;
   private lastHeadingNotifyTime = 0;
+  private isMousePhysicallyHeld = false;
+  private lastReloadNotifyTime = 0;
 
   // Mobile Virtual Analog Joystick Input (-1..1)
   private mobileInputX = 0;
@@ -402,7 +404,7 @@ export class ArenaSceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.25;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -410,15 +412,15 @@ export class ArenaSceneManager {
     // 2. Setup Scene & Camera
     const arenaDef = ARENAS[arenaId] || ARENAS.hessenpark;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(arenaDef.skyColor || 0x0284C7);
-    this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0x1E3A8A, 0.0055);
+    this.scene.background = new THREE.Color(arenaDef.skyColor || 0x38BDF8);
+    this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0xBAE6FD, 0.0035);
 
     const skyDome = new THREE.Mesh(
       new THREE.SphereGeometry(150, 32, 16),
       new THREE.MeshBasicMaterial({
         map: createSkyGradientTexture(
-          `#${new THREE.Color(arenaDef.skyColor || 0x0284C7).getHexString()}`,
-          `#${new THREE.Color(arenaDef.fogColor || 0xFDE68A).getHexString()}`
+          `#${new THREE.Color(arenaDef.skyColor || 0x38BDF8).getHexString()}`,
+          `#${new THREE.Color(arenaDef.fogColor || 0xBAE6FD).getHexString()}`
         ),
         side: THREE.BackSide,
         depthWrite: false,
@@ -464,25 +466,25 @@ export class ArenaSceneManager {
     pmrem.dispose();
 
     // 4. Dynamic Sunlight, Sky Hemisphere & Rim Lighting Rig (Fortnite Palette)
-    const hemiLight = new THREE.HemisphereLight(0xBAE6FD, 0x1E293B, 0.88);
+    const hemiLight = new THREE.HemisphereLight(0xBAE6FD, 0x334155, 1.15);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xFFF7ED, 1.75);
-    dirLight.position.set(38, 58, 28);
+    const dirLight = new THREE.DirectionalLight(0xFFFDF0, 2.2);
+    dirLight.position.set(42, 65, 32);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
-    const d = 58;
+    const d = 60;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.0004;
-    dirLight.shadow.radius = 2.5;
+    dirLight.shadow.bias = -0.0003;
+    dirLight.shadow.radius = 2.2;
     this.scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0x38BDF8, 0.65);
-    rimLight.position.set(-28, 30, -25);
+    const rimLight = new THREE.DirectionalLight(0x7DD3FC, 0.85);
+    rimLight.position.set(-32, 35, -28);
     this.scene.add(rimLight);
 
     // 5. Build Neu-Anspach Arena (Buildings, Walkable Roofs, Cars, Destructibles)
@@ -1084,21 +1086,34 @@ export class ArenaSceneManager {
   public reloadWeapon() {
     if (this.peacefulMode || this.isGameOver || this.reloadTimer > 0) return;
     const capacity = this.getMagazineCapacity();
-    if (this.magazineAmmo >= capacity || this.reserveAmmo <= 0) return;
+    if (this.magazineAmmo >= capacity) return;
+
+    // Tactical emergency ammo scavenging: If reserveAmmo <= 0, award emergency magazine so player is NEVER stranded
+    if (this.reserveAmmo <= 0) {
+      this.reserveAmmo = capacity;
+      this.callbacks.onLootPickup('ammo', capacity, 'Notfall-Munition geborgen');
+    }
+
     this.reloadTimer = this.reloadDuration;
     this.isMouseDown = false;
     soundFx.playReload();
+    this.lastReloadNotifyTime = performance.now();
     this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
   }
 
   private finishReload() {
     const needed = this.getMagazineCapacity() - this.magazineAmmo;
-    const loaded = Math.min(needed, this.reserveAmmo);
+    const loaded = Math.min(needed, Math.max(1, this.reserveAmmo));
     this.magazineAmmo += loaded;
-    this.reserveAmmo -= loaded;
+    this.reserveAmmo = Math.max(0, this.reserveAmmo - loaded);
     this.reloadTimer = 0;
     this.callbacks.onReloadStateChange?.(false, 0);
     this.notifyAmmoState();
+
+    // Auto-resume firing smoothly if player is still holding down the left mouse button!
+    if (this.isMousePhysicallyHeld && !this.peacefulMode && !this.isGameOver) {
+      this.isMouseDown = true;
+    }
   }
 
   private awardExperience(amount: number) {
@@ -1194,7 +1209,7 @@ export class ArenaSceneManager {
         this.triggerJump();
       }
 
-      if (!e.repeat && this.isKey(e, this.controls.reload)) {
+      if (!e.repeat && (lowerKey === 'r' || this.isKey(e, this.controls.reload))) {
         this.reloadWeapon();
       }
 
@@ -1256,6 +1271,7 @@ export class ArenaSceneManager {
       this.isCrouching = false;
       this.crouchToggle = false;
       this.isMouseDown = false;
+      this.isMousePhysicallyHeld = false;
     };
     window.addEventListener('blur', onWindowBlur);
     this.cleanupListeners.push(() => window.removeEventListener('blur', onWindowBlur));
@@ -1308,6 +1324,7 @@ export class ArenaSceneManager {
       this.hasValidLastMouse = true;
 
       if (e.button === 0 && !this.peacefulMode) {
+        this.isMousePhysicallyHeld = true;
         // Only fire when clicking inside canvas
         if (this.container.contains(e.target as Node) || this.isPointerLocked) {
           this.isMouseDown = true;
@@ -1324,6 +1341,7 @@ export class ArenaSceneManager {
     const onMouseUp = (e: MouseEvent) => {
       this.hasValidLastMouse = false;
       if (e.button === 0) {
+        this.isMousePhysicallyHeld = false;
         this.isMouseDown = false;
       } else if (e.button === 2) {
         this.isAiming = false;
@@ -1646,7 +1664,11 @@ export class ArenaSceneManager {
     // Weapon Reload countdown (Runs continuously independent of muzzle flash!)
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - delta);
-      this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
+      const now = performance.now();
+      if (now - this.lastReloadNotifyTime > 80 || this.reloadTimer === 0) {
+        this.lastReloadNotifyTime = now;
+        this.callbacks.onReloadStateChange?.(true, this.reloadTimer);
+      }
       if (this.reloadTimer === 0) {
         this.finishReload();
       }
