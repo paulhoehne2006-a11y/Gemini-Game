@@ -66,7 +66,7 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
 
         // Rich German cobblestone hues (Taunus Slate & Basalt)
         const stoneHues = ['#64748B', '#526071', '#5E7083', '#4A5568', '#6D7F92', '#586877'];
-        const baseColor = stoneHues[(r * 3 + c * 5) % stoneHues.length];
+        const baseColor = stoneHues[Math.abs(r * 3 + c * 5) % stoneHues.length] || '#64748B';
 
         // Soft contact drop shadow
         ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
@@ -91,7 +91,7 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
         ctx.stroke();
 
         // Delicate moss accents in corners
-        if ((r + c * 2) % 3 === 0) {
+        if (Math.abs(r + c * 2) % 3 === 0) {
           ctx.fillStyle = 'rgba(74, 222, 128, 0.45)';
           ctx.beginPath();
           ctx.arc(x + cw - 5, y + ch - 5, 3.5, 0, Math.PI * 2);

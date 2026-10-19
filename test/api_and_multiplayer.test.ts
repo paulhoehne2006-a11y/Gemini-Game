@@ -32,6 +32,8 @@ function cleanDb(p: string) {
 
 test('API, CSRF & Multiplayer Security Test Suite', async (t) => {
   cleanDb(TEST_DB);
+  const savedDatabaseUrl = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
   process.env.SQLITE_DB_PATH = TEST_DB;
   process.env.NODE_ENV = 'test';
 
@@ -392,4 +394,7 @@ test('API, CSRF & Multiplayer Security Test Suite', async (t) => {
   // Teardown
   await stopServer();
   cleanDb(TEST_DB);
+  if (savedDatabaseUrl !== undefined) {
+    process.env.DATABASE_URL = savedDatabaseUrl;
+  }
 });

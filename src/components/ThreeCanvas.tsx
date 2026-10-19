@@ -87,6 +87,7 @@ interface ThreeCanvasProps {
   onOpenDailyMissions?: () => void;
   onOpenMobileCommandHub?: () => void;
   onComboRecord?: (combo: number) => void;
+  onExitToMenu?: () => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -118,6 +119,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onOpenDailyMissions,
   onOpenMobileCommandHub,
   onComboRecord,
+  onExitToMenu,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<ArenaSceneManager | null>(null);
@@ -447,6 +449,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     return () => {
       manager.destroy();
       managerRef.current = null;
+      onMatchStateChange?.('inactive');
     };
   }, [currentArena, matchRound, effectivePeacefulMode, isTrainingMode]);
 
@@ -2106,10 +2109,23 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 setIsPaused(false);
                 onMatchStateChange?.('active');
               }}
-              className="w-full rounded-2xl bg-amber-500 py-3.5 text-xs font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-amber-400"
+              className="w-full rounded-2xl bg-amber-500 py-3.5 text-xs font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-amber-400 cursor-pointer font-mono"
             >
               Einsatz fortsetzen
             </button>
+            {onExitToMenu && (
+              <button
+                type="button"
+                onClick={() => {
+                  managerRef.current?.destroy();
+                  onMatchStateChange?.('inactive');
+                  onExitToMenu();
+                }}
+                className="mt-3 w-full rounded-2xl bg-slate-800 hover:bg-slate-700 py-3 text-xs font-black uppercase tracking-wider text-slate-300 hover:text-white transition-colors cursor-pointer font-mono"
+              >
+                Einsatz beenden & zum Hub
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2126,7 +2142,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           onPlayAgain={() => restartMatch()}
           onExitToMenu={() => {
             setGameOverState(null);
-            onMatchStateChange?.('complete');
+            onMatchStateChange?.('inactive');
+            onExitToMenu?.();
           }}
         />
       )}

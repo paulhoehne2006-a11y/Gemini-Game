@@ -465,8 +465,11 @@ export class ArenaSceneManager {
     this.resetWeaponAmmo();
 
     // 1. Setup WebGL Renderer with Realistic Tone Mapping & Soft Shadows
+    const initialW = Math.max(1, container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 800));
+    const initialH = Math.max(1, container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600));
+
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.setSize(initialW, initialH);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -521,7 +524,7 @@ export class ArenaSceneManager {
 
     this.camera = new THREE.PerspectiveCamera(
       this.currentFov,
-      container.clientWidth / container.clientHeight,
+      initialW / initialH,
       0.3,
       280
     );
@@ -3027,8 +3030,8 @@ export class ArenaSceneManager {
 
   private onResize = () => {
     if (!this.container || this.isDestroyed) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
+    const w = Math.max(1, this.container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 800));
+    const h = Math.max(1, this.container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);

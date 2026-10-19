@@ -818,9 +818,6 @@ export default function App() {
   };
 
   const openTab = (tab: AppTab) => {
-    if (matchState === 'active' || matchState === 'paused') {
-      return;
-    }
     setActiveTab(tab);
     setShowHome(false);
     setShowMobileCommandOverlay(false);
@@ -982,7 +979,7 @@ export default function App() {
           unclaimedMissionsCount={unclaimedMissionsCount}
           completedMissionsCount={completedMissionsCount}
           totalMissionsCount={dailyMissionsState.missions.length}
-          navigationDisabled={matchState === 'active' || matchState === 'paused'}
+          navigationDisabled={false}
         />
       )}
 
@@ -1432,6 +1429,7 @@ export default function App() {
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
               onOpenMobileCommandHub={() => setShowMobileCommandOverlay(true)}
               onComboRecord={handleComboRecord}
+              onExitToMenu={() => setShowHome(true)}
             />
           )
         )}
@@ -1463,6 +1461,8 @@ export default function App() {
             onStartArena={(arenaId) => {
               setCurrentArena(arenaId);
               setActiveTab('battle');
+              setShowHome(false);
+              setShowMobileCommandOverlay(false);
             }}
           />
         )}
