@@ -194,45 +194,79 @@ export function scatterArenaEnvironment(
 
 function addDistantFeldbergBackdrop(scene: THREE.Scene, zOffset = -95) {
   const group = new THREE.Group();
-  const mountainMat = new THREE.MeshStandardMaterial({
-    color: 0x1E293B,
-    roughness: 0.95,
+
+  // Majestic layered Taunus Mountain Ridges (Großer Feldberg 879m & Altkönig)
+  const mountainFarMat = new THREE.MeshStandardMaterial({
+    color: 0x256345, // Rich Taunus pine forest green
+    roughness: 0.88,
+    flatShading: true,
   });
 
-  // Großer Feldberg (879m) & Altkönig ridge silhouette
-  const mainPeak = new THREE.Mesh(new THREE.ConeGeometry(55, 42, 7), mountainMat);
-  mainPeak.position.set(0, 18, zOffset);
+  const mountainNearMat = new THREE.MeshStandardMaterial({
+    color: 0x1E5336, // Deeper pine ridge foreground
+    roughness: 0.82,
+    flatShading: true,
+  });
+
+  // Main Summit: Großer Feldberg (879m)
+  const mainPeak = new THREE.Mesh(new THREE.ConeGeometry(58, 44, 9), mountainFarMat);
+  mainPeak.position.set(0, 19, zOffset);
+  mainPeak.rotation.y = 0.2;
   group.add(mainPeak);
 
-  const westPeak = new THREE.Mesh(new THREE.ConeGeometry(42, 28, 6), mountainMat);
-  westPeak.position.set(-48, 12, zOffset + 8);
+  // Altkönig (798m) to the West
+  const westPeak = new THREE.Mesh(new THREE.ConeGeometry(46, 32, 8), mountainNearMat);
+  westPeak.position.set(-50, 14, zOffset + 8);
+  westPeak.rotation.y = -0.4;
   group.add(westPeak);
 
-  const eastPeak = new THREE.Mesh(new THREE.ConeGeometry(45, 31, 6), mountainMat);
-  eastPeak.position.set(52, 13, zOffset + 10);
+  // Pferdskopf / Weilsberg ridge to the East
+  const eastPeak = new THREE.Mesh(new THREE.ConeGeometry(48, 35, 8), mountainNearMat);
+  eastPeak.position.set(52, 15, zOffset + 10);
+  eastPeak.rotation.y = 0.5;
   group.add(eastPeak);
 
-  // Iconic Feldberg Fernmeldeturm on summit
+  // Mid-ground lush Taunus foothill mounds
+  const footHills = [
+    { x: -24, y: 8, z: zOffset + 18, r: 28, h: 20 },
+    { x: 26, y: 9, z: zOffset + 16, r: 30, h: 22 },
+    { x: 0, y: 7, z: zOffset + 22, r: 25, h: 18 },
+  ];
+  footHills.forEach((h, idx) => {
+    const mound = new THREE.Mesh(new THREE.ConeGeometry(h.r, h.h, 7), mountainNearMat);
+    mound.position.set(h.x, h.y, h.z);
+    mound.rotation.y = idx * 0.8;
+    group.add(mound);
+  });
+
+  // Iconic Großer Feldberg Fernmeldeturm & Wetterturm on the Summit!
   const towerShaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.7, 1.1, 14, 10),
-    new THREE.MeshStandardMaterial({ color: 0xCBD5E1, roughness: 0.5 })
+    new THREE.CylinderGeometry(0.85, 1.35, 16, 10),
+    new THREE.MeshStandardMaterial({ color: 0xF8FAFC, roughness: 0.35 })
   );
-  towerShaft.position.set(0, 42, zOffset);
+  towerShaft.position.set(0, 44, zOffset);
   group.add(towerShaft);
 
-  const towerPod = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.1, 1.8, 2.2, 12),
+  // Red and white observation platform / transmitter rings
+  const platformRed = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 2.2, 2.4, 12),
     new THREE.MeshStandardMaterial({ color: 0xDC2626, roughness: 0.4 })
   );
-  towerPod.position.set(0, 45.5, zOffset);
-  group.add(towerPod);
+  platformRed.position.set(0, 48, zOffset);
+  group.add(platformRed);
 
   const spire = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.35, 6, 8),
-    new THREE.MeshStandardMaterial({ color: 0xF8FAFC, emissive: 0xEF4444, emissiveIntensity: 0.8 })
+    new THREE.CylinderGeometry(0.18, 0.42, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0xEF4444, emissive: 0xEF4444, emissiveIntensity: 0.9 })
   );
-  spire.position.set(0, 50.5, zOffset);
+  spire.position.set(0, 53.5, zOffset);
   group.add(spire);
+
+  // Blinking red aviation warning beacon on the summit
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xF87171 });
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), beaconMat);
+  beacon.position.set(0, 57.8, zOffset);
+  group.add(beacon);
 
   scene.add(group);
 }

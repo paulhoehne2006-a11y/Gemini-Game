@@ -51,7 +51,6 @@ interface ThreeCanvasProps {
   isMobileMode?: boolean;
   onCollectTaler?: (amount: number) => void;
   onOpenTycoon?: () => void;
-  onOpenGunsmith?: () => void;
   onOpenLeaderboard?: () => void;
   weaponUpgrades?: AllWeaponsUpgrades;
   onLootAttachmentUpdate?: (weaponId: string, attachments: WeaponAttachments) => void;
@@ -88,7 +87,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   isMobileMode = false,
   onCollectTaler,
   onOpenTycoon,
-  onOpenGunsmith,
   onOpenLeaderboard,
   weaponUpgrades = INITIAL_WEAPON_UPGRADES,
   onLootAttachmentUpdate,
@@ -282,7 +280,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           }
           const msg =
             type === 'attachment'
-              ? `WAFFENSCHMIEDE-LOOT: ${label}`
+              ? `WAFFEN-UPGRADE: ${label}`
               : type === 'taler'
               ? `+${amount} Neu-Anspach-Taler (NAT) gesammelt!`
               : type === 'shield'
@@ -322,11 +320,15 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             onLootAttachmentUpdate(weaponId, att);
           }
         },
+        onWeaponChange: (wId) => {
+          setActiveWeapon(wId);
+          if (weaponUpgrades[wId]) {
+            setAttachments(weaponUpgrades[wId].attachments);
+          }
+          soundFx.playShoot();
+        },
         onElevationChange: (elev) => {
           setElevation(elev);
-        },
-        onToggleGunsmith: () => {
-          onOpenGunsmith?.();
         },
         onStanceChange: (nextStance) => {
           setStance(nextStance);
@@ -781,7 +783,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   <div className="text-[11px] font-mono font-bold text-slate-900 bg-white/40 px-3 py-0.5 rounded-full">
                     Nächste Welle in{' '}
                     <span className="text-red-700 text-xs font-black">{waveInfo.intermissionCountdown ?? 5}s</span> ·
-                    Drücke [B] für CoD Waffenschmiede & Pack-a-Punch!
+                    Bereite dich auf den nächsten Taunus-Gegenangriff vor!
                   </div>
                 </div>
               ) : waveInfo.status === 'boss' ? (
@@ -968,7 +970,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
               <div className="flex items-center justify-between text-amber-400">
                 <span>Rechtsklick: Visier (ADS)</span>
-                <span>[B]: Waffenschmiede</span>
+                <span>[1-4]: Waffenwechsel</span>
               </div>
             </div>
 
@@ -1094,7 +1096,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               className="absolute top-24 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs shadow-2xl cursor-pointer hover:bg-amber-400 transition-colors z-30"
             >
               <MousePointer className="w-3.5 h-3.5" />
-              <span>Klicke ins Bild für 360°-Maussteuerung · [B] für CoD Waffenschmiede</span>
+              <span>Klicke ins Bild für 360°-Maussteuerung · [1-4] Waffen wechseln · [R] Nachladen</span>
             </div>
           )}
 
@@ -1235,20 +1237,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   {mod.label} {mod.lv}
                 </div>
               ))}
-
-              {onOpenGunsmith && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    managerRef.current?.unlockPointer();
-                    onOpenGunsmith();
-                  }}
-                  className="ml-1 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold cursor-pointer transition-colors"
-                >
-                  <Wrench className="w-3 h-3" />
-                  <span>[B] UPGRADES</span>
-                </button>
-              )}
             </div>
 
             {/* Fortnite 4-Slot Weapons Hotbar */}
@@ -1531,7 +1519,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           clanTag={clanTag || 'NA'}
           currentArenaName={ARENAS[currentArena]?.name || currentArena}
           onPlayAgain={() => restartMatch()}
-          onOpenGunsmith={onOpenGunsmith}
           onExitToMenu={() => {
             setGameOverState(null);
             onMatchStateChange?.('complete');

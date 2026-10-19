@@ -963,7 +963,6 @@ export default function App() {
               isMobileMode={false}
               onCollectTaler={handleCollectTaler}
               onOpenTycoon={() => openTab('tycoon')}
-              onOpenGunsmith={() => openTab('gunsmith')}
               onOpenLeaderboard={() => openTab('leaderboard')}
               weaponUpgrades={weaponUpgrades}
               onLootAttachmentUpdate={handleLootAttachmentUpdate}

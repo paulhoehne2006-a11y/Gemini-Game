@@ -57,7 +57,6 @@ interface BrawlStarsEndScreenProps {
   clanTag: string;
   currentArenaName: string;
   onPlayAgain: () => void;
-  onOpenGunsmith?: () => void;
   onExitToMenu?: () => void;
 }
 
@@ -69,7 +68,6 @@ export const BrawlStarsEndScreen: React.FC<BrawlStarsEndScreenProps> = ({
   clanTag,
   currentArenaName,
   onPlayAgain,
-  onOpenGunsmith,
   onExitToMenu,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'damage'>('overview');
@@ -452,20 +450,10 @@ export const BrawlStarsEndScreen: React.FC<BrawlStarsEndScreenProps> = ({
               <button
                 type="button"
                 onClick={onExitToMenu}
-                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer border border-slate-700 shadow-md"
               >
-                <Home className="w-4 h-4" />
+                <Home className="w-4 h-4 text-amber-400" />
                 <span>Hauptmenü</span>
-              </button>
-            )}
-            {onOpenGunsmith && (
-              <button
-                type="button"
-                onClick={onOpenGunsmith}
-                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                <Wrench className="w-4 h-4" />
-                <span>Waffenschmiede</span>
               </button>
             )}
           </div>

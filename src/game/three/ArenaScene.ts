@@ -32,15 +32,15 @@ const _desiredCamPos = new THREE.Vector3();
 const _skyGradientCanvas = document.createElement('canvas');
 
 function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
-  _skyGradientCanvas.width = 4;
+  _skyGradientCanvas.width = 16;
   _skyGradientCanvas.height = 512;
   const context = _skyGradientCanvas.getContext('2d')!;
   const gradient = context.createLinearGradient(0, 0, 0, _skyGradientCanvas.height);
-  gradient.addColorStop(0, '#0284C7'); // Vibrant Azure Blue Zenith
-  gradient.addColorStop(0.35, '#38BDF8'); // Sky Cyan
-  gradient.addColorStop(0.65, '#FDE68A'); // Warm Peach-Gold Sun Horizon
-  gradient.addColorStop(0.85, '#FB923C'); // Taunus Sunset Ember
-  gradient.addColorStop(1, '#0F172A'); // Ground Base
+  gradient.addColorStop(0, topColor || '#0284C7'); // Vibrant Azure Blue Zenith
+  gradient.addColorStop(0.35, '#38BDF8'); // Clear Sky Cyan
+  gradient.addColorStop(0.65, '#7DD3FC'); // Lower Atmosphere
+  gradient.addColorStop(0.85, '#BAE6FD'); // Sunlit Horizon Haze
+  gradient.addColorStop(1.0, horizonColor || '#E0F2FE'); // Seamless atmospheric horizon fog blend
   context.fillStyle = gradient;
   context.fillRect(0, 0, _skyGradientCanvas.width, _skyGradientCanvas.height);
   const texture = new THREE.CanvasTexture(_skyGradientCanvas);
@@ -177,6 +177,7 @@ export interface GameEventCallbacks {
   onWaveChange: (info: WaveInfo) => void;
   onAttachmentsChange?: (attachments: WeaponAttachments, weaponId?: string) => void;
   onElevationChange?: (elevationMeters: number) => void;
+  onWeaponChange?: (weaponId: string) => void;
   onToggleGunsmith?: () => void;
   onStanceChange?: (stance: 'standing' | 'sprinting' | 'crouching') => void;
   onAmmoChange?: (magazine: number, reserve: number, capacity: number) => void;
@@ -317,6 +318,7 @@ export class ArenaSceneManager {
   private lastHeadingNotifyTime = 0;
   private isMousePhysicallyHeld = false;
   private lastReloadNotifyTime = 0;
+  private dirLight!: THREE.DirectionalLight;
 
   // Mobile Virtual Analog Joystick Input (-1..1)
   private mobileInputX = 0;
@@ -469,19 +471,20 @@ export class ArenaSceneManager {
     const hemiLight = new THREE.HemisphereLight(0xBAE6FD, 0x334155, 1.15);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xFFFDF0, 2.2);
-    dirLight.position.set(42, 65, 32);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    const d = 60;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.0003;
-    dirLight.shadow.radius = 2.2;
-    this.scene.add(dirLight);
+    this.dirLight = new THREE.DirectionalLight(0xFFFDF0, 2.2);
+    this.dirLight.position.set(42, 65, 32);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.width = 2048;
+    this.dirLight.shadow.mapSize.height = 2048;
+    const d = 52;
+    this.dirLight.shadow.camera.left = -d;
+    this.dirLight.shadow.camera.right = d;
+    this.dirLight.shadow.camera.top = d;
+    this.dirLight.shadow.camera.bottom = -d;
+    this.dirLight.shadow.bias = -0.0003;
+    this.dirLight.shadow.radius = 2.2;
+    this.scene.add(this.dirLight);
+    this.scene.add(this.dirLight.target);
 
     const rimLight = new THREE.DirectionalLight(0x7DD3FC, 0.85);
     rimLight.position.set(-32, 35, -28);
@@ -1061,6 +1064,7 @@ export class ArenaSceneManager {
       this.resetWeaponAmmo();
       this.refreshPlayer3DWeapon();
       this.callbacks.onAttachmentsChange?.({ ...this.attachments }, weaponKey);
+      this.callbacks.onWeaponChange?.(weaponKey);
     }
   }
 
@@ -1237,14 +1241,12 @@ export class ArenaSceneManager {
       }
 
       if (!this.peacefulMode) {
-        if (e.key === '1') this.setWeapon('bembel');
-        if (e.key === '2') this.setWeapon('zwille');
-        if (e.key === '3') this.setWeapon('spritzer');
-        if (e.key === '4') this.setWeapon('handkaes');
-        if (lowerKey === 'b') {
-          this.unlockPointer();
-          this.callbacks.onToggleGunsmith?.();
-        }
+        const k = e.key;
+        const code = e.code;
+        if (k === '1' || code === 'Digit1' || code === 'Numpad1') this.setWeapon('bembel');
+        if (k === '2' || code === 'Digit2' || code === 'Numpad2') this.setWeapon('zwille');
+        if (k === '3' || code === 'Digit3' || code === 'Numpad3') this.setWeapon('spritzer');
+        if (k === '4' || code === 'Digit4' || code === 'Numpad4') this.setWeapon('handkaes');
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -1743,10 +1745,10 @@ export class ArenaSceneManager {
     const isMovingNow = Math.hypot(this.playerVelX, this.playerVelZ) > 0.25;
     const activeSprintCam = this.isSprinting && !this.isCrouching && !this.isAiming && isMovingNow;
 
-    const targetDist = this.isAiming ? 2.4 : activeSprintCam ? 4.55 : this.isCrouching ? 3.85 : 4.2;
-    const targetShoulderOffset = this.peacefulMode ? 0.65 : this.isAiming ? 0.85 : 1.15;
+    const targetDist = this.isAiming ? 1.85 : activeSprintCam ? 3.35 : this.isCrouching ? 2.45 : 2.85;
+    const targetShoulderOffset = this.peacefulMode ? 0.55 : this.isAiming ? 0.52 : 0.68;
     const adsZoomFov = Math.max(38, 52 - this.attachments.scope * 4);
-    const targetFov = this.isAiming ? adsZoomFov : activeSprintCam ? 76 : 68;
+    const targetFov = this.isAiming ? adsZoomFov : activeSprintCam ? 75 : 66;
 
     this.cameraDistance = THREE.MathUtils.damp(this.cameraDistance, targetDist, 12, delta);
     this.shoulderOffset = THREE.MathUtils.damp(this.shoulderOffset, targetShoulderOffset, 12, delta);
@@ -1754,8 +1756,8 @@ export class ArenaSceneManager {
     this.camera.fov = this.currentFov;
     this.camera.updateProjectionMatrix();
 
-    // Smoothly interpolate crouch camera height (1.75m standing -> 1.18m crouched)
-    const targetHeadHeight = 1.75 - this.currentCrouchAmount * 0.57;
+    // Smoothly interpolate crouch camera height (1.64m standing -> 1.18m crouched)
+    const targetHeadHeight = 1.64 - this.currentCrouchAmount * 0.46;
     this.currentHeadHeight = THREE.MathUtils.damp(this.currentHeadHeight, targetHeadHeight, 14, delta);
 
     _forward.set(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw));
@@ -1768,7 +1770,7 @@ export class ArenaSceneManager {
       .copy(_headPos)
       .addScaledVector(_forward, -this.cameraDistance * Math.cos(effectivePitch))
       .addScaledVector(_right, this.shoulderOffset)
-      .add(new THREE.Vector3(0, this.cameraDistance * Math.sin(effectivePitch) + 0.25, 0));
+      .add(new THREE.Vector3(0, this.cameraDistance * Math.sin(effectivePitch) + 0.18, 0));
 
     // Clamp camera height so it never clips under the ground when looking up
     _desiredCamPos.y = Math.max(this.playerPos.y + 0.38, _desiredCamPos.y);
@@ -1781,6 +1783,13 @@ export class ArenaSceneManager {
       .add(new THREE.Vector3(0, -Math.sin(effectivePitch) * 24, 0));
 
     this.camera.lookAt(_camTarget);
+
+    // Keep sunlight & dynamic shadow frustum centered right above the player anywhere in arena
+    if (this.dirLight) {
+      this.dirLight.position.set(this.playerPos.x + 36, 54, this.playerPos.z + 26);
+      this.dirLight.target.position.copy(this.playerPos);
+      this.dirLight.target.updateMatrixWorld();
+    }
 
     this.renderer.render(this.scene, this.camera);
   };
@@ -1922,7 +1931,7 @@ export class ArenaSceneManager {
     this.playerGroup.position.copy(this.playerPos);
     this.playerGroup.rotation.y = this.cameraYaw + Math.PI;
 
-    // Animate Realistic Human Gait (including Sprint & Crouch 3D posture!)
+    // Animate Realistic Human Gait (including Sprint & Crouch 3D posture + 3D Aim Elevation!)
     const speedRatio = currentSpeed / this.playerSpeed;
     animateCharacterRig(
       this.playerGroup,
@@ -1931,7 +1940,8 @@ export class ArenaSceneManager {
       this.recoilPitch,
       speedRatio,
       this.currentCrouchAmount,
-      activeSprinting
+      activeSprinting,
+      this.cameraPitch + this.recoilPitch
     );
     this.callbacks.onElevationChange?.(Math.round(this.playerPos.y * 10) / 10);
   }

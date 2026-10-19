@@ -235,7 +235,8 @@ export function animateCharacterRig(
   recoilKick = 0,
   speedRatio = 1.0,
   crouchAmount = 0,
-  isSprinting = false
+  isSprinting = false,
+  pitch = 0
 ) {
   const leftLeg = group.getObjectByName('leftLeg');
   const rightLeg = group.getObjectByName('rightLeg');
@@ -254,6 +255,7 @@ export function animateCharacterRig(
   const hasWeapon = weaponMount && weaponMount.children.length > 0;
   const clampedRatio = Math.max(0.25, Math.min(1.65, speedRatio));
   const c = THREE.MathUtils.clamp(crouchAmount, 0, 1);
+  const clampedPitch = THREE.MathUtils.clamp(pitch, -0.75, 0.75);
 
   // Vertical crouch drop (~0.29m lower hips/torso/head while boots stay planted at y=0)
   const dropY = 0.29 * c;
@@ -264,7 +266,7 @@ export function animateCharacterRig(
   if (rightLeg) rightLeg.position.y = 0.92 - dropY;
   if (pelvis) pelvis.position.y = 0.94 - dropY;
   if (belt) belt.position.y = 1.01 - dropY;
-  if (playerRing) playerRing.position.y = 2.28 - dropY * 1.1;
+  if (playerRing) playerRing.visible = false; // Hide weird floating green halo!
 
   if (isMoving) {
     // Natural human stride cadence (faster when sprinting, stealthier when crouched)
@@ -290,25 +292,26 @@ export function animateCharacterRig(
     if (torsoGroup) {
       torsoGroup.position.y = 0.94 - dropY + Math.abs(Math.cos(phase)) * 0.028 * clampedRatio * (1 - c * 0.4);
       torsoGroup.rotation.y = -Math.sin(phase) * (isSprinting ? 0.11 : 0.065) * clampedRatio;
-      torsoGroup.rotation.x = sprintLean + crouchLean;
+      torsoGroup.rotation.x = sprintLean + crouchLean - clampedPitch * 0.35;
     }
 
     if (headGroup) {
       headGroup.position.y = 1.66 - dropY * 1.08 + Math.abs(Math.cos(phase)) * 0.02 * clampedRatio * (1 - c * 0.4);
       headGroup.rotation.y = Math.sin(phase) * 0.03;
+      headGroup.rotation.x = -clampedPitch * 0.35;
     }
 
     if (hasWeapon) {
       // Tactical two-handed ready stance (or angled tactical sprint posture when sprinting)
       if (leftArm) {
-        leftArm.rotation.x = (isSprinting ? -0.68 : -0.52) + Math.sin(phase + Math.PI) * (isSprinting ? 0.22 : 0.12) * clampedRatio;
+        leftArm.rotation.x = (isSprinting ? -0.68 : -0.52) + Math.sin(phase + Math.PI) * (isSprinting ? 0.22 : 0.12) * clampedRatio - clampedPitch * 0.55;
         leftArm.rotation.z = isSprinting ? 0.34 : 0.22;
       }
       if (leftElbow) {
         leftElbow.rotation.x = isSprinting ? -0.72 : -0.58;
       }
       if (rightArm) {
-        rightArm.rotation.x = (isSprinting ? -0.32 : -0.18) + Math.sin(phase) * (isSprinting ? 0.14 : 0.06) - recoilKick * 2.8;
+        rightArm.rotation.x = (isSprinting ? -0.32 : -0.18) + Math.sin(phase) * (isSprinting ? 0.14 : 0.06) - recoilKick * 2.8 - clampedPitch * 0.65;
       }
     } else {
       // Natural human arm swing when walking/sprinting unarmed (Mobile Exploration Mode)
@@ -334,22 +337,23 @@ export function animateCharacterRig(
     if (torsoGroup) {
       torsoGroup.position.y = 0.94 - dropY + breath * 0.008;
       torsoGroup.rotation.y = breath * 0.015;
-      torsoGroup.rotation.x = c * 0.16;
+      torsoGroup.rotation.x = c * 0.16 - clampedPitch * 0.35;
     }
 
     if (headGroup) {
       headGroup.position.y = 1.66 - dropY * 1.08 + breath * 0.008;
       headGroup.rotation.y = Math.sin(time * 0.8) * 0.04;
+      headGroup.rotation.x = -clampedPitch * 0.35;
     }
 
     if (hasWeapon) {
       if (leftArm) {
-        leftArm.rotation.x = -0.48 - c * 0.08 + breath * 0.02;
+        leftArm.rotation.x = -0.48 - c * 0.08 + breath * 0.02 - clampedPitch * 0.55;
         leftArm.rotation.z = 0.22;
       }
       if (leftElbow) leftElbow.rotation.x = -0.55;
       if (rightArm) {
-        rightArm.rotation.x = -0.15 - c * 0.06 + breath * 0.015 - recoilKick * 2.8;
+        rightArm.rotation.x = -0.15 - c * 0.06 + breath * 0.015 - recoilKick * 2.8 - clampedPitch * 0.65;
       }
     } else {
       if (leftArm) {

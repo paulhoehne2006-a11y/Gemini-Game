@@ -46,9 +46,9 @@ function getCachedTexture(
 }
 
 export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.CanvasTexture {
-  return getCachedTexture('cobble_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    // Rich slate mortar base
-    ctx.fillStyle = '#2A303C';
+  return getCachedTexture('cobble_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Rich deep slate mortar base
+    ctx.fillStyle = '#1E242D';
     ctx.fillRect(0, 0, w, h);
 
     const rows = 8;
@@ -59,39 +59,42 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
     for (let r = 0; r < rows; r++) {
       const offset = (r % 2) * (cellW * 0.5);
       for (let c = -1; c <= cols; c++) {
-        const x = c * cellW + offset + 4;
-        const y = r * cellH + 4;
-        const cw = cellW - 8;
-        const ch = cellH - 8;
+        const x = c * cellW + offset + 3.5;
+        const y = r * cellH + 3.5;
+        const cw = cellW - 7;
+        const ch = cellH - 7;
 
-        // Multi-toned stylized pavers with ambient occlusion rim and bevel highlights
-        const stoneHues = ['#64748B', '#475569', '#5B6B7C', '#6A7D8F', '#4A5568'];
-        const baseColor = stoneHues[(r * 3 + c * 7) % stoneHues.length];
-        
-        // Soft drop shadow
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+        // Rich German cobblestone hues (Taunus Slate & Basalt)
+        const stoneHues = ['#64748B', '#526071', '#5E7083', '#4A5568', '#6D7F92', '#586877'];
+        const baseColor = stoneHues[(r * 3 + c * 5) % stoneHues.length];
+
+        // Soft contact drop shadow
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
         ctx.beginPath();
-        ctx.roundRect(x + 2, y + 2, cw, ch, 10);
+        ctx.roundRect(x + 2.5, y + 2.5, cw, ch, 10);
         ctx.fill();
 
-        // Main stone body
-        ctx.fillStyle = baseColor;
+        // Main stone body with subtle gradient
+        const stoneGrad = ctx.createLinearGradient(x, y, x, y + ch);
+        stoneGrad.addColorStop(0, baseColor);
+        stoneGrad.addColorStop(1, '#334155');
+        ctx.fillStyle = stoneGrad;
         ctx.beginPath();
         ctx.roundRect(x, y, cw, ch, 10);
         ctx.fill();
 
-        // Top-left bevel highlight
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-        ctx.lineWidth = 2.5;
+        // Top-left crisp bevel highlight
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
         ctx.roundRect(x + 2, y + 2, cw - 4, ch - 4, 8);
         ctx.stroke();
 
-        // Subtle moss/lichen accents in crevices
-        if ((r + c * 3) % 4 === 0) {
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+        // Delicate moss accents in corners
+        if ((r + c * 2) % 3 === 0) {
+          ctx.fillStyle = 'rgba(74, 222, 128, 0.45)';
           ctx.beginPath();
-          ctx.arc(x + cw - 6, y + ch - 6, 4, 0, Math.PI * 2);
+          ctx.arc(x + cw - 5, y + ch - 5, 3.5, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -100,21 +103,21 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
 }
 
 export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTexture {
-  return getCachedTexture('asphalt_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    // Deep rich charcoal asphalt
+  return getCachedTexture('asphalt_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Rich charcoal asphalt
     ctx.fillStyle = '#1E232A';
     ctx.fillRect(0, 0, w, h);
 
-    // Fine speckled aggregate texture
-    for (let i = 0; i < 2800; i++) {
+    // Multi-toned aggregate flecks
+    for (let i = 0; i < 3000; i++) {
       const x = (i * 73) % w;
       const y = (i * 139) % h;
-      const v = 42 + (i % 24);
-      ctx.fillStyle = `rgb(${v}, ${v + 4}, ${v + 8})`;
+      const v = 48 + (i % 28);
+      ctx.fillStyle = `rgb(${v}, ${v + 4}, ${v + 10})`;
       ctx.fillRect(x, y, 2.5, 2.5);
     }
 
-    // Crisp stylized white road center-dash marking
+    // Clean stylized road markings
     ctx.fillStyle = '#F8FAFC';
     ctx.shadowColor = '#0F172A';
     ctx.shadowBlur = 4;
@@ -124,26 +127,40 @@ export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTe
 }
 
 export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.CanvasTexture {
-  return getCachedTexture('grass_stylized', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    // Vibrant Fortnite-style lush emerald base
+  return getCachedTexture('grass_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+    // Vibrant Fortnite-style lush Taunus emerald base
     const grad = ctx.createLinearGradient(0, 0, w, h);
     grad.addColorStop(0, '#1E6F34');
-    grad.addColorStop(0.5, '#26803D');
+    grad.addColorStop(0.5, '#2D8E47');
     grad.addColorStop(1, '#1A612E');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
+    // Organic stylized lighter lawn patches
+    for (let p = 0; p < 8; p++) {
+      const px = ((p * 137) % w);
+      const py = ((p * 193) % h);
+      const pr = 65 + (p % 4) * 20;
+      const patchGrad = ctx.createRadialGradient(px, py, 10, px, py, pr);
+      patchGrad.addColorStop(0, 'rgba(74, 222, 128, 0.22)');
+      patchGrad.addColorStop(1, 'rgba(74, 222, 128, 0)');
+      ctx.fillStyle = patchGrad;
+      ctx.beginPath();
+      ctx.arc(px, py, pr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // Multi-shade stylized grass tufts & lawn texture
-    for (let i = 0; i < 3500; i++) {
+    for (let i = 0; i < 3800; i++) {
       const x = (i * 97) % w;
       const y = (i * 181) % h;
       const light = i % 3 === 0;
-      ctx.fillStyle = light ? 'rgba(74, 222, 128, 0.45)' : 'rgba(22, 101, 52, 0.45)';
+      ctx.fillStyle = light ? 'rgba(134, 239, 172, 0.45)' : 'rgba(20, 83, 45, 0.45)';
       ctx.fillRect(x, y, 3, 5);
     }
 
-    // Tiny clover & wildflower dots (yellow & white)
-    for (let i = 0; i < 180; i++) {
+    // Tiny sunny wildflowers (golden yellow & daisy white)
+    for (let i = 0; i < 200; i++) {
       const fx = (i * 163) % w;
       const fy = (i * 257) % h;
       ctx.fillStyle = i % 2 === 0 ? '#FACC15' : '#FFFFFF';
