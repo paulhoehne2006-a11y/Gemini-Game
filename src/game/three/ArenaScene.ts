@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { ARENAS } from './arenas';
+import { ARENAS, getMapBotScaling, INITIAL_MAP_LEVELS, MapBotScalingInfo } from './arenas';
 import { DestructibleProp, createElectricStormTexture } from './textures';
 import { WEAPONS, Weapon, INITIAL_WEAPON_UPGRADES, getEffectiveWeaponStats } from '../weapons';
-import { WalkableSurface, WeaponAttachments, AttachmentType, AllWeaponsUpgrades } from '../../types';
+import { WalkableSurface, WeaponAttachments, AttachmentType, AllWeaponsUpgrades, SkillTreeLevels, MapLevelsState } from '../../types';
+import { computeSkillTreeBonuses, INITIAL_SKILL_TREE, SkillTreeBonuses } from '../skillTree';
 import {
   WehrheimerAgent,
   AllyAgent,
@@ -31,16 +32,15 @@ const _camTarget = new THREE.Vector3();
 const _desiredCamPos = new THREE.Vector3();
 const _skyGradientCanvas = document.createElement('canvas');
 
-function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
+function createSkyGradientTexture(topColor: string, midColor: string, horizonColor: string): THREE.CanvasTexture {
   _skyGradientCanvas.width = 16;
   _skyGradientCanvas.height = 512;
   const context = _skyGradientCanvas.getContext('2d')!;
   const gradient = context.createLinearGradient(0, 0, 0, _skyGradientCanvas.height);
-  gradient.addColorStop(0, topColor || '#0284C7'); // Vibrant Azure Blue Zenith
-  gradient.addColorStop(0.35, '#38BDF8'); // Clear Sky Cyan
-  gradient.addColorStop(0.65, '#7DD3FC'); // Lower Atmosphere
-  gradient.addColorStop(0.85, '#BAE6FD'); // Sunlit Horizon Haze
-  gradient.addColorStop(1.0, horizonColor || '#E0F2FE'); // Seamless atmospheric horizon fog blend
+  gradient.addColorStop(0, topColor || '#0284C7');
+  gradient.addColorStop(0.48, midColor || '#38BDF8');
+  gradient.addColorStop(0.82, horizonColor || '#BAE6FD');
+  gradient.addColorStop(1.0, horizonColor || '#E0F2FE');
   context.fillStyle = gradient;
   context.fillRect(0, 0, _skyGradientCanvas.width, _skyGradientCanvas.height);
   const texture = new THREE.CanvasTexture(_skyGradientCanvas);
@@ -183,6 +183,7 @@ export interface GameEventCallbacks {
   onAmmoChange?: (magazine: number, reserve: number, capacity: number) => void;
   onReloadStateChange?: (isReloading: boolean, secondsRemaining: number) => void;
   onLevelChange?: (level: number, experience: number, experienceToNextLevel: number) => void;
+  onWeaponXpGain?: (weaponId: string, xpAmount: number) => void;
   onEnemyKilled?: (details: {
     arenaId: string;
     role: AgentRole;
@@ -236,6 +237,14 @@ export class ArenaSceneManager {
   private obstacles: THREE.Box3[] = [];
   private walkableSurfaces: WalkableSurface[] = [];
   private destructibles: DestructibleProp[] = [];
+
+  // Map Bot Scaling & Operator Skilltree Bonuses
+  private mapLevels: MapLevelsState = { ...INITIAL_MAP_LEVELS };
+  private skillTree: SkillTreeLevels = { ...INITIAL_SKILL_TREE };
+  private skillBonuses: SkillTreeBonuses = computeSkillTreeBonuses(INITIAL_SKILL_TREE);
+  private botScaling: MapBotScalingInfo;
+  private sunOffset: [number, number, number] = [36, 54, 26];
+  private regenAccumulator = 0;
 
   // Player state & Realistic Human Physics (Much slower, grounded walking pace!)
   private playerGroup: THREE.Group;
@@ -368,6 +377,8 @@ export class ArenaSceneManager {
       mouseSensitivity?: number;
       controls?: Partial<ControlSettings>;
       weaponUpgrades?: AllWeaponsUpgrades;
+      mapLevels?: MapLevelsState;
+      skillTree?: SkillTreeLevels;
       playerName?: string;
       clanTag?: string;
     } = {}
@@ -388,41 +399,58 @@ export class ArenaSceneManager {
         this.attachments = { ...this.weaponUpgrades[this.currentWeapon.id].attachments };
       }
     }
-
-    if (initialPerks.maxHpBonus) {
-      this.playerMaxHealth += initialPerks.maxHpBonus;
-      this.playerHealth = this.playerMaxHealth;
+    if (initialPerks.mapLevels) {
+      this.mapLevels = { ...INITIAL_MAP_LEVELS, ...initialPerks.mapLevels };
     }
+    if (initialPerks.skillTree) {
+      this.skillTree = { ...INITIAL_SKILL_TREE, ...initialPerks.skillTree };
+      this.skillBonuses = computeSkillTreeBonuses(this.skillTree);
+    }
+    this.botScaling = getMapBotScaling(this.currentArenaId, this.mapLevels);
+
+    // Apply max HP & Shield from Tycoon Perks + Operator Skilltree
+    this.playerMaxHealth = 100 + (initialPerks.maxHpBonus || 0) + this.skillBonuses.bonusMaxHp;
+    this.playerHealth = this.playerMaxHealth;
+    this.playerMaxShield = 100 + this.skillBonuses.bonusMaxShield;
+    this.playerShield = this.playerMaxShield;
+
     if (initialPerks.speedMultiplier) {
       // Keep speed multiplier subtle so human walking stays realistic and controllable
       const cappedMult = 1 + Math.min(0.2, (initialPerks.speedMultiplier - 1) * 0.5);
       this.playerSpeed *= cappedMult;
     }
+    this.playerSpeed *= this.skillBonuses.moveSpeedMultiplier;
     this.resetWeaponAmmo();
 
     // 1. Setup WebGL Renderer with Realistic Tone Mapping & Soft Shadows
+    const arenaDef = ARENAS[arenaId] || ARENAS.hessenpark;
+    const atmo = arenaDef.atmosphere;
+    if (atmo?.sunOffset) {
+      this.sunOffset = atmo.sunOffset;
+    }
+
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = atmo?.exposure ?? 1.25;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     // 2. Setup Scene & Camera
-    const arenaDef = ARENAS[arenaId] || ARENAS.hessenpark;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(arenaDef.skyColor || 0x38BDF8);
-    this.scene.fog = new THREE.FogExp2(arenaDef.fogColor || 0xBAE6FD, 0.0035);
+    this.scene.background = new THREE.Color(atmo?.skyMid ?? arenaDef.skyColor ?? 0x38BDF8);
+    this.scene.fog = new THREE.FogExp2(atmo?.fogColor ?? arenaDef.fogColor ?? 0xBAE6FD, atmo?.fogDensity ?? 0.0035);
 
     const skyDome = new THREE.Mesh(
       new THREE.SphereGeometry(150, 32, 16),
       new THREE.MeshBasicMaterial({
         map: createSkyGradientTexture(
-          `#${new THREE.Color(arenaDef.skyColor || 0x38BDF8).getHexString()}`,
-          `#${new THREE.Color(arenaDef.fogColor || 0xBAE6FD).getHexString()}`
+          `#${new THREE.Color(atmo?.skyTop ?? arenaDef.skyColor ?? 0x0284C7).getHexString()}`,
+          `#${new THREE.Color(atmo?.skyMid ?? arenaDef.skyColor ?? 0x38BDF8).getHexString()}`,
+          `#${new THREE.Color(atmo?.skyHorizon ?? arenaDef.fogColor ?? 0xBAE6FD).getHexString()}`
         ),
         side: THREE.BackSide,
         depthWrite: false,
@@ -431,24 +459,25 @@ export class ArenaSceneManager {
     skyDome.renderOrder = -10;
     this.scene.add(skyDome);
 
-    // Glowing Stylized 3D Sun with radiant corona
+    // Glowing Stylized 3D Sun / Moon with radiant corona
     const sunGroup = new THREE.Group();
+    const sunDiscHex = atmo?.sunDiscColor ?? 0xFFFBEB;
     const sunMesh = new THREE.Mesh(
       new THREE.SphereGeometry(7, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xFFFBEB })
+      new THREE.MeshBasicMaterial({ color: sunDiscHex })
     );
     const sunCorona = new THREE.Mesh(
       new THREE.RingGeometry(7, 14, 24),
       new THREE.MeshBasicMaterial({
-        color: 0xFDE047,
+        color: sunDiscHex,
         transparent: true,
-        opacity: 0.45,
+        opacity: atmo?.isNight ? 0.3 : 0.45,
         side: THREE.DoubleSide,
       })
     );
     sunGroup.add(sunMesh);
     sunGroup.add(sunCorona);
-    sunGroup.position.set(65, 78, 55);
+    sunGroup.position.set(this.sunOffset[0] * 1.6, 78, this.sunOffset[2] * 1.6);
     sunCorona.lookAt(0, 0, 0);
     this.scene.add(sunGroup);
 
@@ -467,12 +496,16 @@ export class ArenaSceneManager {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
 
-    // 4. Dynamic Sunlight, Sky Hemisphere & Rim Lighting Rig (Fortnite Palette)
-    const hemiLight = new THREE.HemisphereLight(0xBAE6FD, 0x334155, 1.15);
+    // 4. Dynamic Sunlight, Sky Hemisphere & Rim Lighting Rig (Atmosphere Preset)
+    const hemiLight = new THREE.HemisphereLight(
+      atmo?.hemiSky ?? 0xBAE6FD,
+      atmo?.hemiGround ?? 0x334155,
+      atmo?.hemiIntensity ?? 1.15
+    );
     this.scene.add(hemiLight);
 
-    this.dirLight = new THREE.DirectionalLight(0xFFFDF0, 2.2);
-    this.dirLight.position.set(42, 65, 32);
+    this.dirLight = new THREE.DirectionalLight(atmo?.sunColor ?? 0xFFFDF0, atmo?.sunIntensity ?? 2.2);
+    this.dirLight.position.set(this.sunOffset[0], this.sunOffset[1], this.sunOffset[2]);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = 2048;
     this.dirLight.shadow.mapSize.height = 2048;
@@ -486,7 +519,7 @@ export class ArenaSceneManager {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    const rimLight = new THREE.DirectionalLight(0x7DD3FC, 0.85);
+    const rimLight = new THREE.DirectionalLight(atmo?.rimColor ?? 0x7DD3FC, atmo?.rimIntensity ?? 0.85);
     rimLight.position.set(-32, 35, -28);
     this.scene.add(rimLight);
 
@@ -501,6 +534,7 @@ export class ArenaSceneManager {
     this.playerGroup = this.createPlayerMesh();
     this.playerGroup.position.copy(this.playerPos);
     this.scene.add(this.playerGroup);
+    this.refreshPlayer3DWeapon();
 
     this.muzzleLight = new THREE.PointLight(0xFDE047, 0, 8);
     this.scene.add(this.muzzleLight);
@@ -670,10 +704,13 @@ export class ArenaSceneManager {
       const upg = this.weaponUpgrades[this.currentWeapon.id] || {
         rarityTier: 1,
         papLevel: 0,
+        weaponLevel: 1,
+        weaponXp: 0,
+        masteryId: 'standard',
         attachments: this.attachments,
       };
       this.playerWeaponMount.add(
-        create3DWeaponModel(this.currentWeapon.id, this.attachments, upg.papLevel, upg.rarityTier)
+        create3DWeaponModel(this.currentWeapon.id, this.attachments, upg.papLevel, upg.rarityTier, upg.masteryId)
       );
     }
   }
@@ -755,7 +792,7 @@ export class ArenaSceneManager {
       this.isCrouching = false;
     }
     if (this.isGrounded) {
-      this.playerVelY = 8.8;
+      this.playerVelY = 8.8 * this.skillBonuses.jumpSpeedMultiplier;
       this.isGrounded = false;
     }
   }
@@ -844,6 +881,9 @@ export class ArenaSceneManager {
         deaths: 0,
       });
 
+      const scaledHp = Math.round(cfg.hp * this.skillBonuses.allyHpMultiplier);
+      const scaledDmg = Math.round(cfg.dmg * this.skillBonuses.allyDamageMultiplier);
+
       return {
         id: allyId,
         name: cfg.name,
@@ -852,10 +892,10 @@ export class ArenaSceneManager {
         mesh,
         position: spawnPos,
         velocity: new THREE.Vector3(),
-        health: cfg.hp,
-        maxHealth: cfg.hp,
+        health: scaledHp,
+        maxHealth: scaledHp,
         speed: 4.6, // Realistic human walking pace!
-        damage: cfg.dmg,
+        damage: scaledDmg,
         range: 32,
         attackCooldown: 1.2 + Math.random(),
         lastBark: '',
@@ -940,6 +980,9 @@ export class ArenaSceneManager {
         deaths: 0,
       });
 
+      const scaledHp = Math.round(cfg.hp * this.skillBonuses.allyHpMultiplier);
+      const scaledDmg = Math.round(cfg.dmg * this.skillBonuses.allyDamageMultiplier);
+
       this.allies.push({
         id: allyId,
         name: cfg.name,
@@ -948,10 +991,10 @@ export class ArenaSceneManager {
         mesh,
         position: spawnPos,
         velocity: new THREE.Vector3(),
-        health: cfg.hp,
-        maxHealth: cfg.hp,
+        health: scaledHp,
+        maxHealth: scaledHp,
         speed: 4.6,
-        damage: cfg.dmg,
+        damage: scaledDmg,
         range: 32,
         attackCooldown: 1.2,
         lastBark: '',
@@ -966,6 +1009,7 @@ export class ArenaSceneManager {
   public spawnWehrheimerWave(waveNumber: number) {
     if (this.peacefulMode) return;
     const config = WAVE_CONFIGS[waveNumber - 1] || WAVE_CONFIGS[WAVE_CONFIGS.length - 1];
+    this.botScaling = getMapBotScaling(this.currentArenaId, this.mapLevels);
 
     for (const ag of this.agents) {
       this.scene.remove(ag.mesh);
@@ -978,7 +1022,14 @@ export class ArenaSceneManager {
     for (let i = 0; i < config.shocktroopers; i++) spawnList.push('shocktrooper');
     for (let i = 0; i < config.bosses; i++) spawnList.push('boss');
 
+    // Add extra veteran/elite bots on leveled-up or higher-tier maps!
+    const extraRoles: AgentRole[] = ['flanker', 'shocktrooper', 'sniper'];
+    for (let e = 0; e < this.botScaling.extraEnemiesPerWave; e++) {
+      spawnList.push(extraRoles[(waveNumber + e) % extraRoles.length]);
+    }
+
     this.currentWaveTotalEnemies = spawnList.length;
+    const botLv = this.botScaling.effectiveBotLevel;
 
     spawnList.forEach((role, idx) => {
       const angle = (idx / spawnList.length) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
@@ -987,21 +1038,27 @@ export class ArenaSceneManager {
       const spawnX = Math.cos(angle) * dist;
       const spawnZ = Math.sin(angle) * dist;
 
-      const mesh = createWehrheimerMesh(role);
+      const mesh = createWehrheimerMesh(role, botLv);
       mesh.position.set(spawnX, 0, spawnZ);
       this.scene.add(mesh);
 
       const baseHp = role === 'boss' ? 600 : role === 'shocktrooper' ? 115 : role === 'sniper' ? 95 : 105;
-      const maxHp = Math.round(baseHp * (1 + (waveNumber - 1) * 0.08));
-      // Realistic human enemy speeds (much slower and grounded!)
-      const speed = role === 'flanker' ? 4.3 : role === 'shocktrooper' ? 4.6 : role === 'boss' ? 3.2 : 3.3;
-      const damage = role === 'boss' ? 30 : role === 'sniper' ? 20 : 12;
+      const maxHp = Math.round(baseHp * (1 + (waveNumber - 1) * 0.1) * this.botScaling.hpMultiplier);
+      // Realistic human enemy speeds scaled by map level
+      const baseSpeed = role === 'flanker' ? 4.3 : role === 'shocktrooper' ? 4.6 : role === 'boss' ? 3.2 : 3.3;
+      const speed = baseSpeed * this.botScaling.speedMultiplier;
+      const baseDmg = role === 'boss' ? 30 : role === 'sniper' ? 20 : 12;
+      const damage = Math.round(baseDmg * this.botScaling.damageMultiplier);
       const range = role === 'sniper' ? 38 : role === 'boss' ? 28 : 20;
 
+      const rankPrefix = botLv >= 6 ? 'Elite-' : botLv >= 3 ? 'Veteran-' : '';
       const agent: WehrheimerAgent = {
         id: 'w_' + Math.random().toString(36).substring(2, 8),
         role,
-        name: role === 'boss' ? 'Traktor-Horst (Boss)' : `Wehrheimer ${role}`,
+        name:
+          role === 'boss'
+            ? `Traktor-Horst Lv.${botLv} (Boss)`
+            : `${rankPrefix}Wehrheimer ${role} (Lv.${botLv})`,
         faction: 'wehrheim',
         mesh,
         position: new THREE.Vector3(spawnX, 0, spawnZ),
@@ -1011,7 +1068,7 @@ export class ArenaSceneManager {
         speed,
         damage,
         range,
-        attackCooldown: 1.4 + Math.random() * 1.5,
+        attackCooldown: (1.4 + Math.random() * 1.4) / this.botScaling.fireRateMultiplier,
         currentOrder: 'Angriff auf Neu-Anspach!',
         lastBark: '',
         lastBarkTime: 0,
@@ -1070,7 +1127,14 @@ export class ArenaSceneManager {
 
   private getMagazineCapacity(): number {
     const baseCapacity = this.currentWeapon.id === 'handkaes' ? 6 : this.currentWeapon.id === 'spritzer' ? 8 : 30;
-    return baseCapacity + (this.attachments.mag || 0) * 4;
+    const upgState = this.weaponUpgrades[this.currentWeapon.id];
+    const effective = getEffectiveWeaponStats(this.currentWeapon, upgState);
+    return (
+      baseCapacity +
+      (this.attachments.mag || 0) * 4 +
+      effective.bonusMag +
+      this.skillBonuses.bonusMagCapacity
+    );
   }
 
   private resetWeaponAmmo() {
@@ -1098,7 +1162,12 @@ export class ArenaSceneManager {
       this.callbacks.onLootPickup('ammo', capacity, 'Notfall-Munition geborgen');
     }
 
-    this.reloadTimer = this.reloadDuration;
+    const upgState = this.weaponUpgrades[this.currentWeapon.id];
+    const effective = getEffectiveWeaponStats(this.currentWeapon, upgState);
+    const totalReloadSpeedMult =
+      (1 + effective.reloadSpeedBonusPct / 100) * this.skillBonuses.reloadSpeedMultiplier;
+
+    this.reloadTimer = Math.max(0.55, this.reloadDuration / totalReloadSpeedMult);
     this.isMouseDown = false;
     soundFx.playReload();
     this.lastReloadNotifyTime = performance.now();
@@ -1143,6 +1212,30 @@ export class ArenaSceneManager {
       this.attachments = { ...this.weaponUpgrades[this.currentWeapon.id].attachments };
     }
     this.refreshPlayer3DWeapon();
+    this.notifyAmmoState();
+  }
+
+  public setSkillTree(skillTree: SkillTreeLevels) {
+    const prevBonusHp = this.skillBonuses.bonusMaxHp;
+    const prevBonusShield = this.skillBonuses.bonusMaxShield;
+    this.skillTree = { ...INITIAL_SKILL_TREE, ...skillTree };
+    this.skillBonuses = computeSkillTreeBonuses(this.skillTree);
+
+    const hpDiff = this.skillBonuses.bonusMaxHp - prevBonusHp;
+    const shieldDiff = this.skillBonuses.bonusMaxShield - prevBonusShield;
+    if (hpDiff !== 0 || shieldDiff !== 0) {
+      this.playerMaxHealth = Math.max(100, this.playerMaxHealth + hpDiff);
+      this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + Math.max(0, hpDiff));
+      this.playerMaxShield = Math.max(100, this.playerMaxShield + shieldDiff);
+      this.playerShield = Math.min(this.playerMaxShield, this.playerShield + Math.max(0, shieldDiff));
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+    }
+    this.notifyAmmoState();
+  }
+
+  public setMapLevels(mapLevels: MapLevelsState) {
+    this.mapLevels = { ...INITIAL_MAP_LEVELS, ...mapLevels };
+    this.botScaling = getMapBotScaling(this.currentArenaId, this.mapLevels);
   }
 
   public setInputSettings(mouseSensitivity: number, controls: Partial<ControlSettings>) {
@@ -1447,9 +1540,9 @@ export class ArenaSceneManager {
     this.muzzleLight.intensity = 4.5 + (upgState.papLevel || 0) * 1.5;
     this.muzzleFlashTimer = 0.045;
 
-    const effectiveDamage = effectiveStats.damage;
+    const effectiveDamage = Math.round(effectiveStats.damage * this.skillBonuses.damageMultiplier);
     const effectiveSpeed = effectiveStats.bulletSpeed;
-    const effectiveSplash = effectiveStats.splashRadius;
+    const effectiveSplash = effectiveStats.splashRadius * this.skillBonuses.splashRadiusMultiplier;
     const activeTracerColor = effectiveStats.tracerColor;
 
     const isMine = this.currentWeapon.id === 'handkaes';
@@ -1656,6 +1749,32 @@ export class ArenaSceneManager {
       this.arenaUpdateFn(delta);
     }
 
+    // Operator Skilltree Continuous HP & Shield Regeneration
+    if (!this.isGameOver && (this.skillBonuses.hpRegenPerSec > 0 || this.skillBonuses.shieldRegenPerSec > 0)) {
+      this.regenAccumulator += delta;
+      if (this.regenAccumulator >= 1.0) {
+        const ticks = Math.floor(this.regenAccumulator);
+        this.regenAccumulator -= ticks;
+        let changed = false;
+        if (this.skillBonuses.hpRegenPerSec > 0 && this.playerHealth < this.playerMaxHealth) {
+          this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + this.skillBonuses.hpRegenPerSec * ticks);
+          changed = true;
+        }
+        if (this.skillBonuses.shieldRegenPerSec > 0 && this.playerShield < this.playerMaxShield) {
+          this.playerShield = Math.min(this.playerMaxShield, this.playerShield + this.skillBonuses.shieldRegenPerSec * ticks);
+          changed = true;
+        }
+        if (changed) {
+          this.callbacks.onHealthChange(
+            Math.round(this.playerHealth),
+            this.playerMaxHealth,
+            Math.round(this.playerShield),
+            this.playerMaxShield
+          );
+        }
+      }
+    }
+
     if (this.muzzleFlashTimer > 0) {
       this.muzzleFlashTimer -= delta;
       if (this.muzzleFlashTimer <= 0) {
@@ -1786,7 +1905,11 @@ export class ArenaSceneManager {
 
     // Keep sunlight & dynamic shadow frustum centered right above the player anywhere in arena
     if (this.dirLight) {
-      this.dirLight.position.set(this.playerPos.x + 36, 54, this.playerPos.z + 26);
+      this.dirLight.position.set(
+        this.playerPos.x + this.sunOffset[0],
+        this.sunOffset[1],
+        this.playerPos.z + this.sunOffset[2]
+      );
       this.dirLight.target.position.copy(this.playerPos);
       this.dirLight.target.updateMatrixWorld();
     }
@@ -2063,7 +2186,8 @@ export class ArenaSceneManager {
       this.stormDamageTimer += delta;
       if (this.stormDamageTimer >= 1.0) {
         this.stormDamageTimer = 0;
-        this.damagePlayer(8, 'Taunus-Nebel', true);
+        const stormDmg = Math.max(1, Math.round(8 * this.skillBonuses.stormDamageMultiplier));
+        this.damagePlayer(stormDmg, 'Taunus-Nebel', true);
         soundFx.playZoneWarning();
       }
     }
@@ -2130,7 +2254,8 @@ export class ArenaSceneManager {
 
       ag.attackCooldown -= delta;
       if (ag.attackCooldown <= 0 && minDist <= ag.range) {
-        ag.attackCooldown = ag.role === 'boss' ? 2.0 : ag.role === 'sniper' ? 2.4 : 1.8;
+        const baseCd = ag.role === 'boss' ? 2.0 : ag.role === 'sniper' ? 2.4 : 1.8;
+        ag.attackCooldown = baseCd / this.botScaling.fireRateMultiplier;
         this.fireEnemyBullet(ag, targetPos);
       }
     }
@@ -2141,13 +2266,15 @@ export class ArenaSceneManager {
     _bulletDir.normalize();
 
     const isBoss = agent.role === 'boss';
+    const isEliteBot = this.botScaling.effectiveBotLevel >= 6;
+    const bulletColorHex = isEliteBot ? 0xEC4899 : 0xEF4444;
     const geo = isBoss
       ? new THREE.SphereGeometry(0.45, 8, 8)
       : new THREE.CylinderGeometry(0.06, 0.06, 1.2, 6);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xEF4444,
-      emissive: 0xEF4444,
-      emissiveIntensity: 2.5,
+      color: bulletColorHex,
+      emissive: bulletColorHex,
+      emissiveIntensity: isEliteBot ? 3.2 : 2.5,
     });
     const mesh = new THREE.Mesh(geo, mat);
     if (!isBoss) {
@@ -2157,7 +2284,8 @@ export class ArenaSceneManager {
     mesh.position.copy(spawnPos);
     this.scene.add(mesh);
 
-    const speed = agent.role === 'sniper' ? 60 : isBoss ? 32 : 42;
+    const baseSpeed = agent.role === 'sniper' ? 60 : isBoss ? 32 : 42;
+    const speed = baseSpeed * Math.min(1.35, this.botScaling.speedMultiplier);
     this.bullets.push({
       mesh,
       position: spawnPos,
@@ -2166,7 +2294,7 @@ export class ArenaSceneManager {
       life: agent.range / speed,
       fromPlayer: false,
       fromEnemyId: agent.id,
-      color: '#EF4444',
+      color: isEliteBot ? '#EC4899' : '#EF4444',
       splashRadius: isBoss ? 2.5 : 0.8,
     });
   }
@@ -2244,13 +2372,17 @@ export class ArenaSceneManager {
           const hitDist = _closest.distanceTo(enemyChest);
 
           if (hitDist <= (b.splashRadius || 1.45)) {
-            const critChance = 0.22 + this.attachments.mag * 0.08;
+            const critChance = 0.22 + this.attachments.mag * 0.08 + this.skillBonuses.critChance;
             const isCrit = b.fromPlayer && Math.random() < critChance;
-            const finalDmg = isCrit ? Math.round(b.damage * 1.5) : b.damage;
+            const critMult = 1.5 + (this.skillBonuses.critDamageMultiplier - 1.5);
+            const bossMult = ag.role === 'boss' && b.fromPlayer ? this.skillBonuses.bossDamageMultiplier : 1.0;
+            const finalDmg = Math.round(b.damage * bossMult * (isCrit ? critMult : 1.0));
             ag.health -= finalDmg;
 
             if (b.fromPlayer) {
               this.playerParticipantStats.damageDealt += finalDmg;
+              // Live Weapon XP on hit!
+              this.callbacks.onWeaponXpGain?.(this.currentWeapon.id, isCrit ? 18 : 10);
             } else if (b.fromAllyId && this.allAlliesStats.has(b.fromAllyId)) {
               this.allAlliesStats.get(b.fromAllyId)!.damageDealt += finalDmg;
             }
@@ -2279,11 +2411,31 @@ export class ArenaSceneManager {
                 enemyStats.deaths += 1;
               }
 
+              // Operator Skilltree Vampirism on Kill (Shield, HP & Instant Magazine Refund)
+              if (b.fromPlayer) {
+                if (this.skillBonuses.shieldOnKill > 0 || this.skillBonuses.hpOnKill > 0) {
+                  this.playerShield = Math.min(this.playerMaxShield, this.playerShield + this.skillBonuses.shieldOnKill);
+                  this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + this.skillBonuses.hpOnKill);
+                  this.callbacks.onHealthChange(
+                    Math.round(this.playerHealth),
+                    this.playerMaxHealth,
+                    Math.round(this.playerShield),
+                    this.playerMaxShield
+                  );
+                }
+                if (this.skillBonuses.ammoRefundOnKill > 0) {
+                  const cap = this.getMagazineCapacity();
+                  this.magazineAmmo = Math.min(cap, this.magazineAmmo + this.skillBonuses.ammoRefundOnKill);
+                  this.notifyAmmoState();
+                }
+              }
+
               if (this.trainingMode) {
                 this.score += 50;
                 this.kills += 1;
                 this.callbacks.onKillsChange(this.kills);
                 this.callbacks.onScoreChange(this.score);
+                this.callbacks.onWeaponXpGain?.(this.currentWeapon.id, 30);
                 soundFx.playKill();
                 ag.health = ag.maxHealth;
                 ag.position.x = (Math.random() - 0.5) * 18;
@@ -2292,9 +2444,14 @@ export class ArenaSceneManager {
                 this.notifyWaveState();
                 continue;
               }
-              this.awardExperience(100);
+
+              const xpReward = Math.round(100 * this.botScaling.rewardMultiplier);
+              const weaponXpKill = Math.round((ag.role === 'boss' ? 220 : 55) * this.botScaling.rewardMultiplier);
+              this.awardExperience(xpReward);
+              this.callbacks.onWeaponXpGain?.(this.currentWeapon.id, weaponXpKill);
+
               this.kills += 1;
-              this.score += ag.role === 'boss' ? 500 : 100;
+              this.score += Math.round((ag.role === 'boss' ? 500 : 100) * this.botScaling.rewardMultiplier);
               this.callbacks.onKillsChange(this.kills);
               this.callbacks.onScoreChange(this.score);
               this.callbacks.onEnemyKilled?.({
@@ -2312,7 +2469,12 @@ export class ArenaSceneManager {
               this.agents.splice(j, 1);
 
               if (this.agents.length === 0) {
-                this.awardExperience(250 + this.wave * 50);
+                const waveXp = Math.round((250 + this.wave * 50) * this.botScaling.rewardMultiplier);
+                this.awardExperience(waveXp);
+                this.callbacks.onWeaponXpGain?.(
+                  this.currentWeapon.id,
+                  Math.round((120 + this.wave * 35) * this.botScaling.rewardMultiplier)
+                );
                 if (this.wave < this.totalWaves) {
                   this.waveIntermissionTimer = 5.0;
                   soundFx.playWaveVictory();
@@ -2516,6 +2678,10 @@ export class ArenaSceneManager {
 
   private damagePlayer(amount: number, _source: string, ignoreShield = false) {
     if (this.peacefulMode) return;
+
+    if (!ignoreShield) {
+      amount = Math.max(1, Math.round(amount * this.skillBonuses.damageTakenMultiplier));
+    }
 
     if (!ignoreShield && this.playerShield > 0) {
       if (this.playerShield >= amount) {

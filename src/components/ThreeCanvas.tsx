@@ -7,9 +7,27 @@ import {
   AllyStatusInfo,
   WaveInfo,
 } from '../game/three/ArenaScene';
-import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from '../game/three/arenas';
-import { WEAPONS, getEffectiveWeaponStats, INITIAL_WEAPON_UPGRADES } from '../game/weapons';
-import { WeaponAttachments, AllWeaponsUpgrades } from '../types';
+import {
+  ARENAS,
+  ARENA_UNLOCK_RULES,
+  checkArenaUnlocked,
+  INITIAL_MAP_LEVELS,
+  getMapBotScaling,
+} from '../game/three/arenas';
+import {
+  WEAPONS,
+  getEffectiveWeaponStats,
+  INITIAL_WEAPON_UPGRADES,
+  getWeaponXpForNextLevel,
+  MAX_WEAPON_LEVEL,
+} from '../game/weapons';
+import {
+  WeaponAttachments,
+  AllWeaponsUpgrades,
+  SkillTreeLevels,
+  MapLevelsState,
+} from '../types';
+import { INITIAL_SKILL_TREE } from '../game/skillTree';
 import {
   Shield,
   Sparkles,
@@ -72,6 +90,10 @@ interface ThreeCanvasProps {
   onStreakAchieved?: (count: number) => void;
   onWaveAdvanced?: (wave: number) => void;
   onOpenDailyMissions?: () => void;
+  skillTree?: SkillTreeLevels;
+  mapLevels?: MapLevelsState;
+  onWeaponXpGain?: (weaponId: string, xpAmount: number) => void;
+  onOperatorLevelUp?: (newLevel: number) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -101,6 +123,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onStreakAchieved,
   onWaveAdvanced,
   onOpenDailyMissions,
+  skillTree = INITIAL_SKILL_TREE,
+  mapLevels = INITIAL_MAP_LEVELS,
+  onWeaponXpGain,
+  onOperatorLevelUp,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<ArenaSceneManager | null>(null);
@@ -262,6 +288,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           setPlayerLevel(level);
           setPlayerExperience(experience);
           setExperienceToNextLevel(experienceToNext);
+          onOperatorLevelUp?.(level);
         },
         onZoneTimer: (sec, rad) => {
           setZoneTimer(sec);
@@ -315,6 +342,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         onEnemyKilled: (details) => {
           onEnemyEliminated?.(details);
         },
+        onWeaponXpGain: (weaponId, xpAmount) => {
+          onWeaponXpGain?.(weaponId, xpAmount);
+        },
         onAttachmentsChange: (att, weaponId) => {
           setAttachments(att);
           if (weaponId && onLootAttachmentUpdate) {
@@ -348,6 +378,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         mouseSensitivity,
         controls: controlSettings,
         weaponUpgrades,
+        skillTree,
+        mapLevels,
       }
     );
 
@@ -391,6 +423,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
     }
   }, [weaponUpgrades, activeWeapon]);
+
+  useEffect(() => {
+    if (managerRef.current && skillTree) {
+      managerRef.current.setSkillTree(skillTree);
+    }
+  }, [skillTree]);
+
+  useEffect(() => {
+    if (managerRef.current && mapLevels) {
+      managerRef.current.setMapLevels(mapLevels);
+    }
+  }, [mapLevels]);
 
   useEffect(() => {
     if (managerRef.current && commanderDirectives) {
@@ -525,8 +569,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     compassDirections[Math.floor(((heading + 22.5) % 360) / 45)] || 'N';
 
   const activeArenaDef = ARENAS[currentArena] || ARENAS.hessenpark;
+  const currentMapLevel = mapLevels[currentArena] || 1;
+  const activeBotScaling = getMapBotScaling(currentArena, currentMapLevel);
   const activeWeaponObj = WEAPONS[activeWeapon] || WEAPONS.bembel;
-  const activeWeaponStats = getEffectiveWeaponStats(activeWeaponObj, weaponUpgrades[activeWeapon]);
+  const activeWeaponState = weaponUpgrades[activeWeapon];
+  const activeWeaponStats = getEffectiveWeaponStats(activeWeaponObj, activeWeaponState);
+  const activeWeaponXpNext = getWeaponXpForNextLevel(activeWeaponStats.weaponLevel);
   const controlLabels: Record<keyof ControlSettings, string> = {
     forward: 'Vorwärts',
     backward: 'Rückwärts',
@@ -589,16 +637,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         </div>
       )}
 
-      {/* COMPASS TAPE & ELEVATION TELEMETRY (TOP CENTER) */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-md px-3">
-        <div className="flex items-center gap-3 px-4 py-1 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 text-white font-mono text-xs shadow-lg">
+      {/* COMPASS TAPE, MAP LEVEL & ELEVATION TELEMETRY (TOP CENTER) */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-xl px-3">
+        <div className="flex items-center gap-2.5 px-3.5 py-1 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 text-white font-mono text-xs shadow-lg">
           <Compass className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           <span className="text-amber-400 font-bold tabular-nums">{heading}°</span>
           <span className="text-white font-black tracking-widest text-sm">
             {currentCompassLabel}
           </span>
-          <span className="text-slate-300 text-[11px] font-bold truncate max-w-[160px]">
+          <span className="text-slate-200 text-[11px] font-bold truncate max-w-[150px]">
             {activeArenaDef.name}
+          </span>
+          <span className="px-1.5 py-0.5 rounded bg-red-500/20 border border-red-400/40 text-red-300 text-[10px] font-black whitespace-nowrap">
+            MAP-LV.{currentMapLevel} · {activeBotScaling.threatTitle}
           </span>
           {elevation > 0.4 && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold tabular-nums">
@@ -1251,13 +1302,24 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                     <Crosshair className="h-3.5 w-3.5 text-amber-400" />
-                    Aktive Waffe
+                    <span>Aktive Waffe · LV. {activeWeaponStats.weaponLevel}/{MAX_WEAPON_LEVEL}</span>
                   </div>
                   <div className="mt-1 truncate text-lg font-black text-white">
                     {activeWeaponStats.displayName}
                   </div>
-                  <div className="mt-0.5 truncate text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    {activeWeaponObj.codArchetype}
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    <span className="truncate">{activeWeaponObj.codArchetype}</span>
+                    {activeWeaponStats.masteryObj.id !== 'standard' && (
+                      <span
+                        className="px-1.5 py-0.2 rounded border text-[9px] font-black shrink-0"
+                        style={{
+                          color: activeWeaponStats.masteryObj.colorHex,
+                          borderColor: activeWeaponStats.masteryObj.colorHex,
+                        }}
+                      >
+                        {activeWeaponStats.masteryObj.name}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-center">
@@ -1271,7 +1333,30 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 <span className="font-bold" style={{ color: activeWeaponStats.rarityObj.colorHex }}>
                   {activeWeaponStats.rarityObj.name}
                 </span>
-                <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponObj.fireRate.toFixed(1)} SCHUSS/S</span>
+                <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponStats.fireRate.toFixed(1)} SCHUSS/S</span>
+              </div>
+              {/* Weapon Level XP Bar */}
+              <div className="mt-1.5 space-y-0.5 font-mono">
+                <div className="flex items-center justify-between text-[9px] text-amber-300/90">
+                  <span>WAFFEN-XP (LV. {activeWeaponStats.weaponLevel})</span>
+                  <span>
+                    {activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
+                      ? 'MAX-LEVEL 30'
+                      : `${activeWeaponState?.weaponXp || 0} / ${activeWeaponXpNext} XP`}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-200"
+                    style={{
+                      width: `${
+                        activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
+                          ? 100
+                          : Math.min(100, ((activeWeaponState?.weaponXp || 0) / activeWeaponXpNext) * 100)
+                      }%`,
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -1311,9 +1396,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                       <span className="px-1.5 py-0.5 rounded-md bg-slate-900/90 text-white shadow">
                         [{idx + 1}]
                       </span>
-                      {(wState?.papLevel || 0) > 0 && (
-                        <span className="text-fuchsia-300 font-bold">PaP{wState?.papLevel}</span>
-                      )}
+                      <span className="text-emerald-300 font-bold">
+                        Lv.{wStats.weaponLevel}
+                      </span>
                     </div>
                     <span className="text-[11px] sm:text-xs font-black text-white text-center leading-tight truncate w-full drop-shadow">
                       {wStats.displayName.split(' ')[0]}
@@ -1398,6 +1483,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         {Object.values(ARENAS).map((a) => {
           const isUnlocked = checkArenaUnlocked(a.id, totalWins, unlockedMaps);
           const isCurrent = currentArena === a.id;
+          const mLv = mapLevels[a.id] || 1;
 
           return (
             <button
@@ -1426,6 +1512,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   .replace(' Neu-Anspach', '')
                   .replace(' (Taunusbahn)', '')}
               </span>
+              {isUnlocked && (
+                <span className={`text-[9px] px-1 rounded ${isCurrent ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-amber-400'}`}>
+                  Lv.{mLv}
+                </span>
+              )}
             </button>
           );
         })}

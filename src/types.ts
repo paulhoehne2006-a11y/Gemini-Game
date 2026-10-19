@@ -36,9 +36,16 @@ export interface WeaponUpgradeState {
   rarityTier: number; // 1 = Standard (Grau), 2 = Grün, 3 = Blau, 4 = Episch (Lila), 5 = Legendär (Gold)
   papLevel: number;   // 0 = Basis, 1 = Pack-a-Punch I, 2 = Pack-a-Punch II, 3 = Pack-a-Punch III
   attachments: WeaponAttachments;
+  weaponLevel?: number; // Level 1-30+ (Waffen-Stufe durch Kills & Training)
+  weaponXp?: number;    // Aktuelle Waffen-XP
+  masteryId?: string;   // Aktive Meisterschafts-Tarnung (Camo)
 }
 
 export type AllWeaponsUpgrades = Record<string, WeaponUpgradeState>;
+
+export type SkillTreeLevels = Record<string, number>;
+
+export type MapLevelsState = Record<string, number>;
 
 export interface WalkableSurface {
   minX: number;

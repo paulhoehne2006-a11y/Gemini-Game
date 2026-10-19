@@ -7,6 +7,7 @@ import { TycoonHub } from './components/TycoonHub';
 import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { LeaderboardView } from './components/LeaderboardView';
 import { GunsmithView } from './components/GunsmithView';
+import { SkillTreeView } from './components/SkillTreeView';
 import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
 import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
@@ -33,11 +34,52 @@ import {
   WEAPONS,
   INITIAL_WEAPON_UPGRADES,
   getEffectiveWeaponStats,
+  addWeaponXpToState,
+  MAX_WEAPON_LEVEL,
 } from './game/weapons';
-import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from './game/three/arenas';
-import { AllWeaponsUpgrades, AttachmentType, WeaponAttachments } from './types';
+import {
+  ARENAS,
+  ARENA_UNLOCK_RULES,
+  checkArenaUnlocked,
+  INITIAL_MAP_LEVELS,
+  MAX_MAP_LEVEL,
+  getMapBotScaling,
+} from './game/three/arenas';
+import {
+  INITIAL_SKILL_TREE,
+  SKILL_TREE_NODES,
+  computeSkillTreeBonuses,
+  getTotalSpentSkillPoints,
+} from './game/skillTree';
+import {
+  AllWeaponsUpgrades,
+  AttachmentType,
+  WeaponAttachments,
+  SkillTreeLevels,
+  MapLevelsState,
+} from './types';
 import { soundFx } from './audio/soundFx';
 import { LegalConsentRecord } from './legal';
+
+/**
+ * Detects whether the user is on a mobile/smartphone device (both in portrait AND landscape / "Handy Querformat").
+ * Even when a smartphone is rotated to landscape (e.g. 844x390), its shortest side is < 620px or it reports a mobile UA / coarse pointer.
+ */
+function detectMobileHardware(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const hasTouch =
+    'ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+  const isCoarsePointer =
+    typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const shortestSide = Math.min(window.innerWidth, window.innerHeight);
+  return (
+    isMobileUA ||
+    (hasTouch && (isCoarsePointer || shortestSide < 620)) ||
+    window.innerWidth < 820
+  );
+}
 
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -48,13 +90,41 @@ export default function App() {
   const [showHome, setShowHome] = useState(true);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
-  // Auto-detect mobile device/screen, or allow switching anytime in the TopBar
-  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 820 || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
-    }
-    return false;
+  // Strict Mobile & Landscape ("Handy Querformat") Hardware Lock:
+  // On mobile devices, 3D Battle Royale is completely disabled in both portrait and landscape orientation.
+  const [isMobileHardware, setIsMobileHardware] = useState<boolean>(() => detectMobileHardware());
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth > window.innerHeight;
   });
+  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => detectMobileHardware());
+
+  useEffect(() => {
+    const syncViewportAndOrientation = () => {
+      const mobileHw = detectMobileHardware();
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsMobileHardware(mobileHw);
+      setIsLandscape(landscape);
+      if (mobileHw) {
+        // Never allow switching out of mobile mode on mobile hardware (even in landscape / Handy Querformat!)
+        setIsMobileMode(true);
+      }
+    };
+    window.addEventListener('resize', syncViewportAndOrientation);
+    window.addEventListener('orientationchange', syncViewportAndOrientation);
+    return () => {
+      window.removeEventListener('resize', syncViewportAndOrientation);
+      window.removeEventListener('orientationchange', syncViewportAndOrientation);
+    };
+  }, []);
+
+  const handleSetMobileMode = (nextMobile: boolean) => {
+    if (isMobileHardware || detectMobileHardware()) {
+      setIsMobileMode(true);
+      return;
+    }
+    setIsMobileMode(nextMobile);
+  };
 
   // Operator Profile & Onboarding State ("Am anfang soll man sich mit einen Benutzernamen geben")
   const [isOperatorRegistered, setIsOperatorRegistered] = useState<boolean>(() => {
@@ -127,12 +197,56 @@ export default function App() {
     return ['hessenpark'];
   });
 
-  // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III)
+  // Map Levels State (Lv. 1-10 per map -> stronger bots & higher NAT/XP rewards)
+  const [mapLevels, setMapLevels] = useState<MapLevelsState>(() => {
+    try {
+      const saved = localStorage.getItem('na_map_levels');
+      if (saved) {
+        return { ...INITIAL_MAP_LEVELS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return INITIAL_MAP_LEVELS;
+  });
+
+  // Operator Skilltree State (3 branches, 12 skills) & Skill Points (SP)
+  const [skillTree, setSkillTree] = useState<SkillTreeLevels>(() => {
+    try {
+      const saved = localStorage.getItem('na_skill_tree');
+      if (saved) {
+        return { ...INITIAL_SKILL_TREE, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return INITIAL_SKILL_TREE;
+  });
+  const [skillPoints, setSkillPoints] = useState<number>(() => {
+    const saved = localStorage.getItem('na_skill_points');
+    return saved ? parseInt(saved, 10) : 3;
+  });
+  const [operatorLevel, setOperatorLevel] = useState<number>(() => {
+    const saved = localStorage.getItem('na_operator_level');
+    return saved ? parseInt(saved, 10) : 1;
+  });
+
+  // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III, Weapon Level 1-30 & Mastery Camos)
   const [weaponUpgrades, setWeaponUpgrades] = useState<AllWeaponsUpgrades>(() => {
     try {
       const saved = localStorage.getItem('na_weapon_upgrades');
       if (saved) {
-        return { ...INITIAL_WEAPON_UPGRADES, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        const merged: AllWeaponsUpgrades = { ...INITIAL_WEAPON_UPGRADES };
+        for (const k of Object.keys(merged)) {
+          if (parsed[k]) {
+            merged[k] = {
+              ...merged[k],
+              ...parsed[k],
+              attachments: {
+                ...merged[k].attachments,
+                ...(parsed[k].attachments || {}),
+              },
+            };
+          }
+        }
+        return merged;
       }
     } catch {}
     return INITIAL_WEAPON_UPGRADES;
@@ -293,6 +407,22 @@ export default function App() {
     localStorage.setItem('na_reputation', reputation.toString());
   }, [reputation]);
 
+  useEffect(() => {
+    localStorage.setItem('na_map_levels', JSON.stringify(mapLevels));
+  }, [mapLevels]);
+
+  useEffect(() => {
+    localStorage.setItem('na_skill_tree', JSON.stringify(skillTree));
+  }, [skillTree]);
+
+  useEffect(() => {
+    localStorage.setItem('na_skill_points', skillPoints.toString());
+  }, [skillPoints]);
+
+  useEffect(() => {
+    localStorage.setItem('na_operator_level', operatorLevel.toString());
+  }, [operatorLevel]);
+
   // Toast auto-dismiss timer
   useEffect(() => {
     if (!completedMissionToast) return;
@@ -367,7 +497,7 @@ export default function App() {
     });
   };
 
-  // CoD Cold War Gunsmith Handlers
+  // CoD Cold War Gunsmith & Weapon Leveling Handlers
   const handleUpgradeAttachment = (
     weaponId: string,
     slot: AttachmentType,
@@ -437,6 +567,111 @@ export default function App() {
         eventNotice: `hat „${papWeaponName}“ (Pack-a-Punch Stufe ${targetLevel}) geschmiedet!`,
       }).catch(() => {});
     }
+  };
+
+  const handleTrainWeaponLevel = (weaponId: string, levelsToGain: number, costNAT: number) => {
+    if (budget < costNAT) return;
+    setBudget((prev) => prev - costNAT);
+    triggerMissionEvent({ type: 'gunsmith' });
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      const currentLv = cur.weaponLevel || 1;
+      const nextLv = Math.min(MAX_WEAPON_LEVEL, currentLv + levelsToGain);
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          weaponLevel: nextLv,
+          weaponXp: nextLv >= MAX_WEAPON_LEVEL ? 0 : cur.weaponXp || 0,
+        },
+      };
+    });
+  };
+
+  const handleSelectWeaponMastery = (weaponId: string, masteryId: string) => {
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          masteryId,
+        },
+      };
+    });
+  };
+
+  const handleWeaponXpGain = (weaponId: string, xpAmount: number) => {
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      const { nextState, leveledUp } = addWeaponXpToState(cur, xpAmount);
+      if (leveledUp) {
+        soundFx.playLevelUp();
+      }
+      return {
+        ...prev,
+        [weaponId]: nextState,
+      };
+    });
+  };
+
+  const handleOperatorLevelUp = (newLevel: number) => {
+    setOperatorLevel((prev) => {
+      if (newLevel > prev) {
+        const gainedSP = newLevel - prev;
+        setSkillPoints((sp) => sp + gainedSP);
+        return newLevel;
+      }
+      return prev;
+    });
+  };
+
+  // Operator Skilltree Handlers
+  const handleUpgradeSkillWithSP = (nodeId: string, costSP: number) => {
+    const node = SKILL_TREE_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const currentLv = skillTree[nodeId] || 0;
+    if (currentLv >= node.maxLevel) return;
+    if (skillPoints < costSP) return;
+
+    setSkillPoints((prev) => prev - costSP);
+    setSkillTree((prev) => ({
+      ...prev,
+      [nodeId]: (prev[nodeId] || 0) + 1,
+    }));
+  };
+
+  const handleUpgradeSkillWithNAT = (nodeId: string, costNAT: number) => {
+    const node = SKILL_TREE_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const currentLv = skillTree[nodeId] || 0;
+    if (currentLv >= node.maxLevel) return;
+    if (budget < costNAT) return;
+
+    setBudget((prev) => prev - costNAT);
+    setSkillTree((prev) => ({
+      ...prev,
+      [nodeId]: (prev[nodeId] || 0) + 1,
+    }));
+  };
+
+  const handleResetSkillTree = () => {
+    const spent = getTotalSpentSkillPoints(skillTree);
+    if (spent <= 0) return;
+    setSkillTree(INITIAL_SKILL_TREE);
+    setSkillPoints((prev) => prev + spent);
+  };
+
+  // Map Level Upgrade Handler (Lv. 1-10 -> stronger bots & higher NAT/XP rewards)
+  const handleUpgradeMapLevel = (arenaId: string, costNAT: number) => {
+    if (budget < costNAT) return;
+    const curLv = mapLevels[arenaId] || 1;
+    if (curLv >= MAX_MAP_LEVEL) return;
+    setBudget((prev) => prev - costNAT);
+    setMapLevels((prev) => ({
+      ...prev,
+      [arenaId]: Math.min(MAX_MAP_LEVEL, (prev[arenaId] || 1) + 1),
+    }));
   };
 
   const handleLootAttachmentUpdate = (weaponId: string, newAtt: WeaponAttachments) => {
@@ -588,6 +823,7 @@ export default function App() {
       setDailyMissionsState(res.nextState);
       setBudget((prev) => prev + res.rewardedNAT);
       setReputation((prev) => prev + res.rewardedReputation);
+      setSkillPoints((prev) => prev + 1);
       if (completedMissionToast?.id === missionId) {
         setCompletedMissionToast(null);
       }
@@ -601,18 +837,29 @@ export default function App() {
       setDailyMissionsState(res.nextState);
       setBudget((prev) => prev + res.rewardedNAT);
       setReputation((prev) => prev + res.rewardedReputation);
+      setSkillPoints((prev) => prev + 2);
     }
   };
 
   const handleSimulatePatrol = (arenaId: string) => {
+    const mapLv = mapLevels[arenaId] || 1;
+    const botScaling = getMapBotScaling(arenaId, mapLv);
+    const skillBonuses = computeSkillTreeBonuses(skillTree);
+
     // Generate 2-4 tactical enemy eliminations in the target arena
     const patrolKills = Math.floor(Math.random() * 3) + 2;
-    const earnedNAT = 45 + patrolKills * 12;
+    const earnedNAT = Math.round(
+      (45 + patrolKills * 12) * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
+    );
     const earnedScore = patrolKills * 125;
+    const earnedWeaponXp = Math.round(
+      patrolKills * 45 * botScaling.xpRewardMult * skillBonuses.weaponXpMultiplier
+    );
 
     setBudget((prev) => prev + earnedNAT);
     setLastMatchKills((prev) => prev + patrolKills);
     setLastMatchScore((prev) => prev + earnedScore);
+    handleWeaponXpGain(selectedGunsmithWeapon, earnedWeaponXp);
 
     // Trigger daily missions progression for each kill in this arena!
     for (let i = 0; i < patrolKills; i++) {
@@ -653,10 +900,17 @@ export default function App() {
     setLastMatchKills(stats.kills);
     setLastMatchScore(stats.score);
 
+    const mapLv = mapLevels[currentArena] || 1;
+    const botScaling = getMapBotScaling(currentArena, mapLv);
+    const skillBonuses = computeSkillTreeBonuses(skillTree);
+
     const waveBonus = stats.wave * 6;
     const scoreBonus = Math.round(stats.score * 0.06);
     const winBonus = victory ? 45 : 12;
-    const reward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    const rawReward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    const reward = Math.round(
+      rawReward * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
+    );
     setLastMatchReward(reward);
     setBudget((prev) => prev + reward);
 
@@ -666,6 +920,8 @@ export default function App() {
     if (victory) {
       nextWins = totalWins + 1;
       setTotalWins(nextWins);
+      setSkillPoints((prev) => prev + 1);
+      setOperatorLevel((prev) => prev + 1);
 
       // Automatically unlock maps whose requiredWins <= nextWins
       Object.values(ARENA_UNLOCK_RULES).forEach((rule) => {
@@ -728,6 +984,10 @@ export default function App() {
     (m) => m.completed
   ).length;
 
+  // Hard Mobile & Landscape ("Handy Querformat") Lock:
+  // If on mobile hardware, ALWAYS use Mobile Tactical Hub and never render the 3D Battle Royale canvas.
+  const effectiveMobileMode = isMobileMode || isMobileHardware;
+
   if (authLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-center text-slate-300">
@@ -769,7 +1029,7 @@ export default function App() {
 
   return (
     <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-      !showHome && activeTab === 'battle' && !isMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
+      !showHome && activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
     }`}>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
@@ -843,7 +1103,7 @@ export default function App() {
         </div>
       )}
 
-      {!showHome && (activeTab !== 'battle' || isMobileMode) && (
+      {!showHome && (activeTab !== 'battle' || effectiveMobileMode) && (
         <TopBar
           activeTab={activeTab}
           setActiveTab={openTab}
@@ -853,8 +1113,10 @@ export default function App() {
           setIsMuted={setIsMuted}
           onRequestCommander={requestCommanderOrders}
           isCommanderThinking={isCommanderThinking}
-          isMobileMode={isMobileMode}
-          setIsMobileMode={setIsMobileMode}
+          isMobileMode={effectiveMobileMode}
+          setIsMobileMode={handleSetMobileMode}
+          isMobileHardware={isMobileHardware}
+          skillPoints={skillPoints}
           playerName={playerName}
           clanTag={clanTag}
           onOpenHome={() => setShowHome(true)}
@@ -871,7 +1133,7 @@ export default function App() {
 
       {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
       <main className={`flex-1 w-full relative ${
-        showHome || activeTab !== 'battle' || isMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+        showHome || activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
       }`}>
         {showHome && (
           <section className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 py-12 sm:px-10 lg:px-20">
@@ -886,8 +1148,7 @@ export default function App() {
                   <span className="block text-amber-400">Battle Royale</span>
                 </h1>
                 <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-                  Dein taktischer Einsatz beginnt hier. Erkunde die 3D-Arena, sichere NAT und
-                  überliste die Wehrheimer im ersten lokalen Battle Royale von Neu-Anspach.
+                  Dein taktischer Einsatz beginnt hier. Erkunde die überarbeiteten 3D-Arenen am PC, levele deinen Skilltree & deine Waffen hoch und überliste die Wehrheimer in Neu-Anspach.
                 </p>
                 <div className="mt-9 flex flex-wrap gap-3">
                   <button
@@ -899,7 +1160,7 @@ export default function App() {
                     className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
                   >
                     <Crosshair className="h-5 w-5" aria-hidden="true" />
-                    Einsatz starten
+                    {effectiveMobileMode ? 'Taktik-Zentrale öffnen' : 'Einsatz starten'}
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </button>
                   <button
@@ -912,13 +1173,15 @@ export default function App() {
                   </button>
                 </div>
                 <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
-                  Maus: umsehen · WASD: bewegen · Linksklick: feuern
+                  {effectiveMobileMode
+                    ? 'Handy-Modus (Hoch- & Querformat): Taktik-Hub, Skilltree & Waffenschmiede · 3D-Shooter nur am PC'
+                    : 'Maus: umsehen · WASD: bewegen · Linksklick: feuern'}
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                 {[
-                  { icon: Crosshair, title: '3D-Einsatz', text: 'Fullscreen-Arena mit freier Kamerasicht' },
-                  { icon: Wrench, title: 'Waffenschmiede', text: 'Verbessere deine Signaturwaffe' },
+                  { icon: Crosshair, title: '7 Überarbeitete Maps', text: 'Taktische Deckung, Lichtstimmungen & Map-Level 1–10' },
+                  { icon: Wrench, title: 'Waffen-Level & Skilltree', text: 'Waffen bis Lv. 30, Meisterschafts-Tarnungen & 12 Perks' },
                   { icon: Trophy, title: 'Rangliste', text: 'Sichere dir deinen Platz in Neu-Anspach' },
                 ].map(({ icon: Icon, title, text }) => (
                   <div key={title} className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 backdrop-blur-sm">
@@ -933,7 +1196,7 @@ export default function App() {
         )}
 
         {!showHome && activeTab === 'battle' && (
-          isMobileMode ? (
+          effectiveMobileMode ? (
             <MobileTacticalHub
               budget={budget}
               reputation={reputation}
@@ -946,8 +1209,11 @@ export default function App() {
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
               onClaimDailyMission={handleClaimMission}
               onNavigateTab={openTab}
-              onSwitchToPcMode={() => setIsMobileMode(false)}
+              onSwitchToPcMode={() => handleSetMobileMode(false)}
               onSimulatePatrol={handleSimulatePatrol}
+              isMobileHardware={isMobileHardware}
+              isLandscape={isLandscape}
+              skillPoints={skillPoints}
             />
           ) : (
             <ThreeCanvas
@@ -977,6 +1243,10 @@ export default function App() {
               onStreakAchieved={handleStreakAchieved}
               onWaveAdvanced={handleWaveAdvanced}
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+              skillTree={skillTree}
+              mapLevels={mapLevels}
+              onWeaponXpGain={handleWeaponXpGain}
+              onOperatorLevelUp={handleOperatorLevelUp}
             />
           )
         )}
@@ -990,6 +1260,21 @@ export default function App() {
             onUpgradeAttachment={handleUpgradeAttachment}
             onUpgradeRarity={handleUpgradeRarity}
             onUpgradePackAPunch={handleUpgradePackAPunch}
+            onTrainWeaponLevel={handleTrainWeaponLevel}
+            onSelectWeaponMastery={handleSelectWeaponMastery}
+            onClose={() => setActiveTab('battle')}
+          />
+        )}
+
+        {activeTab === 'skilltree' && (
+          <SkillTreeView
+            budget={budget}
+            skillPoints={skillPoints}
+            skillTree={skillTree}
+            operatorLevel={operatorLevel}
+            onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
+            onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
+            onResetSkillTree={handleResetSkillTree}
             onClose={() => setActiveTab('battle')}
           />
         )}
@@ -1009,6 +1294,9 @@ export default function App() {
               setCurrentArena(arenaId);
               setActiveTab('battle');
             }}
+            mapLevels={mapLevels}
+            onUpgradeMapLevel={handleUpgradeMapLevel}
+            isMobileHardware={isMobileHardware}
           />
         )}
 

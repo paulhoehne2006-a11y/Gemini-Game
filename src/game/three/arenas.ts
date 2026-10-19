@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WalkableSurface } from '../../types';
+import { WalkableSurface, MapLevelsState } from '../../types';
 import {
   DestructibleProp,
   createCobblestoneTexture,
@@ -18,6 +18,9 @@ import {
   createWildflowerClump,
   createStylizedRock,
   createFortniteGoldenChest,
+  createSandbagBunker,
+  createShippingContainer,
+  createStreetLamp,
 } from './textures';
 
 export interface ArenaBuildResult {
@@ -25,6 +28,34 @@ export interface ArenaBuildResult {
   walkableSurfaces: WalkableSurface[];
   destructibles: DestructibleProp[];
   update?: (delta: number) => void;
+}
+
+/**
+ * Per-map lighting & mood preset. Consumed by ArenaSceneManager to build the sky dome,
+ * fog, hemisphere/sun/rim lights and tone-mapping exposure for each arena.
+ */
+export interface ArenaAtmosphere {
+  /** Short German label shown in the UI, e.g. 'Goldene Stunde' or 'Nachteinsatz'. */
+  timeOfDay: string;
+  skyTop: number;
+  skyMid: number;
+  skyHorizon: number;
+  fogColor: number;
+  fogDensity: number;
+  hemiSky: number;
+  hemiGround: number;
+  hemiIntensity: number;
+  sunColor: number;
+  sunIntensity: number;
+  /** Sun offset relative to the player (shadow frustum follows the player). */
+  sunOffset: [number, number, number];
+  rimColor: number;
+  rimIntensity: number;
+  exposure: number;
+  /** Colour of the visible sun / moon disc in the sky. */
+  sunDiscColor: number;
+  /** Night maps get a moon, stars and darker clouds. */
+  isNight?: boolean;
 }
 
 export interface ArenaConfig {
@@ -35,6 +66,7 @@ export interface ArenaConfig {
   district: string;
   skyColor: number;
   fogColor: number;
+  atmosphere?: ArenaAtmosphere;
   buildScene: (scene: THREE.Scene) => ArenaBuildResult;
 }
 
@@ -97,6 +129,95 @@ export const ARENA_UNLOCK_RULES: Record<string, ArenaUnlockRule> = {
     difficultyLabel: 'Stufe 7 · Taunuskamm-Endschlacht',
   },
 };
+
+export const MAX_MAP_LEVEL = 10;
+
+export const INITIAL_MAP_LEVELS: MapLevelsState = {
+  hessenpark: 1,
+  waldschwimmbad: 1,
+  bahnhof: 1,
+  buergerhaus: 1,
+  taunuscenter: 1,
+  ars: 1,
+  feldbergblick: 1,
+};
+
+export function getMapUpgradeCostNAT(arenaId: string, currentMapLevel = 1): number {
+  const order = ARENA_UNLOCK_RULES[arenaId]?.order || 1;
+  return Math.round(140 + order * 35 + (currentMapLevel - 1) * 95);
+}
+
+export interface MapBotScalingInfo {
+  arenaId: string;
+  campaignTier: number;      // 1..7 (Map order in campaign)
+  mapUpgradeLevel: number;   // 1..10 (Player's upgraded map level)
+  effectiveBotLevel: number; // Combined bot threat level (campaignTier + mapUpgradeLevel - 1)
+  hpMultiplier: number;
+  hpMult: number;
+  damageMultiplier: number;
+  dmgMult: number;
+  speedMultiplier: number;
+  fireRateMultiplier: number;
+  extraEnemiesPerWave: number;
+  extraBotsPerWave: number;
+  rewardMultiplier: number;
+  natRewardMult: number;
+  xpRewardMult: number;
+  threatTitle: string;
+}
+
+/**
+ * Calculates how much stronger Wehrheimer bots become on higher-tier and leveled-up maps,
+ * as well as the increased NAT & Weapon-XP reward multiplier.
+ */
+export function getMapBotScaling(
+  arenaId: string,
+  mapLevelsOrLevel: MapLevelsState | number = INITIAL_MAP_LEVELS
+): MapBotScalingInfo {
+  const campaignTier = ARENA_UNLOCK_RULES[arenaId]?.order || 1;
+  const rawLevel =
+    typeof mapLevelsOrLevel === 'number'
+      ? mapLevelsOrLevel
+      : mapLevelsOrLevel[arenaId] || 1;
+  const mapUpgradeLevel = Math.max(1, Math.min(MAX_MAP_LEVEL, rawLevel));
+  const effectiveBotLevel = campaignTier + (mapUpgradeLevel - 1);
+
+  const hpMultiplier = Number((1 + (effectiveBotLevel - 1) * 0.22).toFixed(2));
+  const damageMultiplier = Number((1 + (effectiveBotLevel - 1) * 0.16).toFixed(2));
+  const speedMultiplier = Number((1 + Math.min(0.42, (effectiveBotLevel - 1) * 0.045)).toFixed(2));
+  const fireRateMultiplier = Number((1 + Math.min(0.65, (effectiveBotLevel - 1) * 0.08)).toFixed(2));
+  const extraEnemiesPerWave = Math.floor((effectiveBotLevel - 1) * 0.75);
+  const rewardMultiplier = Number((1 + (effectiveBotLevel - 1) * 0.25).toFixed(2));
+  const xpRewardMult = Number((1 + (effectiveBotLevel - 1) * 0.28).toFixed(2));
+
+  const threatTitle =
+    effectiveBotLevel >= 9
+      ? 'EXTREM · ELITE-GARDE'
+      : effectiveBotLevel >= 6
+      ? 'SCHWER · STOSS-KOMMANDO'
+      : effectiveBotLevel >= 3
+      ? 'ERHÖHT · VETERANEN'
+      : 'STANDARD · SPÄHTRUPP';
+
+  return {
+    arenaId,
+    campaignTier,
+    mapUpgradeLevel,
+    effectiveBotLevel,
+    hpMultiplier,
+    hpMult: hpMultiplier,
+    damageMultiplier,
+    dmgMult: damageMultiplier,
+    speedMultiplier,
+    fireRateMultiplier,
+    extraEnemiesPerWave,
+    extraBotsPerWave: extraEnemiesPerWave,
+    rewardMultiplier,
+    natRewardMult: rewardMultiplier,
+    xpRewardMult,
+    threatTitle,
+  };
+}
 
 export function checkArenaUnlocked(
   arenaId: string,
@@ -274,13 +395,32 @@ function addDistantFeldbergBackdrop(scene: THREE.Scene, zOffset = -95) {
 export const ARENAS: Record<string, ArenaConfig> = {
   hessenpark: {
     id: 'hessenpark',
-    name: 'Freilichtmuseum Hessenpark',
-    subtitle: 'Historischer Marktplatz, Windmühle & begehbare Fachwerkscheunen',
+    name: 'Freilichtmuseum Hessenpark (Reworked)',
+    subtitle: 'Goldene Stunde · Historischer Marktplatz, Windmühle, Sandsack-Stellungen & Fachwerkscheunen',
     description:
-      'Authentischer Nachbau des Freilichtmuseums Hessenpark: Kämpfe zwischen historischen Fachwerkhäusern, erklimme den Scheunen-Dachboden über die Außentreppe und nutze die Holländer-Windmühle als Deckung.',
+      'Überarbeitetes Freilichtmuseum Hessenpark in warmer Abendsonne: Kämpfe zwischen historischen Fachwerkhäusern, nutze die neuen Sandsack-Stellungen am Dorfbrunnen, erklimme den Scheunen-Dachboden und sichere die Holländer-Windmühle.',
     district: 'Neu-Anspach Süd · Laubweg',
-    skyColor: 0x38BDF8,
-    fogColor: 0xBAE6FD,
+    skyColor: 0xF59E0B,
+    fogColor: 0xFDE68A,
+    atmosphere: {
+      timeOfDay: 'Goldene Stunde',
+      skyTop: 0x1D4ED8,
+      skyMid: 0xF59E0B,
+      skyHorizon: 0xFEF08A,
+      fogColor: 0xFDE68A,
+      fogDensity: 0.0034,
+      hemiSky: 0xFDE68A,
+      hemiGround: 0x451A03,
+      hemiIntensity: 1.15,
+      sunColor: 0xFFFBEB,
+      sunIntensity: 2.35,
+      sunOffset: [42, 36, 28],
+      rimColor: 0xFB923C,
+      rimIntensity: 0.95,
+      exposure: 1.24,
+      sunDiscColor: 0xFDE047,
+      isNight: false,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -297,7 +437,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       // Central Historic Marktplatz Cobblestone
       const plaza = new THREE.Mesh(
-        new THREE.CylinderGeometry(28, 28, 0.08, 36),
+        new THREE.CylinderGeometry(30, 30, 0.08, 36),
         new THREE.MeshStandardMaterial({ map: createCobblestoneTexture(14, 14), roughness: 0.82 })
       );
       plaza.position.y = 0.04;
@@ -329,6 +469,30 @@ export const ARENAS: Record<string, ArenaConfig> = {
       wellGroup.add(obelisk);
       scene.add(wellGroup);
       obstacles.push(new THREE.Box3(new THREE.Vector3(-2.7, 0, -2.7), new THREE.Vector3(2.7, 3.5, 2.7)));
+
+      // NEW: Tactical Sandbag Bunkers & Timber Cover around the Marktplatz
+      [
+        [-7.5, 5.5, 0.4, 4.4],
+        [7.5, 5.5, -0.4, 4.4],
+        [-7.5, -9.5, -0.35, 4.4],
+        [7.5, -9.5, 0.35, 4.4],
+      ].forEach(([bx, bz, rot, len]) => {
+        const bunker = createSandbagBunker(bx, bz, rot, len);
+        scene.add(bunker.mesh);
+        obstacles.push(bunker.box);
+      });
+
+      // NEW: Historic Lantern Street Lamps illuminating the Fachwerk square
+      [
+        [-9, -2],
+        [9, -2],
+        [-9, 10],
+        [9, 10],
+      ].forEach(([lx, lz], idx) => {
+        const lamp = createStreetLamp(lx, lz, 4.4, 0xFBBF24, idx < 2);
+        scene.add(lamp.mesh);
+        obstacles.push(lamp.box);
+      });
 
       // Enterable Fachwerk Barn (West) with walkable roof & exterior wooden stairs!
       const barnWest = createEnterableBuilding({
@@ -456,7 +620,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 46, 44);
-      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [0, -14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [0, -14], [11, 14]]);
 
       return {
         obstacles,
@@ -471,13 +635,32 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
   waldschwimmbad: {
     id: 'waldschwimmbad',
-    name: 'Waldschwimmbad Neu-Anspach',
-    subtitle: '50m-Schwimmerbecken, begehbarer 5m-Sprungturm & Kiosk-Dachterrasse',
+    name: 'Waldschwimmbad Neu-Anspach (Reworked)',
+    subtitle: 'Hochsommer · 50m-Becken, Riesen-Wasserrutsche, 5m-Sprungturm & DLRG-Stellung',
     description:
-      'Das beliebte Freibad am Waldrand: Klettere auf den 5-Meter-Sprungturm für freies Schussfeld über das gesamte Becken oder verschanze dich auf der Kiosk-Sonnenterrasse.',
+      'Überarbeitetes Waldschwimmbad bei strahlendem Hochsommer: Klettere auf den 5-Meter-Sprungturm, nutze die neue Riesen-Wasserrutsche und die Sandsack-Deckungen am Beckenrand oder verschanze dich auf der Kiosk-Sonnenterrasse.',
     district: 'Anspach Waldrand · Fasanenweg',
     skyColor: 0x0284C7,
     fogColor: 0xBAE6FD,
+    atmosphere: {
+      timeOfDay: 'Hochsommer-Mittag',
+      skyTop: 0x0369A1,
+      skyMid: 0x38BDF8,
+      skyHorizon: 0xE0F2FE,
+      fogColor: 0xBAE6FD,
+      fogDensity: 0.0028,
+      hemiSky: 0xBAE6FD,
+      hemiGround: 0x15803D,
+      hemiIntensity: 1.25,
+      sunColor: 0xFFFDF4,
+      sunIntensity: 2.5,
+      sunOffset: [28, 64, 22],
+      rimColor: 0x38BDF8,
+      rimIntensity: 0.9,
+      exposure: 1.28,
+      sunDiscColor: 0xFEF9C3,
+      isNight: false,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -494,7 +677,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       // Poolside tiled deck
       const deck = new THREE.Mesh(
-        new THREE.BoxGeometry(40, 0.14, 28),
+        new THREE.BoxGeometry(42, 0.14, 30),
         new THREE.MeshStandardMaterial({ color: 0xE2E8F0, roughness: 0.65 })
       );
       deck.position.set(0, 0.07, 0);
@@ -512,7 +695,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const waterMat = new THREE.MeshStandardMaterial({
         color: 0x0EA5E9,
         emissive: 0x0284C7,
-        emissiveIntensity: 0.22,
+        emissiveIntensity: 0.25,
         roughness: 0.12,
         metalness: 0.35,
       });
@@ -579,6 +762,39 @@ export const ARENAS: Record<string, ArenaConfig> = {
       });
       scene.add(towerGroup);
 
+      // NEW: Bright Yellow/Orange Aqua-Slide (Riesen-Wasserrutsche) at North-West Pool Corner
+      const slideMat = new THREE.MeshStandardMaterial({ color: 0xF97316, roughness: 0.25, metalness: 0.2 });
+      const slideChute = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 11.5), slideMat);
+      slideChute.position.set(-11.5, 2.4, -9.5);
+      slideChute.rotation.x = 0.36;
+      slideChute.castShadow = true;
+      scene.add(slideChute);
+      walkableSurfaces.push({
+        minX: -12.7,
+        maxX: -10.3,
+        minZ: -14.8,
+        maxZ: -4.2,
+        yStart: 4.3,
+        yEnd: 0.4,
+        rampAxis: 'z',
+      });
+
+      // NEW: Poolside Tactical Sandbag Bunkers & DLRG Supply Container
+      [
+        [-8, 9.5, 0, 4.2],
+        [7.5, 9.5, 0, 4.2],
+        [-7, -9.5, 0, 4.2],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
+
+      const dlrgContainer = createShippingContainer(16, -13, 0, 0x0284C7, true);
+      scene.add(dlrgContainer.mesh);
+      obstacles.push(dlrgContainer.box);
+      walkableSurfaces.push(...dlrgContainer.walkableSurfaces);
+
       // Enterable Kiosk & Changing Rooms (Umkleiden & Freibad-Kiosk mit Pommes-Terrasse)
       const kioskBuilding = createEnterableBuilding({
         x: 0,
@@ -630,6 +846,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const propList: Array<[number, number, number, 'crate' | 'barrel' | 'market_stall' | 'tech_case', 'attachment' | 'shield' | 'mixed']> = [
         [14.8, 5.8, 0, 'tech_case', 'attachment'], // Golden Attachment Crate right on top of the 5m Diving Tower!
         [0, 4.95, -21, 'tech_case', 'attachment'], // Golden Attachment Crate on Kiosk Roof!
+        [16, 2.9, -13, 'tech_case', 'attachment'], // On DLRG Container Roof!
         [-12, 0, -11, 'market_stall', 'shield'],
         [11, 0, -11, 'market_stall', 'mixed'],
         [-15, 0, 11, 'crate', 'mixed'],
@@ -644,7 +861,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 46, 44);
-      scatterArenaEnvironment(scene, destructibles, [[-12, 10], [14, 12], [-8, -14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 10], [14, 12], [-8, -14], [5, 11]]);
 
       let elapsed = 0;
       return {
@@ -661,13 +878,32 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
   bahnhof: {
     id: 'bahnhof',
-    name: 'Bahnhof Neu-Anspach (Taunusbahn)',
-    subtitle: 'RMV/HLB LINT-Triebwagen RB15, Bahnsteig, Fußgängerbrücke & P+R-Autos',
+    name: 'Bahnhof Neu-Anspach (Reworked)',
+    subtitle: 'Dämmerung · RMV LINT-Triebwagen RB15, begehbare Gleis-Überführung & Frachtcontainer',
     description:
-      'Der Bahnhof Neu-Anspach an der Taunusbahn-Strecke RB15: Nutze den wartenden LINT-Zug und die geparkten Pendler-Autos als Deckung oder sichere dir das Dach des Bahnhofsgebäudes.',
+      'Überarbeiteter Bahnhof Neu-Anspach in kühler Abenddämmerung: Überquere die neue begehbare Fußgängerbrücke über den Gleisen, erklimme das Zugdach des RB15-Triebwagens und nutze die Frachtcontainer als Deckung.',
     district: 'Bahnhofstraße · Gleis 1 & 2',
-    skyColor: 0x2563EB,
-    fogColor: 0xDBEAFE,
+    skyColor: 0x1E3A8A,
+    fogColor: 0x93C5FD,
+    atmosphere: {
+      timeOfDay: 'Abenddämmerung',
+      skyTop: 0x0F172A,
+      skyMid: 0x1E40AF,
+      skyHorizon: 0x60A5FA,
+      fogColor: 0x93C5FD,
+      fogDensity: 0.0042,
+      hemiSky: 0x93C5FD,
+      hemiGround: 0x1E293B,
+      hemiIntensity: 1.05,
+      sunColor: 0xFED7AA,
+      sunIntensity: 1.95,
+      sunOffset: [-38, 34, 24],
+      rimColor: 0x38BDF8,
+      rimIntensity: 0.95,
+      exposure: 1.2,
+      sunDiscColor: 0xFB923C,
+      isNight: false,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -682,7 +918,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       ground.receiveShadow = true;
       scene.add(ground);
 
-      // Railway Ballast Bed & Steel Tracks (North-South corridor at Z = -12)
+      // Railway Ballast Bed & Steel Tracks (East-West corridor at Z = -12)
       const ballast = new THREE.Mesh(
         new THREE.BoxGeometry(120, 0.28, 9),
         new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.95 })
@@ -706,7 +942,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const trainGlass = new THREE.MeshStandardMaterial({
         color: 0xBAE6FD,
         emissive: 0x38BDF8,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.55,
         roughness: 0.1,
       });
 
@@ -735,6 +971,64 @@ export const ARENAS: Record<string, ArenaConfig> = {
         yStart: 4.1,
         yEnd: 4.1,
         rampAxis: 'none',
+      });
+
+      // NEW: Walkable Railway Overpass Bridge (Gleis-Fußgängerbrücke) at X = 15 spanning Z = -18..-5
+      const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
+      const bridgeDeck = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 13), bridgeMat);
+      bridgeDeck.position.set(15, 4.3, -11.5);
+      bridgeDeck.castShadow = true;
+      scene.add(bridgeDeck);
+      walkableSurfaces.push({
+        minX: 12.9,
+        maxX: 17.1,
+        minZ: -18,
+        maxZ: -5,
+        yStart: 4.45,
+        yEnd: 4.45,
+        rampAxis: 'none',
+      });
+      // Ramp up from North side (Z = -25 to -18) onto the bridge & train roof level
+      const northRamp = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.3, 7.6), bridgeMat);
+      northRamp.position.set(15, 2.25, -21.5);
+      northRamp.rotation.x = -0.56;
+      scene.add(northRamp);
+      walkableSurfaces.push({
+        minX: 13.0,
+        maxX: 17.0,
+        minZ: -25.2,
+        maxZ: -18.0,
+        yStart: 0,
+        yEnd: 4.45,
+        rampAxis: 'z',
+      });
+
+      // NEW: Climbable DB Cargo Container & Tactical Sandbag Bunkers
+      const cargoContainer = createShippingContainer(-5, -21, 0, 0xDC2626, true);
+      scene.add(cargoContainer.mesh);
+      obstacles.push(cargoContainer.box);
+      walkableSurfaces.push(...cargoContainer.walkableSurfaces);
+
+      [
+        [-6, 1.5, 0, 4.4],
+        [5, 1.5, 0, 4.4],
+        [0, 8.5, 0, 4.6],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
+
+      // Platform Street Lamps
+      [
+        [-14, -6.5],
+        [-4, -6.5],
+        [6, -6.5],
+        [16, -6.5],
+      ].forEach(([lx, lz], idx) => {
+        const lamp = createStreetLamp(lx, lz, 4.8, 0xE0F2FE, idx % 2 === 0);
+        scene.add(lamp.mesh);
+        obstacles.push(lamp.box);
       });
 
       // Covered Station Platform (Bahnsteig Gleis 1)
@@ -780,7 +1074,6 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const vehicles: Array<[number, number, number, number, 'sedan' | 'suv' | 'bus']> = [
         [-12, 18, 0.1, 0x2563EB, 'sedan'],
         [-6, 18, -0.05, 0xE2E8F0, 'suv'],
-        [0, 18, 0, 0x16A34A, 'sedan'],
         [8, 19, Math.PI / 2, 0x0EA5E9, 'bus'], // RMV Linienbus
         [-18, -2, Math.PI / 4, 0xF59E0B, 'suv'],
       ];
@@ -795,6 +1088,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const propList: Array<[number, number, number, 'crate' | 'barrel' | 'market_stall' | 'tech_case', 'attachment' | 'shield' | 'mixed']> = [
         [15, 5.05, 5, 'tech_case', 'attachment'], // On Station Roof
         [-16, 4.65, 5, 'tech_case', 'attachment'], // On Bike Hall Roof
+        [15, 4.5, -11.5, 'tech_case', 'attachment'], // On Pedestrian Overpass Bridge!
         [0, 0.6, -6.8, 'tech_case', 'attachment'], // On Station Platform
         [-4, 0, 10, 'crate', 'mixed'],
         [4, 0, 10, 'crate', 'shield'],
@@ -808,7 +1102,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 48, 38);
-      scatterArenaEnvironment(scene, destructibles, [[-10, 8], [12, -8], [0, 14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 8], [12, -8], [6, 12], [-5, -19]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -816,13 +1110,32 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
   buergerhaus: {
     id: 'buergerhaus',
-    name: 'Bürgerhaus & Rathausplatz',
-    subtitle: 'Großes Bürgerhaus mit Dachterrasse, Uhrturm, Feuerwehr & Wochenmarkt',
+    name: 'Bürgerhaus & Rathausplatz (Reworked)',
+    subtitle: 'Abendmarkt · Großes Bürgerhaus, Uhrturm, THW/Feuerwehr-Stellung & Festplatz',
     description:
-      'Das gesellschaftliche Zentrum von Neu-Anspach: Verteidige das Bürgerhaus und das Rathaus, klettere über die Freitreppe auf die Dachterrasse und nutze das Feuerwehr-Einsatzfahrzeug als Deckung.',
-    district: 'stadtmitte · Gustav-Heinemann-Straße',
-    skyColor: 0x0284C7,
-    fogColor: 0xE0F2FE,
+      'Überarbeiteter Rathausplatz im warmen Abendlicht: Verteidige das Bürgerhaus und das Rathaus, klettere über die Freitreppe auf die Dachterrasse und nutze die neue Feuerwehr-Barrikade & den THW-Container als Deckung.',
+    district: 'Stadtmitte · Gustav-Heinemann-Straße',
+    skyColor: 0xEA580C,
+    fogColor: 0xFED7AA,
+    atmosphere: {
+      timeOfDay: 'Abendmarkt-Sonnenuntergang',
+      skyTop: 0x311042,
+      skyMid: 0xEA580C,
+      skyHorizon: 0xFDBA74,
+      fogColor: 0xFED7AA,
+      fogDensity: 0.0036,
+      hemiSky: 0xFDBA74,
+      hemiGround: 0x27272A,
+      hemiIntensity: 1.12,
+      sunColor: 0xFFEDD5,
+      sunIntensity: 2.2,
+      sunOffset: [-45, 28, 30],
+      rimColor: 0xF43F5E,
+      rimIntensity: 0.9,
+      exposure: 1.22,
+      sunDiscColor: 0xFB7185,
+      isNight: false,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -877,15 +1190,44 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       const clockFace = new THREE.Mesh(
         new THREE.CylinderGeometry(1.1, 1.1, 0.25, 16),
-        new THREE.MeshStandardMaterial({ color: 0xFEF08A, emissive: 0xF59E0B, emissiveIntensity: 1.4 })
+        new THREE.MeshStandardMaterial({ color: 0xFEF08A, emissive: 0xF59E0B, emissiveIntensity: 1.6 })
       );
       clockFace.rotation.x = Math.PI / 2;
       clockFace.position.set(18, 11.2, -6.3);
       scene.add(clockFace);
       obstacles.push(new THREE.Box3(new THREE.Vector3(16.4, 0, -9.6), new THREE.Vector3(19.6, 13.5, -6.4)));
 
+      // NEW: Climbable THW / Feuerwehr Command Container & Sandbag Barricades
+      const thwContainer = createShippingContainer(17, 1, Math.PI / 2, 0x1D4ED8, true);
+      scene.add(thwContainer.mesh);
+      obstacles.push(thwContainer.box);
+      walkableSurfaces.push(...thwContainer.walkableSurfaces);
+
+      [
+        [-8, -7, 0.3, 4.5],
+        [8, -7, -0.3, 4.5],
+        [-5, 6, 0, 4.2],
+        [6, 6, 0, 4.2],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
+
+      // Warm Evening Plaza Lanterns
+      [
+        [-11, -10],
+        [11, -10],
+        [-11, 9],
+        [11, 9],
+      ].forEach(([lx, lz], idx) => {
+        const lamp = createStreetLamp(lx, lz, 4.8, 0xFB923C, idx < 2);
+        scene.add(lamp.mesh);
+        obstacles.push(lamp.box);
+      });
+
       // Freiwillige Feuerwehr Neu-Anspach Firetruck & Police SUVs
-      const firetruck = create3DVehicle(13, 10, -0.35, 0xDC2626, 'firetruck');
+      const firetruck = create3DVehicle(13, 12, -0.35, 0xDC2626, 'firetruck');
       scene.add(firetruck.mesh);
       obstacles.push(firetruck.box);
       if (firetruck.roofSurface) walkableSurfaces.push(firetruck.roofSurface);
@@ -899,12 +1241,13 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const props: Array<[number, number, number, 'crate' | 'barrel' | 'market_stall' | 'tech_case', 'attachment' | 'shield' | 'mixed']> = [
         [-6, 0, -2, 'market_stall', 'mixed'],
         [6, 0, -2, 'market_stall', 'shield'],
-        [0, 0, 6, 'market_stall', 'mixed'],
+        [0, 0, 2, 'market_stall', 'mixed'],
         [0, 5.85, -19, 'tech_case', 'attachment'], // On Bürgerhaus Roof Terrace!
         [-19, 5.25, 2, 'tech_case', 'attachment'], // On Rathaus Roof!
+        [17, 2.9, 1, 'tech_case', 'attachment'],    // On THW Container Roof!
         [18, 0, -3, 'tech_case', 'attachment'],
-        [-3, 0, 12, 'barrel', 'shield'],
-        [4, 0, 12, 'crate', 'mixed'],
+        [-3, 0, 10, 'barrel', 'shield'],
+        [4, 0, 10, 'crate', 'mixed'],
       ];
       props.forEach(([px, py, pz, kind, bias]) => {
         const prop = createDestructibleProp(px, py, pz, kind, bias);
@@ -914,7 +1257,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 48, 36);
-      scatterArenaEnvironment(scene, destructibles, [[-12, 12], [14, -10], [-6, -14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 12], [14, -10], [-6, -14], [9, 14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -922,13 +1265,32 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
   taunuscenter: {
     id: 'taunuscenter',
-    name: 'Taunus-Center & Neue Mitte',
-    subtitle: 'Einkaufszentrum, Ladenpassage, Parkdeck-Auffahrt & geparkte Autos',
+    name: 'Taunus-Center & Neue Mitte (Reworked)',
+    subtitle: 'Neon-Nacht · Einkaufszentrum, Leuchtreklame, Container-Brücke & Parkdeck',
     description:
-      'Das bekannte Einkaufszentrum in der Neuen Mitte von Neu-Anspach: Stürme über die Auffahrtsrampe auf das obere Parkdeck des Taunus-Centers und nutze die geparkten PKWs als taktische Deckung!',
+      'Überarbeitetes Taunus-Center bei atmosphärischer Neon-Nacht: Stürme über die Auffahrtsrampe auf das obere Parkdeck, erklimme die beleuchteten Liefercontainer und nutze die geparkten PKWs als taktische Deckung!',
     district: 'Neue Mitte · Rudolf-Diesel-Straße',
-    skyColor: 0x0284C7,
-    fogColor: 0xBAE6FD,
+    skyColor: 0x0F172A,
+    fogColor: 0x1E1B4B,
+    atmosphere: {
+      timeOfDay: 'Neon-Nacht',
+      skyTop: 0x020617,
+      skyMid: 0x1E1B4B,
+      skyHorizon: 0x312E81,
+      fogColor: 0x1E1B4B,
+      fogDensity: 0.0045,
+      hemiSky: 0x818CF8,
+      hemiGround: 0x1E293B,
+      hemiIntensity: 0.92,
+      sunColor: 0xC7D2FE,
+      sunIntensity: 1.55,
+      sunOffset: [30, 52, -24],
+      rimColor: 0xEC4899,
+      rimIntensity: 1.15,
+      exposure: 1.22,
+      sunDiscColor: 0xE0E7FF,
+      isNight: true,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -937,7 +1299,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       // Asphalt Parking & Shopping Plaza
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(160, 160),
-        new THREE.MeshStandardMaterial({ map: createAsphaltTexture(20, 20), roughness: 0.82 })
+        new THREE.MeshStandardMaterial({ map: createAsphaltTexture(20, 20), roughness: 0.78 })
       );
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
@@ -957,6 +1319,27 @@ export const ARENAS: Record<string, ArenaConfig> = {
       scene.add(mallMain.mesh);
       obstacles.push(...mallMain.obstacles);
       walkableSurfaces.push(...mallMain.walkableSurfaces);
+
+      // NEW: Glowing Neon Mall Arch & Billboard Sign on top of Taunus-Center
+      const neonArchMat = new THREE.MeshStandardMaterial({
+        color: 0xEC4899,
+        emissive: 0xEC4899,
+        emissiveIntensity: 2.2,
+        roughness: 0.2,
+      });
+      const neonSign = new THREE.Mesh(new THREE.BoxGeometry(16, 1.4, 0.45), neonArchMat);
+      neonSign.position.set(0, 7.2, -11.3);
+      scene.add(neonSign);
+
+      const cyanStripMat = new THREE.MeshStandardMaterial({
+        color: 0x22D3EE,
+        emissive: 0x06B6D4,
+        emissiveIntensity: 2.0,
+        roughness: 0.2,
+      });
+      const cyanStrip = new THREE.Mesh(new THREE.BoxGeometry(26, 0.35, 0.4), cyanStripMat);
+      cyanStrip.position.set(0, 5.7, -11.3);
+      scene.add(cyanStrip);
 
       // Retail Pavilion / Supermarkt & Drogerie Wing (West) with Walkable Roof
       const westWing = createEnterableBuilding({
@@ -988,14 +1371,43 @@ export const ARENAS: Record<string, ArenaConfig> = {
       obstacles.push(...eastWing.obstacles);
       walkableSurfaces.push(...eastWing.walkableSurfaces);
 
-      // Numerous Parked 3D Cars on the Taunus-Center Parking Lot & Upper Roof Deck!
+      // NEW: Climbable Delivery Container & Tactical Sandbag Bunkers in Center Plaza
+      const mallContainer = createShippingContainer(0, -5, 0, 0x7C3AED, true);
+      scene.add(mallContainer.mesh);
+      obstacles.push(mallContainer.box);
+      walkableSurfaces.push(...mallContainer.walkableSurfaces);
+
+      [
+        [-8, 8, 0.3, 4.4],
+        [8, 8, -0.3, 4.4],
+        [-11, -5, -0.2, 4.2],
+        [11, -5, 0.2, 4.2],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
+
+      // Neon Street Lamps with real PointLights
+      [
+        [-12, -2, 0x22D3EE],
+        [12, -2, 0xEC4899],
+        [-12, 12, 0xEC4899],
+        [12, 12, 0x22D3EE],
+      ].forEach(([lx, lz, col], idx) => {
+        const lamp = createStreetLamp(lx, lz, 5.2, col, idx < 3);
+        scene.add(lamp.mesh);
+        obstacles.push(lamp.box);
+      });
+
+      // Numerous Parked 3D Cars on the Taunus-Center Parking Lot!
       const cars: Array<[number, number, number, number, 'sedan' | 'suv']> = [
         [-9, 3, 0, 0xEF4444, 'suv'],
         [-3, 3, 0, 0x3B82F6, 'sedan'],
         [4, 3, 0, 0xF8FAFC, 'suv'],
         [10, 3, 0, 0x10B981, 'sedan'],
-        [-7, 15, Math.PI / 2, 0xF59E0B, 'sedan'],
-        [6, 15, -Math.PI / 3, 0x6366F1, 'suv'],
+        [-7, 16, Math.PI / 2, 0xF59E0B, 'sedan'],
+        [7, 16, -Math.PI / 3, 0x6366F1, 'suv'],
       ];
       cars.forEach(([cx, cz, rot, col, kind]) => {
         const car = create3DVehicle(cx, cz, rot, col, kind);
@@ -1008,11 +1420,11 @@ export const ARENAS: Record<string, ArenaConfig> = {
       const props: Array<[number, number, number, 'crate' | 'barrel' | 'market_stall' | 'tech_case', 'attachment' | 'shield' | 'mixed']> = [
         [-6, 5.95, -18, 'tech_case', 'attachment'], // Upper Parking Deck of Taunus-Center!
         [6, 5.95, -18, 'tech_case', 'attachment'],  // Upper Parking Deck of Taunus-Center!
+        [0, 2.9, -5, 'tech_case', 'attachment'],    // On Center Container Roof!
         [-21, 5.05, 4, 'tech_case', 'attachment'],  // West Wing Roof!
-        [0, 0, -4, 'market_stall', 'shield'],
-        [-12, 0, -6, 'crate', 'mixed'],
-        [12, 0, -6, 'crate', 'mixed'],
-        [0, 0, 9, 'barrel', 'shield'],
+        [-12, 0, -8, 'crate', 'mixed'],
+        [12, 0, -8, 'crate', 'mixed'],
+        [5, 0, 10, 'barrel', 'shield'],
       ];
       props.forEach(([px, py, pz, kind, bias]) => {
         const prop = createDestructibleProp(px, py, pz, kind, bias);
@@ -1022,21 +1434,49 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 50, 36);
-      scatterArenaEnvironment(scene, destructibles, [[-14, 10], [12, 12], [0, -12]]);
+      scatterArenaEnvironment(scene, destructibles, [[-14, 10], [12, 12], [0, -10], [21, 14]]);
 
-      return { obstacles, walkableSurfaces, destructibles };
+      let t = 0;
+      return {
+        obstacles,
+        walkableSurfaces,
+        destructibles,
+        update: (delta: number) => {
+          t += delta;
+          neonArchMat.emissiveIntensity = 1.85 + Math.sin(t * 5.0) * 0.45;
+        },
+      };
     },
   },
 
   ars: {
     id: 'ars',
-    name: 'Adolf-Reichwein-Schule (ARS)',
-    subtitle: 'Schulcampus, begehbare Mensa-Dachterrasse, Sporthalle & Schulbus-Schleife',
+    name: 'Adolf-Reichwein-Schule · ARS (Reworked)',
+    subtitle: 'Flutlicht-Abend · Schulcampus, Mensa-Dachterrasse, Kleinspielfeld & Sporthalle',
     description:
-      'Der große Campus der Adolf-Reichwein-Schule in Neu-Anspach: Nutze die Tischtennisplatten auf dem Pausenhof und den gelben Schulbus als Deckung oder sichere dir das Flachdach der Mensa!',
+      'Überarbeiteter Campus der Adolf-Reichwein-Schule unter hellem Flutlicht: Kämpfe auf dem neuen Kleinspielfeld, nutze Tischtennisplatten, Sandsack-Stellungen und den gelben Schulbus als Deckung oder sichere dir das Mensa-Flachdach!',
     district: 'Wiesenau · Adolf-Reichwein-Straße',
     skyColor: 0x0F172A,
     fogColor: 0x1E293B,
+    atmosphere: {
+      timeOfDay: 'Flutlicht-Abend',
+      skyTop: 0x020617,
+      skyMid: 0x0F172A,
+      skyHorizon: 0x1E3A8A,
+      fogColor: 0x1E293B,
+      fogDensity: 0.004,
+      hemiSky: 0x93C5FD,
+      hemiGround: 0x1E293B,
+      hemiIntensity: 0.96,
+      sunColor: 0xE0F2FE,
+      sunIntensity: 1.75,
+      sunOffset: [-32, 58, 26],
+      rimColor: 0x38BDF8,
+      rimIntensity: 1.05,
+      exposure: 1.24,
+      sunDiscColor: 0xF8FAFC,
+      isNight: true,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -1050,6 +1490,15 @@ export const ARENAS: Record<string, ArenaConfig> = {
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
       scene.add(ground);
+
+      // NEW: Green Tartan Sports Court (Kleinspielfeld) in the Central Courtyard
+      const court = new THREE.Mesh(
+        new THREE.BoxGeometry(18, 0.08, 12),
+        new THREE.MeshStandardMaterial({ color: 0x15803D, roughness: 0.75 })
+      );
+      court.position.set(0, 0.04, -3);
+      court.receiveShadow = true;
+      scene.add(court);
 
       // ARS Main Classroom & Mensa Building (North) — Enterable + Walkable Flat Roof!
       const mensa = createEnterableBuilding({
@@ -1128,6 +1577,34 @@ export const ARENAS: Record<string, ArenaConfig> = {
         obstacles.push(new THREE.Box3(new THREE.Vector3(tx - 1.45, 0, tz - 0.85), new THREE.Vector3(tx + 1.45, 1.2, tz + 0.85)));
       });
 
+      // NEW: Climbable Sports Equipment Container & Campus Floodlights + Sandbag Bunkers
+      const sportContainer = createShippingContainer(-11, -11, 0, 0xEA580C, true);
+      scene.add(sportContainer.mesh);
+      obstacles.push(sportContainer.box);
+      walkableSurfaces.push(...sportContainer.walkableSurfaces);
+
+      [
+        [0, -9.5, 0, 4.6],
+        [-9, 11, 0.35, 4.2],
+        [9, 11, -0.35, 4.2],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
+
+      // High Campus Floodlights (Flutlichtmasten)
+      [
+        [-11, -9],
+        [11, -9],
+        [-11, 10],
+        [11, 10],
+      ].forEach(([lx, lz], idx) => {
+        const flood = createStreetLamp(lx, lz, 6.2, 0xE0F2FE, idx < 3);
+        scene.add(flood.mesh);
+        obstacles.push(flood.box);
+      });
+
       // Buswendeschleife (South) with School Bus & Teacher Cars
       const schoolBus = create3DVehicle(0, 20, Math.PI / 2, 0xF59E0B, 'bus');
       scene.add(schoolBus.mesh);
@@ -1143,9 +1620,10 @@ export const ARENAS: Record<string, ArenaConfig> = {
         [0, 5.45, -19, 'tech_case', 'attachment'],  // Mensa Roof!
         [20, 5.85, 2, 'tech_case', 'attachment'],   // Sporthalle Roof!
         [-20, 5.25, 3, 'tech_case', 'attachment'],  // NaWi Roof!
+        [-11, 2.9, -11, 'tech_case', 'attachment'], // Sports Container Roof!
         [0, 0, 2, 'tech_case', 'attachment'],       // Center Courtyard!
-        [-10, 0, -8, 'crate', 'shield'],
-        [10, 0, -8, 'crate', 'mixed'],
+        [-10, 0, -6, 'crate', 'shield'],
+        [10, 0, -6, 'crate', 'mixed'],
       ];
       props.forEach(([px, py, pz, kind, bias]) => {
         const prop = createDestructibleProp(px, py, pz, kind, bias);
@@ -1155,7 +1633,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
       addDistantFeldbergBackdrop(scene, -95);
       addTaunusTreeRing(scene, obstacles, 50, 40);
-      scatterArenaEnvironment(scene, destructibles, [[-12, 8], [14, 10], [8, -14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-12, 8], [14, 10], [8, -14], [-14, -14]]);
 
       return { obstacles, walkableSurfaces, destructibles };
     },
@@ -1163,13 +1641,32 @@ export const ARENAS: Record<string, ArenaConfig> = {
 
   feldbergblick: {
     id: 'feldbergblick',
-    name: 'Feldbergblick & Taunuskamm',
-    subtitle: 'Begehbarer Holz-Aussichtsturm, Wander-Schutzhütte & Großer Feldberg-Panorama',
+    name: 'Feldbergblick & Taunuskamm (Reworked)',
+    subtitle: 'Bergnebel-Morgen · Holz-Aussichtsturm, Funk-Kommandoposten & Bunker-Stellungen',
     description:
-      'Die malerische Höhenlage oberhalb von Anspach mit direktem Blick auf den Großen Feldberg (879m): Erklimme den hölzernen Taunus-Aussichtsturm in der Kartenmitte oder verteidige die Schutzhütte am Wanderparkplatz.',
+      'Überarbeitete Höhenlage oberhalb von Anspach mit direktem Blick auf den Großen Feldberg (879m): Erklimme den hölzernen Taunus-Aussichtsturm, sichere den neuen Funk-Container und verteidige die befestigten Sandsack-Stellungen!',
     district: 'Taunuskamm · Richtung Großer Feldberg',
     skyColor: 0x0284C7,
     fogColor: 0xCFFAFE,
+    atmosphere: {
+      timeOfDay: 'Nebliger Gipfel-Morgen',
+      skyTop: 0x0F172A,
+      skyMid: 0x0284C7,
+      skyHorizon: 0xA5F3FC,
+      fogColor: 0xCFFAFE,
+      fogDensity: 0.0046,
+      hemiSky: 0xA5F3FC,
+      hemiGround: 0x14532D,
+      hemiIntensity: 1.15,
+      sunColor: 0xFEF9C3,
+      sunIntensity: 2.15,
+      sunOffset: [44, 38, -28],
+      rimColor: 0x22D3EE,
+      rimIntensity: 1.0,
+      exposure: 1.24,
+      sunDiscColor: 0xFDE047,
+      isNight: false,
+    },
     buildScene: (scene: THREE.Scene) => {
       const obstacles: THREE.Box3[] = [];
       const walkableSurfaces: WalkableSurface[] = [];
@@ -1227,13 +1724,21 @@ export const ARENAS: Record<string, ArenaConfig> = {
       towerRoof.position.set(0, 9.6, 0);
       towerGroup.add(towerRoof);
 
-      // Wooden Ramp / Staircase up to the Observation Tower (South side: Z = 12 to Z = 3.6)
+      // Rotating Radar / Weather Beacon on top of the Observation Tower
+      const radarDish = new THREE.Mesh(
+        new THREE.BoxGeometry(1.8, 0.45, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x38BDF8, emissive: 0x0284C7, emissiveIntensity: 0.9 })
+      );
+      radarDish.position.set(0, 11.3, 0);
+      towerGroup.add(radarDish);
+
+      // Wooden Ramp / Staircase up to the Observation Tower (South side: Z = 10.5 to Z = 3.6, leaving (0,14) clear!)
       const steps = 14;
       for (let s = 0; s < steps; s++) {
         const t = (s + 0.5) / steps;
         const stepH = 5.4 * t;
-        const stepZ = THREE.MathUtils.lerp(12.0, 3.6, t);
-        const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(2.8, stepH, 0.68), timberMat);
+        const stepZ = THREE.MathUtils.lerp(10.2, 3.6, t);
+        const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(2.8, stepH, 0.55), timberMat);
         stepMesh.position.set(0, stepH / 2, stepZ);
         stepMesh.castShadow = true;
         towerGroup.add(stepMesh);
@@ -1242,13 +1747,30 @@ export const ARENAS: Record<string, ArenaConfig> = {
         minX: -1.5,
         maxX: 1.5,
         minZ: 3.6,
-        maxZ: 12.2,
+        maxZ: 10.4,
         yStart: 5.4,
         yEnd: 0,
         rampAxis: 'z',
       });
 
       scene.add(towerGroup);
+
+      // NEW: Tactical Radio Outpost Container & Fortified Sandbag Ring around the Summit
+      const outpostContainer = createShippingContainer(0, -18, 0, 0x15803D, true);
+      scene.add(outpostContainer.mesh);
+      obstacles.push(outpostContainer.box);
+      walkableSurfaces.push(...outpostContainer.walkableSurfaces);
+
+      [
+        [-7.5, -6, 0.4, 4.6],
+        [7.5, -6, -0.4, 4.6],
+        [-7.5, 7, -0.4, 4.6],
+        [7.5, 7, 0.4, 4.6],
+      ].forEach(([bx, bz, rot, len]) => {
+        const sb = createSandbagBunker(bx, bz, rot, len);
+        scene.add(sb.mesh);
+        obstacles.push(sb.box);
+      });
 
       // Enterable Taunusklub Wander-Schutzhütte (West) & Forsthaus (East)
       const schutzhuette = createEnterableBuilding({
@@ -1311,6 +1833,7 @@ export const ARENAS: Record<string, ArenaConfig> = {
       // Golden Attachment Supply Cases & Wooden Crates
       const props: Array<[number, number, number, 'crate' | 'barrel' | 'market_stall' | 'tech_case', 'attachment' | 'shield' | 'mixed']> = [
         [0, 5.4, 0, 'tech_case', 'attachment'],     // Right on top of the Observation Tower!
+        [0, 2.9, -18, 'tech_case', 'attachment'],   // On Radio Outpost Container Roof!
         [-18, 4.65, -8, 'tech_case', 'attachment'], // On Schutzhütte Roof!
         [18, 4.85, -6, 'tech_case', 'attachment'],  // On Forsthaus Roof!
         [-6, 0, 5, 'barrel', 'shield'],
@@ -1326,9 +1849,16 @@ export const ARENAS: Record<string, ArenaConfig> = {
       // Massive, closer Großer Feldberg (879m) Mountain Panorama directly North!
       addDistantFeldbergBackdrop(scene, -75);
       addTaunusTreeRing(scene, obstacles, 45, 48);
-      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [0, 14]]);
+      scatterArenaEnvironment(scene, destructibles, [[-10, 10], [12, -8], [5, 12], [-12, -18]]);
 
-      return { obstacles, walkableSurfaces, destructibles };
+      return {
+        obstacles,
+        walkableSurfaces,
+        destructibles,
+        update: (delta: number) => {
+          radarDish.rotation.y += delta * 1.8;
+        },
+      };
     },
   },
 };

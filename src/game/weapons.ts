@@ -389,26 +389,184 @@ export const WEAPONS: Record<string, Weapon> = {
   },
 };
 
+export interface WeaponMasteryCamo {
+  id: string;
+  requiredLevel: number;
+  name: string;
+  subtitle: string;
+  damageBonus: number; // additive multiplier e.g. 0.08 = +8%
+  critBonusPct: number;
+  fireRateBonus: number;
+  colorHex: string;
+  emissiveHex: string;
+  badgeClass: string;
+}
+
+export const MAX_WEAPON_LEVEL = 30;
+
+export const WEAPON_MASTERY_CAMOS: WeaponMasteryCamo[] = [
+  {
+    id: 'standard',
+    requiredLevel: 1,
+    name: 'Standard-Brünierung',
+    subtitle: 'Werkseitige Taunus-Stahlbeschichtung',
+    damageBonus: 0,
+    critBonusPct: 0,
+    fireRateBonus: 0,
+    colorHex: '#64748B',
+    emissiveHex: '#334155',
+    badgeClass: 'bg-slate-800 text-slate-300 border-slate-600',
+  },
+  {
+    id: 'waldgeist',
+    requiredLevel: 5,
+    name: 'Taunus-Waldgeist',
+    subtitle: 'Smaragdgrüne Förster-Eloxierung (+6% Schaden, +5% Krit)',
+    damageBonus: 0.06,
+    critBonusPct: 5,
+    fireRateBonus: 0.03,
+    colorHex: '#22C55E',
+    emissiveHex: '#10B981',
+    badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50',
+  },
+  {
+    id: 'kupferstich',
+    requiredLevel: 10,
+    name: 'Hessenpark-Kupferstich',
+    subtitle: 'Glühende Bembel-Bronze (+12% Schaden, +6% Feuerrate)',
+    damageBonus: 0.12,
+    critBonusPct: 8,
+    fireRateBonus: 0.06,
+    colorHex: '#F97316',
+    emissiveHex: '#EA580C',
+    badgeClass: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
+  },
+  {
+    id: 'kobalt',
+    requiredLevel: 15,
+    name: 'Bembel-Kobalt-Plasma',
+    subtitle: 'Kryo-Blauer Hochspannungslauf (+18% Schaden, +10% Krit)',
+    damageBonus: 0.18,
+    critBonusPct: 10,
+    fireRateBonus: 0.09,
+    colorHex: '#38BDF8',
+    emissiveHex: '#0284C7',
+    badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/50',
+  },
+  {
+    id: 'gold_aeppler',
+    requiredLevel: 20,
+    name: '24K Gold-Äppler (Meister)',
+    subtitle: 'Massive Gold-Tarnung (+26% Schaden, +14% Krit, +12% Kadenz)',
+    damageBonus: 0.26,
+    critBonusPct: 14,
+    fireRateBonus: 0.12,
+    colorHex: '#FACC15',
+    emissiveHex: '#D97706',
+    badgeClass: 'bg-amber-500/25 text-amber-200 border-amber-400',
+  },
+  {
+    id: 'dunkelaether',
+    requiredLevel: 30,
+    name: 'Feldberg-Dunkeläther ULTRA',
+    subtitle: 'Reaktive Galaxie-Meisterschaft (+38% Schaden, +20% Krit, +16% Kadenz)',
+    damageBonus: 0.38,
+    critBonusPct: 20,
+    fireRateBonus: 0.16,
+    colorHex: '#E879F9',
+    emissiveHex: '#A855F7',
+    badgeClass: 'bg-fuchsia-500/25 text-fuchsia-200 border-fuchsia-400',
+  },
+];
+
+export function getWeaponXpForNextLevel(level: number): number {
+  const clamped = Math.max(1, Math.min(MAX_WEAPON_LEVEL, level));
+  return Math.round(140 + (clamped - 1) * 65);
+}
+
+export function getWeaponLevelTrainCostNAT(level: number): number {
+  const clamped = Math.max(1, Math.min(MAX_WEAPON_LEVEL, level));
+  return Math.round(55 + (clamped - 1) * 28);
+}
+
+export function addWeaponXpToState(
+  state: WeaponUpgradeState,
+  gainedXp: number
+): { nextState: WeaponUpgradeState; leveledUp: boolean; newLevel: number } {
+  let lv = Math.max(1, state.weaponLevel || 1);
+  let xp = Math.max(0, (state.weaponXp || 0) + gainedXp);
+  let leveledUp = false;
+
+  while (lv < MAX_WEAPON_LEVEL) {
+    const needed = getWeaponXpForNextLevel(lv);
+    if (xp >= needed) {
+      xp -= needed;
+      lv += 1;
+      leveledUp = true;
+    } else {
+      break;
+    }
+  }
+
+  if (lv >= MAX_WEAPON_LEVEL) {
+    xp = getWeaponXpForNextLevel(MAX_WEAPON_LEVEL);
+  }
+
+  // Auto-equip newly unlocked highest mastery camo if player hasn't manually chosen a higher one
+  let masteryId = state.masteryId || 'standard';
+  if (leveledUp) {
+    const highestUnlocked = [...WEAPON_MASTERY_CAMOS]
+      .reverse()
+      .find((m) => lv >= m.requiredLevel);
+    if (highestUnlocked) {
+      masteryId = highestUnlocked.id;
+    }
+  }
+
+  return {
+    nextState: {
+      ...state,
+      weaponLevel: lv,
+      weaponXp: xp,
+      masteryId,
+    },
+    leveledUp,
+    newLevel: lv,
+  };
+}
+
 export const INITIAL_WEAPON_UPGRADES: AllWeaponsUpgrades = {
   bembel: {
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   },
   zwille: {
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   },
   spritzer: {
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   },
   handkaes: {
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   },
 };
 
@@ -417,37 +575,76 @@ export function getEffectiveWeaponStats(weapon: Weapon, state?: WeaponUpgradeSta
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   };
+
+  const weaponLevel = Math.max(1, Math.min(MAX_WEAPON_LEVEL, upg.weaponLevel || 1));
+  const weaponXp = Math.max(0, upg.weaponXp || 0);
+  const nextLevelXp = getWeaponXpForNextLevel(weaponLevel);
+
+  const unlockedMasteries = WEAPON_MASTERY_CAMOS.filter((m) => weaponLevel >= m.requiredLevel);
+  const selectedMastery =
+    unlockedMasteries.find((m) => m.id === upg.masteryId) ||
+    unlockedMasteries[unlockedMasteries.length - 1] ||
+    WEAPON_MASTERY_CAMOS[0];
 
   const rarityObj = COLD_WAR_RARITIES[Math.min(4, Math.max(0, upg.rarityTier - 1))];
   const papObj = PACK_A_PUNCH_TIERS[Math.min(3, Math.max(0, upg.papLevel))];
   const att = upg.attachments;
 
+  // Each weapon level above 1 grants +3% damage, +1.4% fire rate, +2% reload speed, and +1 mag ammo per 2 levels
+  const levelDamageMult = 1 + (weaponLevel - 1) * 0.03 + selectedMastery.damageBonus;
+  const levelFireRateMult = 1 + (weaponLevel - 1) * 0.014 + selectedMastery.fireRateBonus;
+  const levelDamageBonusPct = Math.round((levelDamageMult - 1) * 100);
+  const levelReloadBonusPct = Math.round((weaponLevel - 1) * 2);
+  const bonusMagCapacity = Math.floor((weaponLevel - 1) / 2) * 2;
+
   const damage = Math.round(
     weapon.damage *
       rarityObj.damageMultiplier *
       papObj.damageMultiplier *
-      (1 + (att.barrel || 0) * 0.2)
+      (1 + (att.barrel || 0) * 0.2) *
+      levelDamageMult
   );
 
   const fireRate = Number(
     (
       weapon.fireRate *
       papObj.fireRateMultiplier *
-      (1 + (att.bolt || 0) * 0.18)
+      (1 + (att.bolt || 0) * 0.18) *
+      levelFireRateMult
     ).toFixed(1)
   );
 
-  const bulletSpeed = Math.round(weapon.bulletSpeed * (1 + (att.barrel || 0) * 0.25));
-  const splashRadius = Number((weapon.splashRadius * (1 + (att.mag || 0) * 0.2)).toFixed(1));
-  const critChancePct = Math.round(22 + (att.mag || 0) * 8 + (upg.papLevel || 0) * 6);
-  const moveBonusPct = Math.round((att.stock || 0) * 6);
+  const bulletSpeed = Math.round(
+    weapon.bulletSpeed * (1 + (att.barrel || 0) * 0.25 + (weaponLevel - 1) * 0.01)
+  );
+  const splashRadius = Number(
+    (weapon.splashRadius * (1 + (att.mag || 0) * 0.2 + (weaponLevel >= 15 ? 0.15 : 0))).toFixed(1)
+  );
+  const critChancePct = Math.min(
+    90,
+    Math.round(
+      22 +
+        (att.mag || 0) * 8 +
+        (upg.papLevel || 0) * 6 +
+        selectedMastery.critBonusPct +
+        Math.floor((weaponLevel - 1) * 0.6)
+    )
+  );
+  const moveBonusPct = Math.round((att.stock || 0) * 6 + Math.floor((weaponLevel - 1) * 0.3));
 
   const displayName =
     upg.papLevel > 0 ? weapon.papNames[Math.min(2, upg.papLevel - 1)] : weapon.name;
 
   const tracerColor =
-    upg.papLevel > 0 ? weapon.papColors[Math.min(2, upg.papLevel - 1)] : weapon.color;
+    upg.papLevel > 0
+      ? weapon.papColors[Math.min(2, upg.papLevel - 1)]
+      : selectedMastery.requiredLevel >= 5
+      ? selectedMastery.colorHex
+      : weapon.color;
 
   return {
     damage,
@@ -460,5 +657,16 @@ export function getEffectiveWeaponStats(weapon: Weapon, state?: WeaponUpgradeSta
     tracerColor,
     rarityObj,
     papObj,
+    weaponLevel,
+    weaponXp,
+    nextLevelXp,
+    levelDamageBonusPct,
+    levelReloadBonusPct,
+    reloadSpeedBonusPct: levelReloadBonusPct,
+    bonusMagCapacity,
+    bonusMag: bonusMagCapacity,
+    activeMastery: selectedMastery,
+    masteryObj: selectedMastery,
+    unlockedMasteries,
   };
 }
