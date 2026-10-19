@@ -55,7 +55,7 @@ interface ThreeCanvasProps {
   currentArena: string;
   onChangeArena: (arenaId: string) => void;
   onMatchComplete: (victory: boolean, stats: DetailedMatchStats | { kills: number; score: number; wave: number }) => void;
-  onMatchStateChange?: (state: 'active' | 'paused' | 'complete') => void;
+  onMatchStateChange?: (state: 'inactive' | 'active' | 'paused' | 'complete') => void;
   isMultiplayerMatch?: boolean;
   matchReward?: number;
   unlockedFacilities: Record<string, number>;

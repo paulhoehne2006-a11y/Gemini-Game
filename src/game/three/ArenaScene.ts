@@ -31,6 +31,25 @@ const _camTarget = new THREE.Vector3();
 const _desiredCamPos = new THREE.Vector3();
 const _skyGradientCanvas = document.createElement('canvas');
 
+interface RendererQuality {
+  pixelRatio: number;
+  shadowMapSize: number;
+  shadowFrustum: number;
+}
+
+function getRendererQuality(): RendererQuality {
+  const isTouchDevice =
+    typeof navigator !== 'undefined' &&
+    ('maxTouchPoints' in navigator ? navigator.maxTouchPoints > 0 : false);
+  const deviceMemory = typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
+
+  if (isTouchDevice || (deviceMemory !== undefined && deviceMemory <= 4)) {
+    return { pixelRatio: 1.25, shadowMapSize: 1024, shadowFrustum: 46 };
+  }
+
+  return { pixelRatio: 1.75, shadowMapSize: 1536, shadowFrustum: 48 };
+}
+
 function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
   _skyGradientCanvas.width = 16;
   _skyGradientCanvas.height = 512;
@@ -467,13 +486,14 @@ export class ArenaSceneManager {
     // 1. Setup WebGL Renderer with Realistic Tone Mapping & Soft Shadows
     const initialW = Math.max(1, container.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 800));
     const initialH = Math.max(1, container.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 600));
+    const renderQuality = getRendererQuality();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(initialW, initialH);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, renderQuality.pixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -541,14 +561,15 @@ export class ArenaSceneManager {
     this.dirLight = new THREE.DirectionalLight(0xFFFDF0, 2.2);
     this.dirLight.position.set(42, 65, 32);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
-    const d = 52;
+    this.dirLight.shadow.mapSize.width = renderQuality.shadowMapSize;
+    this.dirLight.shadow.mapSize.height = renderQuality.shadowMapSize;
+    const d = renderQuality.shadowFrustum;
     this.dirLight.shadow.camera.left = -d;
     this.dirLight.shadow.camera.right = d;
     this.dirLight.shadow.camera.top = d;
     this.dirLight.shadow.camera.bottom = -d;
-    this.dirLight.shadow.bias = -0.0003;
+    this.dirLight.shadow.bias = -0.0001;
+    this.dirLight.shadow.normalBias = 0.025;
     this.dirLight.shadow.radius = 2.2;
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
@@ -563,6 +584,7 @@ export class ArenaSceneManager {
     this.obstacles = arenaResult.obstacles;
     this.walkableSurfaces = arenaResult.walkableSurfaces || [];
     this.destructibles = arenaResult.destructibles || [];
+    this.prepareStaticSceneShadows();
 
     // 6. Realistic Human Player Mesh
     this.playerGroup = this.createPlayerMesh();
@@ -698,6 +720,17 @@ export class ArenaSceneManager {
       totalDamageTaken: this.playerParticipantStats.damageTaken,
       starPlayerId: starPlayer.id,
     };
+  }
+
+  private prepareStaticSceneShadows() {
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+
+      mesh.receiveShadow = true;
+      mesh.geometry.computeBoundingSphere();
+      mesh.castShadow = (mesh.geometry.boundingSphere?.radius ?? 0) >= 1.2;
+    });
   }
 
   private createPlayerMesh(): THREE.Group {
@@ -3035,6 +3068,8 @@ export class ArenaSceneManager {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    const quality = getRendererQuality();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatio));
   };
 
   public destroy() {
