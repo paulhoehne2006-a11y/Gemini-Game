@@ -51,7 +51,7 @@ function getCachedTexture(
 }
 
 export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.CanvasTexture {
-  return getCachedTexture('cobble_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('cobble_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Rich deep slate mortar base
     ctx.fillStyle = '#1E242D';
     ctx.fillRect(0, 0, w, h);
@@ -116,7 +116,7 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
 }
 
 export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTexture {
-  return getCachedTexture('asphalt_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('asphalt_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Rich charcoal asphalt
     ctx.fillStyle = '#1E232A';
     ctx.fillRect(0, 0, w, h);
@@ -146,7 +146,7 @@ export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTe
 }
 
 export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.CanvasTexture {
-  return getCachedTexture('grass_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('grass_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Slightly desaturated Taunus green leaves room for lighting and shadows
     // to provide the color contrast instead of a flat neon surface.
     const grad = ctx.createLinearGradient(0, 0, w, h);
@@ -192,7 +192,7 @@ export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.Canv
 }
 
 export function createFachwerkTexture(repeatX = 2, repeatY = 1): THREE.CanvasTexture {
-  return getCachedTexture('fachwerk', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('fachwerk', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Warm Hessian plaster background
     ctx.fillStyle = '#F3EDE0';
     ctx.fillRect(0, 0, w, h);
@@ -258,7 +258,7 @@ export function createFachwerkTexture(repeatX = 2, repeatY = 1): THREE.CanvasTex
 }
 
 export function createModernFacadeTexture(repeatX = 2, repeatY = 1, accentHex = '#0284C7'): THREE.CanvasTexture {
-  return getCachedTexture(`facade_${accentHex}`, 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture(`facade_${accentHex}`, 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#E2E8F0';
     ctx.fillRect(0, 0, w, h);
 
@@ -295,7 +295,7 @@ export function createModernFacadeTexture(repeatX = 2, repeatY = 1, accentHex = 
 }
 
 export function createRoofTileTexture(repeatX = 4, repeatY = 3): THREE.CanvasTexture {
-  return getCachedTexture('rooftiles', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('rooftiles', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#8C2D19';
     ctx.fillRect(0, 0, w, h);
 
@@ -317,7 +317,7 @@ export function createRoofTileTexture(repeatX = 4, repeatY = 3): THREE.CanvasTex
 }
 
 export function createPoolTileTexture(repeatX = 8, repeatY = 8): THREE.CanvasTexture {
-  return getCachedTexture('pooltiles', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('pooltiles', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#0284C7';
     ctx.fillRect(0, 0, w, h);
 
@@ -332,7 +332,7 @@ export function createPoolTileTexture(repeatX = 8, repeatY = 8): THREE.CanvasTex
 }
 
 export function createWoodPlankTexture(repeatX = 2, repeatY = 2): THREE.CanvasTexture {
-  return getCachedTexture('woodplank', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('woodplank', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#78472A';
     ctx.fillRect(0, 0, w, h);
 
