@@ -44,10 +44,10 @@ function getRendererQuality(): RendererQuality {
   const deviceMemory = typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory : undefined;
 
   if (isTouchDevice || (deviceMemory !== undefined && deviceMemory <= 4)) {
-    return { pixelRatio: 1.25, shadowMapSize: 1024, shadowFrustum: 46 };
+    return { pixelRatio: 1.5, shadowMapSize: 2048, shadowFrustum: 46 };
   }
 
-  return { pixelRatio: 1.75, shadowMapSize: 1536, shadowFrustum: 48 };
+  return { pixelRatio: 2.0, shadowMapSize: 4096, shadowFrustum: 48 };
 }
 
 function createSkyGradientTexture(topColor: string, horizonColor: string): THREE.CanvasTexture {
@@ -2789,16 +2789,63 @@ export class ArenaSceneManager {
         // 2. Check Wehrheimer Enemy Agents
         for (let j = this.agents.length - 1; j >= 0; j--) {
           const ag = this.agents[j];
-          const enemyChest = ag.position.clone().add(new THREE.Vector3(0, 1.1, 0));
-          _line.closestPointToPoint(enemyChest, true, _closest);
-          const hitDist = _closest.distanceTo(enemyChest);
 
-          if (hitDist <= (b.splashRadius || 1.45)) {
+          // Realistic Hitboxes: Head, Chest, Legs
+          const isBoss = ag.role === 'boss';
+          const headHeight = isBoss ? 2.8 : 1.65;
+          const chestHeight = isBoss ? 1.6 : 1.05;
+          const legsHeight = isBoss ? 0.6 : 0.45;
+
+          const headPos = ag.position.clone().add(new THREE.Vector3(0, headHeight, 0));
+          const chestPos = ag.position.clone().add(new THREE.Vector3(0, chestHeight, 0));
+          const legsPos = ag.position.clone().add(new THREE.Vector3(0, legsHeight, 0));
+
+          const headRadius = isBoss ? 0.8 : 0.35;
+          const chestRadius = isBoss ? 1.4 : 0.45;
+          const legsRadius = isBoss ? 1.0 : 0.35;
+
+          let hitPart: 'head' | 'chest' | 'legs' | null = null;
+          let hitPos = new THREE.Vector3();
+
+          // Check Head
+          _line.closestPointToPoint(headPos, true, _closest);
+          if (_closest.distanceTo(headPos) <= headRadius + (b.splashRadius || 0)) {
+            hitPart = 'head';
+            hitPos.copy(_closest);
+          } else {
+            // Check Chest
+            _line.closestPointToPoint(chestPos, true, _closest);
+            if (_closest.distanceTo(chestPos) <= chestRadius + (b.splashRadius || 0)) {
+              hitPart = 'chest';
+              hitPos.copy(_closest);
+            } else {
+              // Check Legs
+              _line.closestPointToPoint(legsPos, true, _closest);
+              if (_closest.distanceTo(legsPos) <= legsRadius + (b.splashRadius || 0)) {
+                hitPart = 'legs';
+                hitPos.copy(_closest);
+              }
+            }
+          }
+
+          if (hitPart) {
             const perkCritBonus = this.activeMatchPerks.has('scharfschuetzen_fokus') ? 0.35 : 0;
             const critChance = 0.22 + this.attachments.mag * 0.08 + perkCritBonus;
-            const isCrit = b.fromPlayer && Math.random() < critChance;
-            const critMult = this.activeMatchPerks.has('scharfschuetzen_fokus') ? 2.1 : 1.5;
-            const finalDmg = isCrit ? Math.round(b.damage * critMult) : b.damage;
+
+            let isCrit = b.fromPlayer && Math.random() < critChance;
+            let dmgMult = 1.0;
+
+            if (hitPart === 'head') {
+              isCrit = true; // Guaranteed crit on headshot
+              dmgMult = this.activeMatchPerks.has('scharfschuetzen_fokus') ? 2.5 : 2.0; // Higher multiplier for actual headshots
+            } else if (hitPart === 'legs') {
+              isCrit = false;
+              dmgMult = 0.65; // Reduced damage for leg shots
+            } else {
+              dmgMult = isCrit ? (this.activeMatchPerks.has('scharfschuetzen_fokus') ? 2.1 : 1.5) : 1.0;
+            }
+
+            const finalDmg = Math.max(1, Math.round(b.damage * dmgMult));
             ag.health -= finalDmg;
 
             if (b.fromPlayer) {
@@ -2816,8 +2863,14 @@ export class ArenaSceneManager {
             } else {
               soundFx.playHit();
             }
-            this.spawnImpactSparks(_closest, isCrit ? 0xEF4444 : 0x38BDF8, 6);
-            this.spawnDamageNumber(ag.position, finalDmg, isCrit);
+            this.spawnImpactSparks(hitPos, isCrit ? 0xEF4444 : 0x38BDF8, 6);
+
+            // Adjust damage number position so it clearly pops out of the head for headshots!
+            const numberPos = ag.position.clone();
+            if (hitPart === 'head') numberPos.y += isBoss ? 3.0 : 1.8;
+            else if (hitPart === 'legs') numberPos.y += isBoss ? 1.0 : 0.5;
+            this.spawnDamageNumber(numberPos, finalDmg, isCrit);
+
             if (b.fromPlayer) {
               this.callbacks.onHitEnemy(finalDmg, isCrit);
             }
@@ -2837,18 +2890,48 @@ export class ArenaSceneManager {
           }
         }
       } else {
+        // Player Hitboxes
         const chestHeight = 1.1 - this.currentCrouchAmount * 0.38;
-        const hitRadius = 1.25 - this.currentCrouchAmount * 0.3;
+        const headHeight = 1.6 - this.currentCrouchAmount * 0.45;
+        const legsHeight = 0.45;
+
+        const hitRadiusChest = 1.1 - this.currentCrouchAmount * 0.3;
+        const hitRadiusHead = 0.35;
+        const hitRadiusLegs = 0.35;
+
         const playerChest = this.playerPos.clone().add(new THREE.Vector3(0, chestHeight, 0));
-        _line.closestPointToPoint(playerChest, true, _closest);
-        if (_closest.distanceTo(playerChest) <= hitRadius) {
+        const playerHead = this.playerPos.clone().add(new THREE.Vector3(0, headHeight, 0));
+        const playerLegs = this.playerPos.clone().add(new THREE.Vector3(0, legsHeight, 0));
+
+        let playerHit = false;
+        let playerDmgMult = 1.0;
+
+        _line.closestPointToPoint(playerHead, true, _closest);
+        if (_closest.distanceTo(playerHead) <= hitRadiusHead + (b.splashRadius || 0)) {
+           playerHit = true;
+           playerDmgMult = 1.5;
+        } else {
+          _line.closestPointToPoint(playerChest, true, _closest);
+          if (_closest.distanceTo(playerChest) <= hitRadiusChest + (b.splashRadius || 0)) {
+             playerHit = true;
+          } else {
+            _line.closestPointToPoint(playerLegs, true, _closest);
+            if (_closest.distanceTo(playerLegs) <= hitRadiusLegs + (b.splashRadius || 0)) {
+               playerHit = true;
+               playerDmgMult = 0.65;
+            }
+          }
+        }
+
+        if (playerHit) {
+          const finalDmg = Math.max(1, Math.round(b.damage * playerDmgMult));
           const shooterStats = b.fromEnemyId ? this.allEnemiesStats.get(b.fromEnemyId) : null;
           if (shooterStats) {
-            shooterStats.damageDealt += b.damage;
+            shooterStats.damageDealt += finalDmg;
           }
-          this.playerParticipantStats.damageTaken += b.damage;
+          this.playerParticipantStats.damageTaken += finalDmg;
 
-          this.damagePlayer(b.damage, 'Wehrheimer Apfelgeschoss');
+          this.damagePlayer(finalDmg, 'Wehrheimer Apfelgeschoss');
           this.scene.remove(b.mesh);
           this.bullets.splice(i, 1);
           continue;
