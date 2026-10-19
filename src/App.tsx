@@ -945,7 +945,7 @@ export default function App() {
               dailyMissionsState={dailyMissionsState}
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
               onClaimDailyMission={handleClaimMission}
-              onNavigateTab={(tab) => setActiveTab(tab)}
+              onNavigateTab={openTab}
               onSwitchToPcMode={() => setIsMobileMode(false)}
               onSimulatePatrol={handleSimulatePatrol}
             />

@@ -122,6 +122,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [zoneTimer, setZoneTimer] = useState(260);
   const [zoneRadius, setZoneRadius] = useState(56);
   const [activeWeapon, setActiveWeapon] = useState('bembel');
+  const [weaponSwitchNotice, setWeaponSwitchNotice] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<WeaponAttachments>(
     weaponUpgrades.bembel?.attachments || {
       scope: 0,
@@ -325,6 +326,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
           if (weaponUpgrades[wId]) {
             setAttachments(weaponUpgrades[wId].attachments);
           }
+          const switchedWeapon = WEAPONS[wId];
+          if (switchedWeapon) {
+            setWeaponSwitchNotice(switchedWeapon.name);
+            window.setTimeout(() => setWeaponSwitchNotice(null), 1400);
+          }
           soundFx.playShoot();
         },
         onElevationChange: (elev) => {
@@ -407,8 +413,8 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   }, [gameOverState?.over]);
 
   const selectWeapon = (id: string) => {
-    setActiveWeapon(id);
     managerRef.current?.setWeapon(id);
+    setActiveWeapon(id);
     if (weaponUpgrades[id]) {
       setAttachments(weaponUpgrades[id].attachments);
     }
@@ -1206,13 +1212,13 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
             )}
 
-            {/* Gunsmith Attachments Bar */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-800 text-[10px] font-mono shadow-lg">
+            {/* Live weapon status: upgrades are shown as combat telemetry, never as a navigation prompt. */}
+            <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/90 px-3 py-1.5 text-[10px] font-mono shadow-lg">
               <span
                 className="font-bold mr-1"
                 style={{ color: activeWeaponStats.rarityObj.colorHex }}
               >
-                {activeWeaponStats.rarityObj.codLabel}
+                LOADOUT
               </span>
               {(weaponUpgrades[activeWeapon]?.papLevel || 0) > 0 && (
                 <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 border border-fuchsia-400 text-fuchsia-300 font-bold">
@@ -1239,8 +1245,38 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               ))}
             </div>
 
-            {/* Fortnite 4-Slot Weapons Hotbar */}
-            <div className="flex items-center gap-2 p-2 rounded-2xl bg-slate-950/92 backdrop-blur-md border-2 border-white/20 shadow-2xl">
+            {/* Active weapon readout */}
+            <div className="w-full max-w-[22rem] rounded-2xl border border-white/15 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    <Crosshair className="h-3.5 w-3.5 text-amber-400" />
+                    Aktive Waffe
+                  </div>
+                  <div className="mt-1 truncate text-lg font-black text-white">
+                    {activeWeaponStats.displayName}
+                  </div>
+                  <div className="mt-0.5 truncate text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    {activeWeaponObj.codArchetype}
+                  </div>
+                </div>
+                <div className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-center">
+                  <div className="text-[9px] font-mono font-bold text-amber-300">SLOT</div>
+                  <div className="text-xl font-black leading-none text-white">
+                    {Math.max(1, Object.values(WEAPONS).findIndex((w) => w.id === activeWeapon) + 1)}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono">
+                <span className="font-bold" style={{ color: activeWeaponStats.rarityObj.colorHex }}>
+                  {activeWeaponStats.rarityObj.name}
+                </span>
+                <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponObj.fireRate.toFixed(1)} SCHUSS/S</span>
+              </div>
+            </div>
+
+            {/* Four-slot weapon hotbar */}
+            <div className="flex items-center gap-2 rounded-2xl border-2 border-white/15 bg-slate-950/95 p-2 shadow-2xl">
               {Object.values(WEAPONS).map((w, idx) => {
                 const isSelected = activeWeapon === w.id;
                 const wState = weaponUpgrades[w.id];
@@ -1266,9 +1302,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                     onClick={() => selectWeapon(w.id)}
                     className={`relative flex flex-col items-center justify-between w-18 h-18 sm:w-20 sm:h-20 p-2 rounded-2xl border-2 transition-all cursor-pointer ${rarityBg} ${
                       isSelected
-                        ? 'scale-105 shadow-2xl ring-4 ring-white border-white'
-                        : 'opacity-80 hover:opacity-100 hover:scale-102'
+                        ? 'scale-105 shadow-[0_0_24px_rgba(251,191,36,0.45)] ring-2 ring-amber-300 border-amber-200'
+                        : 'opacity-75 hover:opacity-100 hover:scale-105'
                     }`}
+                    aria-label={`${wStats.displayName}, Slot ${idx + 1}`}
                   >
                     <div className="flex items-center justify-between w-full text-[10px] font-mono font-black">
                       <span className="px-1.5 py-0.5 rounded-md bg-slate-900/90 text-white shadow">
@@ -1288,6 +1325,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 );
               })}
             </div>
+
+            {weaponSwitchNotice && (
+              <div className="rounded-xl border border-amber-300/70 bg-amber-400 px-4 py-2 text-center text-xs font-black uppercase tracking-wider text-slate-950 shadow-[0_0_24px_rgba(251,191,36,0.45)] animate-in fade-in slide-in-from-right-2 duration-150">
+                Waffe gewechselt · {weaponSwitchNotice}
+              </div>
+            )}
           </div>
         </>
       )}
