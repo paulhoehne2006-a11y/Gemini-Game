@@ -225,13 +225,31 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center justify-between">
-              <span>Leuchtspur-Kaliber:</span>
-              <span className="font-bold" style={{ color: stats.tracerColor }}>
-                {currentState.papLevel > 0
-                  ? `Pack-a-Punch Stufe ${currentState.papLevel} Plasma`
-                  : 'Standard-Hartkern'}
-              </span>
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 text-xs font-mono flex items-center justify-between">
+                <span className="text-slate-400">EFFEKTIVE FEUERKRAFT (DPS):</span>
+                <span className="text-base font-black text-amber-400 tabular-nums">
+                  {Math.round(stats.damage * stats.fireRate)} DMG/s
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center justify-between">
+                <span>Leuchtspur-Kaliber:</span>
+                <span className="font-bold" style={{ color: stats.tracerColor }}>
+                  {currentState.papLevel > 0
+                    ? `Pack-a-Punch Stufe ${currentState.papLevel} Plasma`
+                    : 'Standard-Hartkern'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => soundFx.playShoot(selectedWeaponId)}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-amber-400/40 text-amber-300 font-mono text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Crosshair className="w-4 h-4 text-amber-400" />
+                <span>Schussklang & Kaliber testen</span>
+              </button>
             </div>
           </div>
 

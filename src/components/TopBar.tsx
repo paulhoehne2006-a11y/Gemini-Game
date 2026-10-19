@@ -72,8 +72,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const navItems: { id: AppTab; label: string; mobileLabel: string; icon: React.FC<{ className?: string }> }[] = [
     {
       id: 'battle',
-      label: isMobileMode ? '3D Stadterkundung' : '3D Battle Royale',
-      mobileLabel: '3D-Stadt',
+      label: '3D Battle Royale',
+      mobileLabel: '3D-Kampf',
       icon: Map,
     },
     {

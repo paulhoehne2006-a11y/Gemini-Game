@@ -14,6 +14,13 @@ import {
   getPublicLeaderboardPayload,
 } from '../server.ts';
 import { SqliteStorageAdapter } from '../src/server/storage.ts';
+import {
+  MATCH_PERK_POOL,
+  rollMatchPerks,
+  SEASON_BATTLE_PASS,
+  ACHIEVEMENTS_LIST,
+  loadCareerStats,
+} from '../src/game/progression.ts';
 
 const TEST_DB = path.join(process.cwd(), 'data', 'test_server.sqlite');
 
@@ -354,6 +361,32 @@ test('API, CSRF & Multiplayer Security Test Suite', async (t) => {
 
     const lookup = await storage.getRoom(roomCode);
     assert.equal(lookup, null);
+  });
+
+  await t.test('12. Gamification & Progression: Roguelite Wave Perks, Season 1 Battle Pass & Career Achievements', async () => {
+    assert.equal(MATCH_PERK_POOL.length, 8);
+    const rolled = rollMatchPerks(['vampir_aeppler'], 3);
+    assert.equal(rolled.length, 3);
+    assert.ok(rolled.every((p) => p.id !== 'vampir_aeppler'));
+    assert.ok(rolled.every((p) => p.title && p.badge));
+
+    assert.equal(SEASON_BATTLE_PASS.length, 8);
+    assert.ok(SEASON_BATTLE_PASS[7].requiredReputation > SEASON_BATTLE_PASS[0].requiredReputation);
+
+    const defaultCareer = loadCareerStats();
+    assert.equal(defaultCareer.highestCombo, 1);
+
+    const simulatedCareer = {
+      ...defaultCareer,
+      totalKills: 20,
+      bossesDefeated: 1,
+      abilitiesUsed: 12,
+      highestCombo: 5,
+      gunsmithUpgrades: 6,
+    };
+
+    const unlockedCount = ACHIEVEMENTS_LIST.filter((ach) => ach.checkUnlocked(simulatedCareer)).length;
+    assert.equal(unlockedCount, 5); // all except 75 kills (ach_centurion)
   });
 
   // Teardown

@@ -6,6 +6,9 @@ import {
   TargetInfo,
   AllyStatusInfo,
   WaveInfo,
+  AbilityCooldownsState,
+  RadarState,
+  KillFeedNotification,
 } from '../game/three/ArenaScene';
 import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from '../game/three/arenas';
 import { WEAPONS, getEffectiveWeaponStats, INITIAL_WEAPON_UPGRADES } from '../game/weapons';
@@ -26,17 +29,27 @@ import {
   Coins,
   Building2,
   Compass,
-  Wrench,
   Lock,
   Unlock,
   Trophy,
   Settings,
   Keyboard,
+  Zap,
+  Wind,
+  Radio,
+  RotateCcw,
+  Eye,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 import { DailyMissionsState } from '../game/missions';
 import { AgentRole } from '../game/agents/microAgents';
 import { BrawlStarsEndScreen, DetailedMatchStats } from './BrawlStarsEndScreen';
+import {
+  MatchPerkDef,
+  MatchPerkId,
+  MATCH_PERK_POOL,
+  rollMatchPerks,
+} from '../game/progression';
 
 interface ThreeCanvasProps {
   currentArena: string;
@@ -72,6 +85,8 @@ interface ThreeCanvasProps {
   onStreakAchieved?: (count: number) => void;
   onWaveAdvanced?: (wave: number) => void;
   onOpenDailyMissions?: () => void;
+  onOpenMobileCommandHub?: () => void;
+  onComboRecord?: (combo: number) => void;
 }
 
 export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
@@ -101,11 +116,19 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onStreakAchieved,
   onWaveAdvanced,
   onOpenDailyMissions,
+  onOpenMobileCommandHub,
+  onComboRecord,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<ArenaSceneManager | null>(null);
 
   const [matchRound, setMatchRound] = useState(1);
+  // Mobile Mode now defaults to full 3D Battle Royale combat, with a 1-tap toggle for Peaceful Exploration!
+  const [isMobilePeaceful, setIsMobilePeaceful] = useState(false);
+  const [mobileAutoFire, setMobileAutoFire] = useState(true);
+  const [mobileAiming, setMobileAiming] = useState(false);
+  const [mobileSprinting, setMobileSprinting] = useState(false);
+
   const [health, setHealth] = useState(100);
   const [maxHealth, setMaxHealth] = useState(100);
   const [shield, setShield] = useState(100);
@@ -139,9 +162,40 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [heading, setHeading] = useState(0);
   const [hitMarkerActive, setHitMarkerActive] = useState(false);
+  const [isCritHitMarker, setIsCritHitMarker] = useState(false);
   const [killStreakNotice, setKillStreakNotice] = useState<string | null>(null);
   const [lockedArenaPrompt, setLockedArenaPrompt] = useState<string | null>(null);
   const [stance, setStance] = useState<'standing' | 'sprinting' | 'crouching'>('standing');
+
+  // New Game Juice & Tactical HUD States
+  const [comboState, setComboState] = useState<{ multiplier: number; timerRatio: number }>({
+    multiplier: 1,
+    timerRatio: 0,
+  });
+  const [abilityCooldowns, setAbilityCooldowns] = useState<AbilityCooldownsState>({
+    shockwave: 0,
+    shockwaveMax: 10,
+    dash: 0,
+    dashMax: 5,
+    overdrive: 0,
+    overdriveMax: 22,
+    overdriveActive: false,
+  });
+  const [radarState, setRadarState] = useState<RadarState>({
+    playerX: 0,
+    playerZ: 10,
+    playerYaw: 0,
+    stormRadius: 56,
+    blips: [],
+  });
+  const [killFeedList, setKillFeedList] = useState<KillFeedNotification[]>([]);
+  const [damageFlash, setDamageFlash] = useState(false);
+  const [abilityBanner, setAbilityBanner] = useState<string | null>(null);
+
+  // Roguelite Mid-Match Wave Perks
+  const [activeMatchPerks, setActiveMatchPerks] = useState<MatchPerkId[]>([]);
+  const [perkDraftOptions, setPerkDraftOptions] = useState<MatchPerkDef[]>([]);
+  const lastDraftedWaveRef = useRef<number>(0);
 
   const lastKillTimeRef = useRef<number>(0);
   const streakCountRef = useRef<number>(0);
@@ -191,6 +245,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
   const maxHpBonus = (unlockedFacilities.waldschwimmbad || 0) * 15;
   const speedMultiplier = 1 + (unlockedFacilities.breitband || 0) * 0.05;
+  const effectivePeacefulMode = isMobileMode && isMobilePeaceful;
 
   // Active daily mission relevant to current arena or next active incomplete challenge
   const activeDailyMission =
@@ -218,6 +273,11 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     setKillStreakNotice(null);
     setLockedArenaPrompt(null);
     setStance('standing');
+    setComboState({ multiplier: 1, timerRatio: 0 });
+    setActiveMatchPerks([]);
+    setPerkDraftOptions([]);
+    setKillFeedList([]);
+    lastDraftedWaveRef.current = 0;
     streakCountRef.current = 0;
 
     const manager = new ArenaSceneManager(
@@ -283,7 +343,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             type === 'attachment'
               ? `WAFFEN-UPGRADE: ${label}`
               : type === 'taler'
-              ? `+${amount} Neu-Anspach-Taler (NAT) gesammelt!`
+              ? label || `+${amount} Neu-Anspach-Taler (NAT) gesammelt!`
               : type === 'shield'
               ? `+${amount} Schildtrank (Blau)`
               : type === 'health'
@@ -298,9 +358,10 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         onAlliesChange: (alliesList) => {
           setAllies(alliesList);
         },
-        onHitEnemy: () => {
+        onHitEnemy: (_dmg, isCrit) => {
+          setIsCritHitMarker(isCrit);
           setHitMarkerActive(true);
-          setTimeout(() => setHitMarkerActive(false), 120);
+          setTimeout(() => setHitMarkerActive(false), 140);
         },
         onPointerLockChange: (locked) => {
           setIsPointerLocked(locked);
@@ -311,6 +372,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         onWaveChange: (info) => {
           setWaveInfo(info);
           onWaveAdvanced?.(info.wave);
+          if (info.status === 'cleared' && lastDraftedWaveRef.current < info.wave) {
+            lastDraftedWaveRef.current = info.wave;
+            setPerkDraftOptions(rollMatchPerks([], 3));
+          } else if (info.status !== 'cleared') {
+            setPerkDraftOptions([]);
+          }
         },
         onEnemyKilled: (details) => {
           onEnemyEliminated?.(details);
@@ -331,7 +398,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
             setWeaponSwitchNotice(switchedWeapon.name);
             window.setTimeout(() => setWeaponSwitchNotice(null), 1400);
           }
-          soundFx.playShoot();
+          soundFx.playShoot(wId);
         },
         onElevationChange: (elev) => {
           setElevation(elev);
@@ -339,11 +406,34 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         onStanceChange: (nextStance) => {
           setStance(nextStance);
         },
+        onComboChange: (mult, ratio) => {
+          setComboState({ multiplier: mult, timerRatio: ratio });
+          if (mult > 1) {
+            onComboRecord?.(mult);
+          }
+        },
+        onAbilityCooldownsChange: (cds) => {
+          setAbilityCooldowns(cds);
+        },
+        onRadarUpdate: (rState) => {
+          setRadarState(rState);
+        },
+        onKillFeedEvent: (item) => {
+          setKillFeedList((prev) => [item, ...prev].slice(0, 4));
+        },
+        onPlayerDamaged: () => {
+          setDamageFlash(true);
+          window.setTimeout(() => setDamageFlash(false), 260);
+        },
+        onAbilityUsed: (_ability, label) => {
+          setAbilityBanner(label);
+          window.setTimeout(() => setAbilityBanner(null), 2000);
+        },
       },
       {
         maxHpBonus,
         speedMultiplier,
-        peacefulMode: isMobileMode,
+        peacefulMode: effectivePeacefulMode,
         trainingMode: isTrainingMode,
         mouseSensitivity,
         controls: controlSettings,
@@ -351,17 +441,34 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       }
     );
 
+    manager.setMobileAutoFire(isMobileMode && mobileAutoFire);
     managerRef.current = manager;
 
     return () => {
       manager.destroy();
       managerRef.current = null;
     };
-  }, [currentArena, matchRound, isMobileMode, isTrainingMode]);
+  }, [currentArena, matchRound, effectivePeacefulMode, isTrainingMode]);
+
+  useEffect(() => {
+    managerRef.current?.setMobileAutoFire(isMobileMode && mobileAutoFire);
+  }, [isMobileMode, mobileAutoFire]);
 
   useEffect(() => {
     managerRef.current?.setInputSettings(mouseSensitivity, controlSettings);
   }, [mouseSensitivity, controlSettings]);
+
+  // Allow keyboard hotkeys [7], [8], [9] to pick wave perks without even unlocking the mouse!
+  useEffect(() => {
+    if (perkDraftOptions.length === 0) return;
+    const onPerkKey = (e: KeyboardEvent) => {
+      if (e.key === '7' && perkDraftOptions[0]) handleSelectPerk(perkDraftOptions[0]);
+      if (e.key === '8' && perkDraftOptions[1]) handleSelectPerk(perkDraftOptions[1]);
+      if (e.key === '9' && perkDraftOptions[2]) handleSelectPerk(perkDraftOptions[2]);
+    };
+    window.addEventListener('keydown', onPerkKey);
+    return () => window.removeEventListener('keydown', onPerkKey);
+  }, [perkDraftOptions]);
 
   useEffect(() => {
     if (isMobileMode || isMultiplayerMatch) return;
@@ -412,13 +519,21 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
     }
   }, [gameOverState?.over]);
 
+  const handleSelectPerk = (perk: MatchPerkDef) => {
+    managerRef.current?.applyMatchPerk(perk.id);
+    setActiveMatchPerks((prev) => (prev.includes(perk.id) ? prev : [...prev, perk.id]));
+    setPerkDraftOptions([]);
+    setAbilityBanner(`DIREKTIVE AKTIV: ${perk.title}`);
+    window.setTimeout(() => setAbilityBanner(null), 2200);
+  };
+
   const selectWeapon = (id: string) => {
     managerRef.current?.setWeapon(id);
     setActiveWeapon(id);
     if (weaponUpgrades[id]) {
       setAttachments(weaponUpgrades[id].attachments);
     }
-    soundFx.playShoot();
+    soundFx.playShoot(id);
   };
 
   const restartMatch = (e?: React.MouseEvent) => {
@@ -579,7 +694,29 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         }`}
       />
 
-      {!isMobileMode && !gameOverState?.over && (
+      {/* DIRECTIONAL DAMAGE FLASH VIGNETTE */}
+      {damageFlash && (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 transition-opacity duration-200"
+          style={{
+            background:
+              'radial-gradient(circle at center, transparent 48%, rgba(239, 68, 68, 0.48) 100%)',
+          }}
+        />
+      )}
+
+      {/* OVERDRIVE GOLDEN ENERGIZED VIGNETTE */}
+      {abilityCooldowns.overdriveActive && (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 animate-pulse border-4 border-amber-400/60"
+          style={{
+            boxShadow: 'inset 0 0 65px rgba(245, 158, 11, 0.35)',
+          }}
+        />
+      )}
+
+      {/* CENTER RETICLE (VISIBLE IN BOTH PC AND MOBILE 3D COMBAT MODE) */}
+      {!effectivePeacefulMode && !gameOverState?.over && (
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
           aria-hidden="true"
@@ -609,6 +746,7 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
         </div>
       </div>
 
+      {/* TOP RIGHT QUICK SETTINGS & TRAINING BUTTONS */}
       {!isMobileMode && (
         <div className="absolute top-2 right-4 z-30 flex items-center gap-2 pointer-events-auto">
           <button
@@ -638,57 +776,99 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       )}
 
       {/* ===================================================================== */}
-      {/* MODE A: MOBILE EXPLORATION HUD (OHNE BATTLE ROYALE!)                  */}
+      {/* MOBILE MODE TOP MODE SWITCHER BAR (3D BATTLE ROYALE vs. STADTERKUNDUNG) */}
       {/* ===================================================================== */}
-      {isMobileMode ? (
-        <>
-          {/* Peaceful Exploration Banner (Top Center) */}
-          <div className="absolute top-11 left-1/2 -translate-x-1/2 flex flex-col items-center z-20 w-full max-w-lg px-3 pointer-events-auto">
-            <div className="flex items-center justify-between gap-2 w-full px-3.5 py-2 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-emerald-500/40 shadow-xl">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shrink-0">
-                  <Smartphone className="w-4 h-4" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-black text-emerald-300 tracking-tight">
-                    HANDY-MODUS · OHNE BATTLE ROYALE
-                  </span>
-                  <span className="text-[10px] text-slate-300 font-mono">
-                    Erkunde Häuser & Dächer in Ruhe · Sammle NAT für deinen Stadt-Tycoon!
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-xs font-black tabular-nums">
-                  <Coins className="w-3.5 h-3.5 text-amber-400" />
-                  <span>+{collectedRunTaler}</span>
-                </div>
-                {onOpenTycoon && (
-                  <button
-                    type="button"
-                    onClick={onOpenTycoon}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] shadow cursor-pointer"
-                  >
-                    <Building2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Tycoon</span>
-                  </button>
-                )}
-              </div>
-            </div>
+      {isMobileMode && (
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-white/15 shadow-2xl pointer-events-auto max-w-[96vw]">
+          <button
+            type="button"
+            onClick={() => setIsMobilePeaceful(false)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+              !isMobilePeaceful
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5" />
+            <span>3D BATTLE ROYALE</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobilePeaceful(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+              isMobilePeaceful
+                ? 'bg-emerald-500 text-slate-950 shadow'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>ERKUNDUNG (RUHIG)</span>
+          </button>
+          {onOpenMobileCommandHub && (
+            <button
+              type="button"
+              onClick={onOpenMobileCommandHub}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold cursor-pointer"
+            >
+              <Radio className="w-3 h-3" />
+              <span>2D-ZENTRALE</span>
+            </button>
+          )}
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[11px] font-black tabular-nums">
+            <Coins className="w-3 h-3 text-amber-400" />
+            <span>+{collectedRunTaler}</span>
           </div>
+        </div>
+      )}
 
+      {/* ===================================================================== */}
+      {/* TOUCH CONTROLS OVERLAY (ACTIVE WHENEVER isMobileMode IS TRUE)         */}
+      {/* ===================================================================== */}
+      {isMobileMode && !gameOverState?.over && (
+        <>
           {/* Right-Half Touch Look Surface */}
           <div
             onTouchStart={handleLookTouchStart}
             onTouchMove={handleLookTouchMove}
             onTouchEnd={handleLookTouchEnd}
             onTouchCancel={handleLookTouchEnd}
-            className="absolute top-24 right-0 bottom-28 w-1/2 z-10 touch-none"
+            className="absolute top-24 right-0 bottom-32 w-1/2 z-10 touch-none"
           />
 
-          {/* LEFT VIRTUAL ANALOG THUMBSTICK */}
-          <div className="absolute bottom-24 lg:bottom-14 left-5 z-30 flex flex-col items-center gap-1.5 pointer-events-auto">
+          {/* LEFT VIRTUAL ANALOG THUMBSTICK + STANCE TOGGLES */}
+          <div className="absolute bottom-28 lg:bottom-14 left-4 z-30 flex flex-col items-center gap-2 pointer-events-auto">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !mobileSprinting;
+                  setMobileSprinting(next);
+                  managerRef.current?.setSprintState(next);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-black border transition-all cursor-pointer ${
+                  stance === 'sprinting'
+                    ? 'bg-amber-500 text-slate-950 border-amber-200 shadow-lg'
+                    : 'bg-slate-900/90 text-slate-300 border-white/15'
+                }`}
+              >
+                ⚡ SPRINT
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileSprinting(false);
+                  managerRef.current?.toggleCrouchState();
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-black border transition-all cursor-pointer ${
+                  stance === 'crouching'
+                    ? 'bg-cyan-400 text-slate-950 border-cyan-100 shadow-lg'
+                    : 'bg-slate-900/90 text-slate-300 border-white/15'
+                }`}
+              >
+                🛡️ DUCKEN
+              </button>
+            </div>
+
             <div
               onTouchStart={handleJoystickTouchStart}
               onTouchMove={handleJoystickTouchMove}
@@ -727,39 +907,124 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   transform: `translate(${joystickVisual.x}px, ${joystickVisual.y}px)`,
                 }}
               >
-                <span className="text-[10px] font-mono font-black">GEHEN</span>
+                <span className="text-[10px] font-mono font-black">STICK</span>
               </div>
             </div>
-            <span className="text-[10px] font-mono font-bold text-slate-300 bg-slate-950/80 px-2 py-0.5 rounded-md border border-white/10">
-              Links: Gehen · Rechts: Umsehen
-            </span>
           </div>
 
-          {/* RIGHT MOBILE ACTION BUTTONS */}
-          <div className="absolute bottom-24 lg:bottom-14 right-5 z-30 flex flex-col items-end gap-2.5 pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => managerRef.current?.collectNearbyTalerBurst()}
-              className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-500/90 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs shadow-2xl border-2 border-amber-200 cursor-pointer transition-transform"
-            >
-              <Coins className="w-4 h-4" />
-              <span>TALER-SCAN</span>
-            </button>
+          {/* RIGHT MOBILE ACTION & SHOOTER BUTTONS */}
+          <div className="absolute bottom-28 lg:bottom-14 right-4 z-30 flex flex-col items-end gap-2 pointer-events-auto">
+            {effectivePeacefulMode ? (
+              <>
+                {onOpenTycoon && (
+                  <button
+                    type="button"
+                    onClick={onOpenTycoon}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900/90 border border-amber-400/50 text-amber-300 font-black text-xs shadow-lg cursor-pointer"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>STADT-TYCOON</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => managerRef.current?.collectNearbyTalerBurst()}
+                  className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-500/90 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs shadow-2xl border-2 border-amber-200 cursor-pointer transition-transform"
+                >
+                  <Coins className="w-4 h-4" />
+                  <span>TALER-SCAN</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => managerRef.current?.triggerJump()}
+                  className="flex items-center justify-center gap-1.5 w-20 h-20 rounded-full bg-emerald-500/90 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs shadow-2xl border-2 border-emerald-200 cursor-pointer transition-transform"
+                >
+                  <ArrowUp className="w-5 h-5 stroke-[3]" />
+                  <span>SPRUNG</span>
+                </button>
+              </>
+            ) : (
+              /* FULL MOBILE 3D SHOOTER CLUSTER */
+              <div className="flex flex-col items-end gap-2">
+                {/* Auto-Fire, ADS & Reload Row */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMobileAutoFire((v) => !v)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-mono text-[10px] font-black border transition-all cursor-pointer ${
+                      mobileAutoFire
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-200 shadow-lg'
+                        : 'bg-slate-900/90 text-slate-300 border-white/15'
+                    }`}
+                  >
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>AUTO-FEUER {mobileAutoFire ? 'AN' : 'AUS'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = managerRef.current?.toggleMobileAim() ?? false;
+                      setMobileAiming(next);
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-mono text-[10px] font-black border transition-all cursor-pointer ${
+                      mobileAiming
+                        ? 'bg-sky-400 text-slate-950 border-white shadow-lg'
+                        : 'bg-slate-900/90 text-slate-200 border-white/15'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>VISIER</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => managerRef.current?.reloadWeapon()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-300 border border-amber-400/40 font-mono text-[10px] font-black cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{ammo.magazine}/{ammo.reserve}</span>
+                  </button>
+                </div>
 
-            <button
-              type="button"
-              onClick={() => managerRef.current?.triggerJump()}
-              className="flex items-center justify-center gap-1.5 w-20 h-20 rounded-full bg-emerald-500/90 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs shadow-2xl border-2 border-emerald-200 cursor-pointer transition-transform"
-            >
-              <ArrowUp className="w-5 h-5 stroke-[3]" />
-              <span>SPRUNG</span>
-            </button>
+                {/* Primary Fire & Jump Cluster */}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => managerRef.current?.triggerJump()}
+                    className="flex flex-col items-center justify-center w-15 h-15 rounded-full bg-emerald-500/90 active:scale-95 text-slate-950 font-black text-[10px] shadow-xl border-2 border-emerald-200 cursor-pointer"
+                  >
+                    <ArrowUp className="w-4 h-4 stroke-[3]" />
+                    <span>SPRUNG</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      managerRef.current?.setMobileFireHeld(true);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      managerRef.current?.setMobileFireHeld(false);
+                    }}
+                    onTouchCancel={() => managerRef.current?.setMobileFireHeld(false)}
+                    onMouseDown={() => managerRef.current?.setMobileFireHeld(true)}
+                    onMouseUp={() => managerRef.current?.setMobileFireHeld(false)}
+                    className="flex flex-col items-center justify-center w-22 h-22 rounded-full bg-gradient-to-br from-red-500 via-orange-500 to-amber-500 active:scale-95 text-slate-950 font-black text-xs shadow-[0_0_25px_rgba(239,68,68,0.6)] border-2 border-amber-200 cursor-pointer"
+                  >
+                    <Flame className="w-6 h-6 fill-slate-950" />
+                    <span>FEUER</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
-      ) : (
-        /* ===================================================================== */
-        /* MODE B: PC BATTLE ROYALE / WAVE DEFENSE HUD                           */
-        /* ===================================================================== */
+      )}
+
+      {/* ===================================================================== */}
+      {/* BATTLE ROYALE COMBAT HUD (ACTIVE ON PC AND MOBILE COMBAT MODE!)       */}
+      {/* ===================================================================== */}
+      {!effectivePeacefulMode && (
         <>
           {/* WAVE ANNOUNCEMENT BANNER (TOP CENTER) */}
           {isTrainingMode ? (
@@ -778,65 +1043,125 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 </div>
               </div>
             </div>
-          ) : waveInfo && (
-            <div className="absolute top-11 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-lg px-4">
-              {waveInfo.status === 'cleared' ? (
-                <div className="flex flex-col items-center gap-1 p-2.5 rounded-2xl bg-amber-500/95 backdrop-blur-md text-slate-950 font-black shadow-2xl border border-white/50 text-center w-full">
-                  <div className="flex items-center gap-2 text-sm tracking-wide">
-                    <Sparkles className="w-4 h-4 fill-slate-950" />
-                    <span>WELLE {waveInfo.wave} ERFOLGREICH ABGEWEHRT!</span>
-                  </div>
-                  <div className="text-[11px] font-mono font-bold text-slate-900 bg-white/40 px-3 py-0.5 rounded-full">
-                    Nächste Welle in{' '}
-                    <span className="text-red-700 text-xs font-black">{waveInfo.intermissionCountdown ?? 5}s</span> ·
-                    Bereite dich auf den nächsten Taunus-Gegenangriff vor!
-                  </div>
-                </div>
-              ) : waveInfo.status === 'boss' ? (
-                <div className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-slate-950/95 backdrop-blur-md border-2 border-red-500/70 shadow-2xl w-full">
-                  <div className="flex items-center justify-between w-full font-mono text-xs font-black text-red-400">
-                    <div className="flex items-center gap-1.5">
-                      <Skull className="w-4 h-4 text-red-500 animate-bounce" />
-                      <span>{waveInfo.title}</span>
+          ) : (
+            waveInfo && (
+              <div
+                className={`absolute ${
+                  isMobileMode ? 'top-20' : 'top-11'
+                } left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-20 w-full max-w-lg px-4`}
+              >
+                {waveInfo.status === 'cleared' ? (
+                  <div className="flex flex-col items-center gap-1 p-2.5 rounded-2xl bg-amber-500/95 backdrop-blur-md text-slate-950 font-black shadow-2xl border border-white/50 text-center w-full">
+                    <div className="flex items-center gap-2 text-sm tracking-wide">
+                      <Sparkles className="w-4 h-4 fill-slate-950" />
+                      <span>WELLE {waveInfo.wave} ERFOLGREICH ABGEWEHRT!</span>
                     </div>
-                    <span className="text-white bg-red-600/80 px-2 py-0.5 rounded font-mono text-[10px]">
-                      {waveInfo.bossInfo ? `${waveInfo.bossInfo.health} / ${waveInfo.bossInfo.maxHealth} HP` : 'BOSS'}
-                    </span>
-                  </div>
-                  {waveInfo.bossInfo && (
-                    <div className="w-full h-2.5 rounded-full bg-slate-900 border border-red-500/50 p-0.5 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-red-500 transition-all duration-150"
-                        style={{ width: `${(waveInfo.bossInfo.health / waveInfo.bossInfo.maxHealth) * 100}%` }}
-                      />
-                    </div>
-                  )}
-                  <div className="text-[10px] text-red-300/80 font-mono text-center">
-                    {waveInfo.subtitle}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center gap-3 px-4 py-1.5 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-amber-500/40 shadow-xl">
-                    <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[11px] font-mono tracking-wider">
-                      {waveInfo.title}
-                    </span>
-                    <div className="flex items-center gap-1 text-slate-200 text-xs font-mono">
-                      <Skull className="w-3.5 h-3.5 text-red-400" />
-                      <span className="font-bold text-white tabular-nums">{waveInfo.remainingEnemies}</span>
-                      <span className="text-slate-400 text-[10px]">/ {waveInfo.totalEnemies} GEGNER</span>
+                    <div className="text-[11px] font-mono font-bold text-slate-900 bg-white/40 px-3 py-0.5 rounded-full">
+                      Nächste Welle in{' '}
+                      <span className="text-red-700 text-xs font-black">{waveInfo.intermissionCountdown ?? 5}s</span> ·
+                      Wähle deine Einsatz-Direktive!
                     </div>
                   </div>
+                ) : waveInfo.status === 'boss' ? (
+                  <div className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-slate-950/95 backdrop-blur-md border-2 border-red-500/70 shadow-2xl w-full">
+                    <div className="flex items-center justify-between w-full font-mono text-xs font-black text-red-400">
+                      <div className="flex items-center gap-1.5">
+                        <Skull className="w-4 h-4 text-red-500 animate-bounce" />
+                        <span>{waveInfo.title}</span>
+                      </div>
+                      <span className="text-white bg-red-600/80 px-2 py-0.5 rounded font-mono text-[10px]">
+                        {waveInfo.bossInfo ? `${waveInfo.bossInfo.health} / ${waveInfo.bossInfo.maxHealth} HP` : 'BOSS'}
+                      </span>
+                    </div>
+                    {waveInfo.bossInfo && (
+                      <div className="w-full h-2.5 rounded-full bg-slate-900 border border-red-500/50 p-0.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-red-500 transition-all duration-150"
+                          style={{ width: `${(waveInfo.bossInfo.health / waveInfo.bossInfo.maxHealth) * 100}%` }}
+                        />
+                      </div>
+                    )}
+                    <div className="text-[10px] text-red-300/80 font-mono text-center">
+                      {waveInfo.subtitle}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-center gap-3 px-4 py-1.5 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-amber-500/40 shadow-xl">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[11px] font-mono tracking-wider">
+                        {waveInfo.title}
+                      </span>
+                      <div className="flex items-center gap-1 text-slate-200 text-xs font-mono">
+                        <Skull className="w-3.5 h-3.5 text-red-400" />
+                        <span className="font-bold text-white tabular-nums">{waveInfo.remainingEnemies}</span>
+                        <span className="text-slate-400 text-[10px]">/ {waveInfo.totalEnemies} GEGNER</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
+          {/* ROGUELITE WAVE INTERMISSION PERK DRAFT ("TAKTISCHE EINSATZ-DIREKTIVE") */}
+          {perkDraftOptions.length > 0 && !gameOverState?.over && (
+            <div className="absolute top-28 left-1/2 -translate-x-1/2 z-40 w-[94vw] max-w-2xl rounded-3xl border-2 border-amber-400 bg-slate-950/95 p-4 shadow-[0_0_50px_rgba(245,158,11,0.45)] backdrop-blur-md pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>ROGUELITE FELD-UPGRADE · TASTE [7] [8] [9] ODER ANTIPPEN</span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Wähle 1 Taktische Einsatz-Direktive für diesen Kampf:
+                  </h3>
                 </div>
-              )}
+                <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/50 text-amber-300 font-mono text-xs font-black">
+                  Welle {waveInfo.wave} Bonus
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {perkDraftOptions.map((perk, idx) => (
+                  <button
+                    key={perk.id}
+                    type="button"
+                    onClick={() => handleSelectPerk(perk)}
+                    className="group flex flex-col justify-between p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 border-2 border-white/15 hover:border-amber-400 text-left transition-all cursor-pointer shadow-lg hover:scale-[1.02]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span
+                          className="px-2 py-0.5 rounded text-[9px] font-mono font-black uppercase"
+                          style={{ backgroundColor: `${perk.accentColor}25`, color: perk.accentColor }}
+                        >
+                          {perk.badge}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-black">
+                          [{idx + 7}]
+                        </span>
+                      </div>
+                      <div className="text-sm font-black text-white group-hover:text-amber-300 transition-colors">
+                        {perk.title}
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+                        {perk.description}
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-white/10 text-[10px] font-mono font-black text-amber-400 flex items-center justify-between">
+                      <span>AKTIVIEREN</span>
+                      <span>→</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* KILL STREAK COMBO NOTICE */}
-          {killStreakNotice && (
-            <div className="absolute top-28 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-2 rounded-2xl bg-amber-500 text-slate-950 font-black text-sm shadow-2xl border-2 border-yellow-200 animate-bounce z-30">
-              <Flame className="w-5 h-5" />
-              <span>{killStreakNotice}</span>
+          {/* KILL STREAK & ABILITY BANNER */}
+          {(killStreakNotice || abilityBanner) && (
+            <div className="absolute top-26 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-2 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-orange-500 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_30px_rgba(245,158,11,0.6)] border-2 border-white animate-bounce z-30 pointer-events-none">
+              <Flame className="w-4 h-4 fill-slate-950" />
+              <span>{abilityBanner || killStreakNotice}</span>
             </div>
           )}
 
@@ -889,94 +1214,185 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
 
               {hitMarkerActive && (
                 <div className="absolute inset-0 flex items-center justify-center animate-ping">
-                  <div className="w-6 h-6 border-2 border-red-500 rotate-45" />
+                  <div
+                    className={`w-6 h-6 border-2 rotate-45 ${
+                      isCritHitMarker ? 'border-amber-300 scale-125' : 'border-red-500'
+                    }`}
+                  />
                 </div>
               )}
             </div>
           </div>
 
-          {/* SQUAD TEAM & OPERATOR CALLSIGN (TOP LEFT) */}
-          <div className="hidden md:block absolute top-4 left-4 max-w-xs p-3 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 shadow-2xl pointer-events-auto z-20 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono font-bold text-slate-300">
-              <div className="flex items-center gap-1.5 text-emerald-400">
-                <Users className="w-3.5 h-3.5" />
-                <span>SQUAD · [{clanTag}]</span>
-              </div>
-              <span className="text-[10px] text-amber-400 tabular-nums">{score} Pkt</span>
-            </div>
+          {/* TOP LEFT: 2D TACTICAL RADAR MINIMAP + SQUAD TELEMETRY */}
+          <div className="hidden md:flex flex-col gap-2.5 absolute top-4 left-4 w-72 pointer-events-auto z-20">
+            {/* LIVE 2D TACTICAL RADAR & SQUAD HEADER */}
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-white/15 shadow-2xl">
+              {/* Circular Radar Screen */}
+              <div
+                className="relative w-24 h-24 rounded-full bg-slate-900 border-2 border-emerald-500/50 shadow-[inset_0_0_18px_rgba(16,185,129,0.25)] overflow-hidden shrink-0"
+                title="Live 2D Taktik-Radar (Grün = Squad, Rot = Wehrheimer, Gelb = Beute)"
+              >
+                {/* Radar Grid Rings & Crosshair */}
+                <div className="absolute inset-2 rounded-full border border-emerald-500/20" />
+                <div className="absolute inset-6 rounded-full border border-emerald-500/15" />
+                <div className="absolute inset-y-0 left-1/2 w-[1px] bg-emerald-500/20" />
+                <div className="absolute inset-x-0 top-1/2 h-[1px] bg-emerald-500/20" />
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[11px] font-mono">
-                <span className="text-white font-bold truncate">
-                  1. [{clanTag}] {playerName}
-                </span>
-                <span className="text-emerald-400 font-bold tabular-nums">
-                  {Math.round(health)} HP
-                </span>
+                {/* Storm Circle Indicator */}
+                {(() => {
+                  const radarScale = 48 / 55; // 55m world radius -> 48px radar radius
+                  const stormPx = Math.min(96, Math.max(12, radarState.stormRadius * radarScale * 2));
+                  return (
+                    <div
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-purple-400/60 pointer-events-none"
+                      style={{ width: `${stormPx}px`, height: `${stormPx}px` }}
+                    />
+                  );
+                })()}
+
+                {/* Player View Cone (Center) */}
+                <div
+                  className="absolute left-1/2 top-1/2 w-0 h-0 -translate-x-1/2 -translate-y-1/2"
+                  style={{
+                    transform: `translate(-50%, -50%) rotate(${(-radarState.playerYaw * 180) / Math.PI}deg)`,
+                  }}
+                >
+                  <div
+                    className="w-6 h-8 -translate-x-1/2 -translate-y-full opacity-30"
+                    style={{
+                      background: 'linear-gradient(to top, rgba(16,185,129,0.8), transparent)',
+                      clipPath: 'polygon(50% 100%, 0% 0%, 100% 0%)',
+                    }}
+                  />
+                </div>
+
+                {/* Radar Blips (Player-relative) */}
+                {radarState.blips.map((blip) => {
+                  const dx = (blip.x - radarState.playerX) * 0.95;
+                  const dz = (blip.z - radarState.playerZ) * 0.95;
+                  const clampedX = Math.max(-42, Math.min(42, dx));
+                  const clampedZ = Math.max(-42, Math.min(42, dz));
+                  const colorClass =
+                    blip.kind === 'boss'
+                      ? 'w-3 h-3 bg-red-500 ring-2 ring-amber-300 animate-ping'
+                      : blip.kind === 'enemy'
+                      ? 'w-2 h-2 bg-red-500 shadow-[0_0_4px_#ef4444]'
+                      : blip.kind === 'ally'
+                      ? 'w-2 h-2 bg-sky-400'
+                      : 'w-1.5 h-1.5 bg-amber-400';
+
+                  return (
+                    <span
+                      key={blip.id}
+                      className={`absolute rounded-full -translate-x-1/2 -translate-y-1/2 ${colorClass}`}
+                      style={{
+                        left: `${48 + clampedX}px`,
+                        top: `${48 + clampedZ}px`,
+                      }}
+                    />
+                  );
+                })}
+
+                {/* Player Center Dot */}
+                <span className="absolute left-1/2 top-1/2 w-2.5 h-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 border border-white shadow" />
               </div>
 
-              {!isMobileMode && (
-                <div className="flex items-center justify-between text-[11px] font-mono">
+              {/* Operator & Level Summary Next to Radar */}
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-mono font-bold">
+                  <span className="text-emerald-400 flex items-center gap-1 truncate">
+                    <Users className="w-3 h-3 shrink-0" />
+                    <span>[{clanTag}]</span>
+                  </span>
+                  <span className="text-amber-400 tabular-nums font-black">{score} Pkt</span>
+                </div>
+
+                <div className="text-xs font-black text-white truncate">
+                  {playerName}
+                </div>
+
+                <div className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
+                    <span>LVL {playerLevel}</span>
+                    <span>{playerExperience}/{experienceToNextLevel} XP</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-amber-400 transition-all duration-200"
+                      style={{ width: `${Math.min(100, (playerExperience / experienceToNextLevel) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] font-mono">
                   <span className={isReloading ? 'text-amber-300 animate-pulse' : 'text-sky-300'}>
-                    {isReloading ? `NACHLADEN ${reloadSeconds.toFixed(1)}s` : 'MUNITION [R]'}
+                    {isReloading ? `LÄDT ${reloadSeconds.toFixed(1)}s` : 'MAGAZIN'}
                   </span>
                   <span className="text-white font-black tabular-nums">
                     {ammo.magazine}/{ammo.reserve}
                   </span>
                 </div>
-              )}
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
-                  <span>LEVEL {playerLevel}</span>
-                  <span>{playerExperience}/{experienceToNextLevel} XP</span>
-                </div>
-                <div className="w-full h-1 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-amber-400 transition-all duration-200"
-                    style={{ width: `${Math.min(100, (playerExperience / experienceToNextLevel) * 100)}%` }}
-                  />
-                </div>
-              </div>
-              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-200"
-                  style={{ width: `${(health / maxHealth) * 100}%` }}
-                />
               </div>
             </div>
 
-            {allies.map((ally, idx) => (
-              <div key={ally.id} className="space-y-0.5">
-                <div className="flex items-center justify-between text-[11px] font-mono">
-                  <span className="text-slate-300 truncate">
-                    {idx + 2}. {ally.name}
-                  </span>
-                  <span
-                    className={`font-bold tabular-nums ${
-                      ally.health > 0 ? 'text-emerald-400' : 'text-red-500 line-through'
-                    }`}
-                  >
-                    {ally.health > 0 ? `${ally.health}` : 'K.O.'}
-                  </span>
+            {/* SQUAD ALLIES & ACTIVE MATCH PERKS */}
+            <div className="p-3 rounded-2xl bg-slate-950/85 backdrop-blur-md border border-white/10 shadow-xl space-y-1.5">
+              {allies.map((ally, idx) => (
+                <div key={ally.id} className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-300 truncate">
+                      {idx + 2}. {ally.name}
+                    </span>
+                    <span
+                      className={`font-bold tabular-nums ${
+                        ally.health > 0 ? 'text-emerald-400' : 'text-red-500 line-through'
+                      }`}
+                    >
+                      {ally.health > 0 ? `${ally.health}` : 'K.O.'}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-sky-500 transition-all duration-200"
+                      style={{ width: `${(ally.health / ally.maxHealth) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-sky-500 transition-all duration-200"
-                    style={{ width: `${(ally.health / ally.maxHealth) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              ))}
 
-            <div className="pt-1 border-t border-white/10 text-[10px] font-mono text-slate-400 flex flex-col gap-0.5">
-              <div className="flex items-center justify-between">
-                <span>SHIFT: Sprint · STRG: Ducken</span>
-                <span>SPACE: Sprung</span>
-              </div>
-              <div className="flex items-center justify-between text-amber-400">
-                <span>Rechtsklick: Visier (ADS)</span>
-                <span>[1-4]: Waffenwechsel</span>
+              {/* Active Roguelite Match Perks Badges */}
+              {activeMatchPerks.length > 0 && (
+                <div className="pt-1.5 border-t border-white/10 flex flex-wrap gap-1">
+                  {activeMatchPerks.map((pId) => {
+                    const pDef = MATCH_PERK_POOL.find((p) => p.id === pId);
+                    if (!pDef) return null;
+                    return (
+                      <span
+                        key={pId}
+                        className="px-2 py-0.5 rounded-md text-[9px] font-mono font-black border"
+                        style={{
+                          borderColor: `${pDef.accentColor}66`,
+                          backgroundColor: `${pDef.accentColor}20`,
+                          color: pDef.accentColor,
+                        }}
+                        title={pDef.description}
+                      >
+                        ★ {pDef.title}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="pt-1 border-t border-white/10 text-[10px] font-mono text-slate-400 flex flex-col gap-0.5">
+                <div className="flex items-center justify-between">
+                  <span>[Q] Nova · [E] Dash · [F] Luftschlag</span>
+                </div>
+                <div className="flex items-center justify-between text-amber-400">
+                  <span>Rechtsklick: Visier</span>
+                  <span>[1-4]: Waffen</span>
+                </div>
               </div>
             </div>
 
@@ -987,14 +1403,14 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   managerRef.current?.unlockPointer();
                   onOpenDailyMissions?.();
                 }}
-                className="mt-2 p-2.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-amber-500/30 hover:border-amber-400 transition-all cursor-pointer pointer-events-auto shadow-xl"
+                className="p-2.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-amber-500/30 hover:border-amber-400 transition-all cursor-pointer pointer-events-auto shadow-xl"
                 title="Klicken für alle Tagesbefehle & Belohnungen"
               >
                 <div className="flex items-center justify-between text-[10px] font-mono mb-1">
                   <div className="flex items-center gap-1.5 text-amber-400 font-bold">
                     <Target className="w-3 h-3" />
                     <span>TAGESBEFEHL:</span>
-                    <span className="text-slate-300 font-normal truncate max-w-[120px]">
+                    <span className="text-slate-300 font-normal truncate max-w-[110px]">
                       {activeDailyMission.badge}
                     </span>
                   </div>
@@ -1024,20 +1440,12 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                     }}
                   />
                 </div>
-                <div className="flex items-center justify-between mt-1 text-[9px] font-mono text-slate-400">
-                  <span className="text-amber-400 font-bold">
-                    +{activeDailyMission.rewardNAT} NAT
-                  </span>
-                  <span className="text-purple-400 font-bold">
-                    +{activeDailyMission.rewardReputation} RUF
-                  </span>
-                </div>
               </div>
             )}
           </div>
 
-          {/* TOP RIGHT: STORM, SCORE & ACTIVE WEHRHEIMER TARGET */}
-          <div className="absolute top-4 right-4 flex flex-col items-end gap-2 pointer-events-auto z-20">
+          {/* TOP RIGHT: STORM, SCORE, ADRENALINE COMBO METER & LIVE KILLFEED */}
+          <div className="absolute top-12 right-4 flex flex-col items-end gap-2 pointer-events-auto z-20">
             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/10 shadow-xl text-white font-mono">
               <div className="flex flex-col items-end">
                 <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
@@ -1071,8 +1479,32 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               )}
             </div>
 
+            {/* ADRENALINE COMBO MULTIPLIER WIDGET */}
+            {comboState.multiplier > 1 && (
+              <div className="w-56 p-2.5 rounded-2xl bg-gradient-to-r from-amber-500/25 via-orange-500/20 to-red-500/25 backdrop-blur-md border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Flame className="w-4 h-4 text-amber-400 fill-amber-400 animate-bounce" />
+                    <span className="text-[10px] font-mono font-black uppercase tracking-wider text-amber-300">
+                      ADRENALIN-COMBO
+                    </span>
+                  </div>
+                  <span className="text-xl font-black font-mono text-white drop-shadow">
+                    x{comboState.multiplier}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-slate-900 mt-1.5 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-400 to-red-500 transition-all duration-100"
+                    style={{ width: `${Math.max(0, Math.min(100, comboState.timerRatio * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ACTIVE WEHRHEIMER TARGET TELEMETRY */}
             {currentTarget && (
-              <div className="max-w-xs p-3 rounded-xl bg-slate-950/85 backdrop-blur-md border border-red-500/50 shadow-xl text-left">
+              <div className="w-56 p-3 rounded-xl bg-slate-950/85 backdrop-blur-md border border-red-500/50 shadow-xl text-left">
                 <div className="flex items-center justify-between text-[10px] font-mono mb-1">
                   <span className="text-red-400 font-bold uppercase tracking-wider flex items-center gap-1">
                     <Target className="w-3 h-3" />
@@ -1093,100 +1525,215 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                 </div>
               </div>
             )}
+
+            {/* LIVE ARCADE KILLFEED POPUPS */}
+            {killFeedList.length > 0 && (
+              <div className="hidden sm:flex flex-col items-end gap-1 pointer-events-none">
+                {killFeedList.map((kf) => (
+                  <div
+                    key={kf.id}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-xl border text-[10px] font-mono font-bold shadow-lg backdrop-blur-md ${
+                      kf.isBoss
+                        ? 'bg-red-950/90 border-amber-400 text-amber-300'
+                        : kf.isCrit
+                        ? 'bg-amber-950/85 border-amber-400/60 text-amber-200'
+                        : 'bg-slate-950/80 border-white/10 text-slate-200'
+                    }`}
+                  >
+                    <span>{kf.label}</span>
+                    <span className="text-emerald-400 font-black">+{kf.points}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* POINTER LOCK HELPER BANNER */}
-          {!isPointerLocked && !gameOverState?.over && (
+          {/* POINTER LOCK HELPER BANNER (PC ONLY) */}
+          {!isMobileMode && !isPointerLocked && !gameOverState?.over && perkDraftOptions.length === 0 && (
             <div
               onClick={() => managerRef.current?.requestLock()}
               className="absolute top-24 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs shadow-2xl cursor-pointer hover:bg-amber-400 transition-colors z-30"
             >
               <MousePointer className="w-3.5 h-3.5" />
-              <span>Klicke ins Bild für 360°-Maussteuerung · [1-4] Waffen wechseln · [R] Nachladen</span>
+              <span>Klicke ins Bild für 360°-Maussteuerung · [Q/E/F] Fähigkeiten · [1-4] Waffen · [R] Nachladen</span>
             </div>
           )}
 
           {/* GEMINI PRO COMMANDER BARK (FLOATING MID-LEFT) */}
           {latestCommanderBark && (
-            <div className="hidden md:block absolute top-52 left-4 max-w-sm px-4 py-2.5 rounded-xl bg-slate-950/85 backdrop-blur-md border border-amber-500/30 shadow-lg pointer-events-auto z-20">
-              <div className="flex items-center gap-1.5 mb-1 text-[11px] font-bold text-amber-400 font-mono">
+            <div className="hidden lg:block absolute top-80 left-4 max-w-xs px-3.5 py-2 rounded-xl bg-slate-950/85 backdrop-blur-md border border-amber-500/30 shadow-lg pointer-events-auto z-20">
+              <div className="flex items-center gap-1.5 mb-0.5 text-[10px] font-bold text-amber-400 font-mono">
                 <Sparkles className="w-3 h-3 text-amber-400" />
                 <span>Oberkommando Feldberg-Stier:</span>
               </div>
-              <p className="text-xs text-slate-200 italic leading-snug">
+              <p className="text-[11px] text-slate-200 italic leading-snug">
                 "{latestCommanderBark}"
               </p>
             </div>
           )}
 
-          {/* HEALTH, SHIELD & LIVE STANCE STACK (BOTTOM LEFT) */}
-          {/* FORTNITE STYLE HEALTH & SHIELD STACK (BOTTOM LEFT) */}
-          <div className="absolute bottom-14 left-6 flex flex-col gap-2 w-64 md:w-80 pointer-events-auto z-20">
-            {/* Live Tactical Stance Badge */}
-            <div className="flex items-center justify-between px-3 py-1 rounded-xl bg-slate-950/90 backdrop-blur-md border border-white/10 font-mono text-[10px]">
-              <span className="text-slate-400 uppercase font-bold">HALTUNG:</span>
-              {stance === 'sprinting' ? (
-                <span className="text-amber-400 font-black tracking-wider flex items-center gap-1">
-                  ⚡ TAKTISCHER SPRINT [SHIFT]
-                </span>
-              ) : stance === 'crouching' ? (
-                <span className="text-cyan-400 font-black tracking-wider flex items-center gap-1">
-                  🛡️ GEDUCKT [STRG] (-35% Rückstoß)
-                </span>
-              ) : (
-                <span className="text-emerald-400 font-bold tracking-wider">
-                  STEHEND [SHIFT Sprint · STRG Ducken]
-                </span>
-              )}
-            </div>
+          {/* ===================================================================== */}
+          {/* 3 TACTICAL OPERATOR ABILITIES BAR ([Q] NOVA, [E] DASH, [F] LUFTSCHLAG) */}
+          {/* ===================================================================== */}
+          <div
+            className={`absolute ${
+              isMobileMode ? 'bottom-56 left-1/2 -translate-x-1/2' : 'bottom-16 left-1/2 -translate-x-1/2'
+            } flex items-center gap-2 z-30 pointer-events-auto`}
+          >
+            {[
+              {
+                id: 'shockwave' as const,
+                keyLabel: 'Q',
+                name: 'Bembel-Nova',
+                desc: 'AoE + 35 Schild',
+                cd: abilityCooldowns.shockwave,
+                maxCd: abilityCooldowns.shockwaveMax,
+                icon: Zap,
+                accent: 'border-amber-400 text-amber-300 bg-amber-500/20',
+              },
+              {
+                id: 'dash' as const,
+                keyLabel: 'E',
+                name: 'Taktik-Dash',
+                desc: 'Schub + Munition',
+                cd: abilityCooldowns.dash,
+                maxCd: abilityCooldowns.dashMax,
+                icon: Wind,
+                accent: 'border-cyan-400 text-cyan-300 bg-cyan-500/20',
+              },
+              {
+                id: 'overdrive' as const,
+                keyLabel: 'F',
+                name: 'Luftschlag',
+                desc: '3x Orbit + Overdrive',
+                cd: abilityCooldowns.overdrive,
+                maxCd: abilityCooldowns.overdriveMax,
+                icon: Flame,
+                accent: abilityCooldowns.overdriveActive
+                  ? 'border-yellow-300 text-slate-950 bg-amber-400 animate-pulse'
+                  : 'border-red-400 text-red-300 bg-red-500/20',
+              },
+            ].map((ab) => {
+              const Icon = ab.icon;
+              const isReady = ab.cd <= 0;
+              const ratio = ab.maxCd > 0 ? Math.max(0, Math.min(1, ab.cd / ab.maxCd)) : 0;
+
+              return (
+                <button
+                  key={ab.id}
+                  type="button"
+                  onClick={() => managerRef.current?.triggerAbility(ab.id)}
+                  className={`relative overflow-hidden flex items-center gap-2 px-3 py-2 rounded-2xl border-2 backdrop-blur-md shadow-2xl transition-all cursor-pointer ${
+                    isReady
+                      ? `${ab.accent} hover:scale-105`
+                      : 'border-slate-700 bg-slate-950/90 text-slate-500 opacity-80'
+                  }`}
+                  title={`${ab.name} [${ab.keyLabel}]: ${ab.desc}`}
+                >
+                  {/* Cooldown Fill Overlay */}
+                  {!isReady && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-slate-800/80 pointer-events-none transition-all duration-100"
+                      style={{ width: `${ratio * 100}%` }}
+                    />
+                  )}
+                  <div className="relative z-10 flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-950/90 text-white font-mono text-[10px] font-black">
+                      [{ab.keyLabel}]
+                    </span>
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <div className="text-left leading-tight">
+                      <div className="text-[11px] font-black text-white">{ab.name}</div>
+                      <div className="text-[9px] font-mono">
+                        {isReady ? ab.desc : `${ab.cd.toFixed(1)}s`}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* FORTNITE STYLE HEALTH & SHIELD STACK (BOTTOM LEFT ON PC, TOP-LEFT COMPACT ON MOBILE) */}
+          <div
+            className={`absolute ${
+              isMobileMode ? 'top-24 left-3 w-44' : 'bottom-14 left-6 w-64 md:w-80'
+            } flex flex-col gap-1.5 pointer-events-auto z-20`}
+          >
+            {!isMobileMode && (
+              <div className="flex items-center justify-between px-3 py-1 rounded-xl bg-slate-950/90 backdrop-blur-md border border-white/10 font-mono text-[10px]">
+                <span className="text-slate-400 uppercase font-bold">HALTUNG:</span>
+                {stance === 'sprinting' ? (
+                  <span className="text-amber-400 font-black tracking-wider flex items-center gap-1">
+                    ⚡ TAKTISCHER SPRINT [SHIFT]
+                  </span>
+                ) : stance === 'crouching' ? (
+                  <span className="text-cyan-400 font-black tracking-wider flex items-center gap-1">
+                    🛡️ GEDUCKT [STRG] (-35% Rückstoß)
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold tracking-wider">
+                    STEHEND [SHIFT Sprint · STRG Ducken]
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Fortnite Shield Bar (Electric Cyan) */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono font-black text-cyan-300 drop-shadow">
-                <div className="flex items-center gap-1.5">
-                  <Shield className="w-4 h-4 fill-cyan-400 text-cyan-300 animate-pulse" />
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between text-[11px] font-mono font-black text-cyan-300 drop-shadow">
+                <div className="flex items-center gap-1">
+                  <Shield className="w-3.5 h-3.5 fill-cyan-400 text-cyan-300" />
                   <span className="tracking-wider">SCHILD</span>
                 </div>
-                <span className="tabular-nums text-base font-black text-white">
-                  {Math.round(shield)} <span className="text-xs text-cyan-400/80 font-normal">/ {maxShield}</span>
+                <span className="tabular-nums text-xs sm:text-sm font-black text-white">
+                  {Math.round(shield)} <span className="text-[10px] text-cyan-400/80 font-normal">/ {maxShield}</span>
                 </span>
               </div>
-              <div className="w-full h-4 rounded-xl bg-slate-950/90 border-2 border-cyan-400/60 p-0.5 shadow-[0_0_15px_rgba(6,182,212,0.35)] overflow-hidden">
+              <div className="w-full h-3 sm:h-4 rounded-xl bg-slate-950/90 border-2 border-cyan-400/60 p-0.5 shadow-[0_0_15px_rgba(6,182,212,0.35)] overflow-hidden">
                 <div
-                  className="h-full rounded-lg bg-gradient-to-r from-cyan-500 via-sky-400 to-cyan-300 transition-all duration-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.6)]"
+                  className="h-full rounded-lg bg-gradient-to-r from-cyan-500 via-sky-400 to-cyan-300 transition-all duration-200"
                   style={{ width: `${(shield / maxShield) * 100}%` }}
                 />
               </div>
             </div>
 
             {/* Fortnite Health Bar (Lime Green) */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs font-mono font-black text-emerald-300 drop-shadow">
-                <div className="flex items-center gap-1.5">
-                  <Heart className="w-4 h-4 fill-emerald-400 text-emerald-300" />
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between text-[11px] font-mono font-black text-emerald-300 drop-shadow">
+                <div className="flex items-center gap-1">
+                  <Heart className="w-3.5 h-3.5 fill-emerald-400 text-emerald-300" />
                   <span className="tracking-wider">LEBEN</span>
                 </div>
-                <span className="tabular-nums text-base font-black text-white">
-                  {Math.round(health)} <span className="text-xs text-emerald-400/80 font-normal">/ {maxHealth}</span>
+                <span className="tabular-nums text-xs sm:text-sm font-black text-white">
+                  {Math.round(health)} <span className="text-[10px] text-emerald-400/80 font-normal">/ {maxHealth}</span>
                 </span>
               </div>
-              <div className="w-full h-4 rounded-xl bg-slate-950/90 border-2 border-emerald-400/60 p-0.5 shadow-[0_0_15px_rgba(16,185,129,0.35)] overflow-hidden">
+              <div className="w-full h-3 sm:h-4 rounded-xl bg-slate-950/90 border-2 border-emerald-400/60 p-0.5 shadow-[0_0_15px_rgba(16,185,129,0.35)] overflow-hidden">
                 <div
-                  className="h-full rounded-lg bg-gradient-to-r from-emerald-600 via-green-500 to-lime-400 transition-all duration-200 shadow-[inset_0_1px_2px_rgba(255,255,255,0.6)]"
+                  className="h-full rounded-lg bg-gradient-to-r from-emerald-600 via-green-500 to-lime-400 transition-all duration-200"
                   style={{ width: `${(health / maxHealth) * 100}%` }}
                 />
               </div>
             </div>
           </div>
 
-          {/* FORTNITE WEAPONS & BIG AMMO HUD (BOTTOM RIGHT) */}
-          <div className="absolute bottom-14 right-6 flex flex-col items-end gap-2 pointer-events-auto z-20">
-            {/* BIG FORTNITE AMMO DISPLAY (Above Weapon Hotbar) */}
+          {/* FORTNITE WEAPONS & BIG AMMO HUD (BOTTOM RIGHT ON PC, COMPACT TOP-CENTER/BOTTOM ON MOBILE) */}
+          <div
+            className={`absolute ${
+              isMobileMode ? 'bottom-16 left-1/2 -translate-x-1/2' : 'bottom-14 right-6'
+            } flex flex-col items-end gap-2 pointer-events-auto z-20`}
+          >
+            {/* BIG FORTNITE AMMO DISPLAY (PC Only) */}
             {!isMobileMode && (
               <div className="flex items-center gap-3 px-4 py-2 rounded-2xl bg-slate-950/92 backdrop-blur-md border-2 border-slate-700/80 shadow-2xl font-mono text-right">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                    {isReloading ? (
+                    {abilityCooldowns.overdriveActive ? (
+                      <span className="text-amber-300 animate-pulse flex items-center gap-1 justify-end">
+                        ⚡ OVERDRIVE AKTIV (UNENDLICH MAGAZIN!)
+                      </span>
+                    ) : isReloading ? (
                       <span className="text-amber-400 animate-pulse flex items-center gap-1 justify-end">
                         ⚡ NACHLADEN [{reloadSeconds.toFixed(1)}s]
                       </span>
@@ -1199,10 +1746,18 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                     )}
                   </div>
                   <div className="flex items-baseline justify-end gap-1.5">
-                    <span className={`text-4xl sm:text-5xl font-black tabular-nums tracking-tight ${
-                      isReloading ? 'text-amber-400 animate-pulse' : ammo.magazine <= 3 ? 'text-red-400 animate-pulse' : 'text-white'
-                    }`}>
-                      {ammo.magazine}
+                    <span
+                      className={`text-4xl sm:text-5xl font-black tabular-nums tracking-tight ${
+                        abilityCooldowns.overdriveActive
+                          ? 'text-amber-300'
+                          : isReloading
+                          ? 'text-amber-400 animate-pulse'
+                          : ammo.magazine <= 3
+                          ? 'text-red-400 animate-pulse'
+                          : 'text-white'
+                      }`}
+                    >
+                      {abilityCooldowns.overdriveActive ? '∞' : ammo.magazine}
                     </span>
                     <span className="text-xl font-bold text-slate-400 tabular-nums">
                       / {ammo.reserve}
@@ -1212,77 +1767,80 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
             )}
 
-            {/* Live weapon status: upgrades are shown as combat telemetry, never as a navigation prompt. */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/90 px-3 py-1.5 text-[10px] font-mono shadow-lg">
-              <span
-                className="font-bold mr-1"
-                style={{ color: activeWeaponStats.rarityObj.colorHex }}
-              >
-                LOADOUT
-              </span>
-              {(weaponUpgrades[activeWeapon]?.papLevel || 0) > 0 && (
-                <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 border border-fuchsia-400 text-fuchsia-300 font-bold">
-                  PaP {weaponUpgrades[activeWeapon]?.papLevel}
-                </span>
-              )}
-              {[
-                { key: 'scope', label: 'OPTIK', lv: attachments.scope || 0 },
-                { key: 'barrel', label: 'LAUF', lv: attachments.barrel || 0 },
-                { key: 'bolt', label: 'MÜNDUNG', lv: attachments.bolt || 0 },
-                { key: 'mag', label: 'MAGAZIN', lv: attachments.mag || 0 },
-                { key: 'stock', label: 'SCHAFT', lv: attachments.stock || 0 },
-              ].map((mod) => (
-                <div
-                  key={mod.key}
-                  className={`px-2 py-0.5 rounded border tabular-nums font-bold ${
-                    mod.lv > 0
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-500'
-                  }`}
+            {/* Live weapon status: upgrades are shown as combat telemetry */}
+            {!isMobileMode && (
+              <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/90 px-3 py-1.5 text-[10px] font-mono shadow-lg">
+                <span
+                  className="font-bold mr-1"
+                  style={{ color: activeWeaponStats.rarityObj.colorHex }}
                 >
-                  {mod.label} {mod.lv}
-                </div>
-              ))}
-            </div>
-
-            {/* Active weapon readout */}
-            <div className="w-full max-w-[22rem] rounded-2xl border border-white/15 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    <Crosshair className="h-3.5 w-3.5 text-amber-400" />
-                    Aktive Waffe
-                  </div>
-                  <div className="mt-1 truncate text-lg font-black text-white">
-                    {activeWeaponStats.displayName}
-                  </div>
-                  <div className="mt-0.5 truncate text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    {activeWeaponObj.codArchetype}
-                  </div>
-                </div>
-                <div className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-center">
-                  <div className="text-[9px] font-mono font-bold text-amber-300">SLOT</div>
-                  <div className="text-xl font-black leading-none text-white">
-                    {Math.max(1, Object.values(WEAPONS).findIndex((w) => w.id === activeWeapon) + 1)}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono">
-                <span className="font-bold" style={{ color: activeWeaponStats.rarityObj.colorHex }}>
-                  {activeWeaponStats.rarityObj.name}
+                  LOADOUT
                 </span>
-                <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponObj.fireRate.toFixed(1)} SCHUSS/S</span>
+                {(weaponUpgrades[activeWeapon]?.papLevel || 0) > 0 && (
+                  <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 border border-fuchsia-400 text-fuchsia-300 font-bold">
+                    PaP {weaponUpgrades[activeWeapon]?.papLevel}
+                  </span>
+                )}
+                {[
+                  { key: 'scope', label: 'OPTIK', lv: attachments.scope || 0 },
+                  { key: 'barrel', label: 'LAUF', lv: attachments.barrel || 0 },
+                  { key: 'bolt', label: 'MÜNDUNG', lv: attachments.bolt || 0 },
+                  { key: 'mag', label: 'MAGAZIN', lv: attachments.mag || 0 },
+                  { key: 'stock', label: 'SCHAFT', lv: attachments.stock || 0 },
+                ].map((mod) => (
+                  <div
+                    key={mod.key}
+                    className={`px-2 py-0.5 rounded border tabular-nums font-bold ${
+                      mod.lv > 0
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {mod.label} {mod.lv}
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
+
+            {/* Active weapon readout (PC) */}
+            {!isMobileMode && (
+              <div className="w-full max-w-[22rem] rounded-2xl border border-white/15 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      <Crosshair className="h-3.5 w-3.5 text-amber-400" />
+                      Aktive Waffe
+                    </div>
+                    <div className="mt-1 truncate text-lg font-black text-white">
+                      {activeWeaponStats.displayName}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      {activeWeaponObj.codArchetype}
+                    </div>
+                  </div>
+                  <div className="shrink-0 rounded-xl border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-center">
+                    <div className="text-[9px] font-mono font-bold text-amber-300">SLOT</div>
+                    <div className="text-xl font-black leading-none text-white">
+                      {Math.max(1, Object.values(WEAPONS).findIndex((w) => w.id === activeWeapon) + 1)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono">
+                  <span className="font-bold" style={{ color: activeWeaponStats.rarityObj.colorHex }}>
+                    {activeWeaponStats.rarityObj.name}
+                  </span>
+                  <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponObj.fireRate.toFixed(1)} SCHUSS/S</span>
+                </div>
+              </div>
+            )}
 
             {/* Four-slot weapon hotbar */}
-            <div className="flex items-center gap-2 rounded-2xl border-2 border-white/15 bg-slate-950/95 p-2 shadow-2xl">
+            <div className="flex items-center gap-1.5 sm:gap-2 rounded-2xl border-2 border-white/15 bg-slate-950/95 p-1.5 sm:p-2 shadow-2xl">
               {Object.values(WEAPONS).map((w, idx) => {
                 const isSelected = activeWeapon === w.id;
                 const wState = weaponUpgrades[w.id];
                 const wStats = getEffectiveWeaponStats(w, wState);
 
-                // Fortnite-like gradient backgrounds based on weapon rarity
                 const tier = wStats.rarityObj.tier;
                 const rarityBg =
                   tier === 5
@@ -1300,25 +1858,27 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                     key={w.id}
                     type="button"
                     onClick={() => selectWeapon(w.id)}
-                    className={`relative flex flex-col items-center justify-between w-18 h-18 sm:w-20 sm:h-20 p-2 rounded-2xl border-2 transition-all cursor-pointer ${rarityBg} ${
+                    className={`relative flex flex-col items-center justify-between ${
+                      isMobileMode ? 'w-14 h-14 p-1.5' : 'w-18 h-18 sm:w-20 sm:h-20 p-2'
+                    } rounded-2xl border-2 transition-all cursor-pointer ${rarityBg} ${
                       isSelected
                         ? 'scale-105 shadow-[0_0_24px_rgba(251,191,36,0.45)] ring-2 ring-amber-300 border-amber-200'
                         : 'opacity-75 hover:opacity-100 hover:scale-105'
                     }`}
                     aria-label={`${wStats.displayName}, Slot ${idx + 1}`}
                   >
-                    <div className="flex items-center justify-between w-full text-[10px] font-mono font-black">
-                      <span className="px-1.5 py-0.5 rounded-md bg-slate-900/90 text-white shadow">
+                    <div className="flex items-center justify-between w-full text-[9px] sm:text-[10px] font-mono font-black">
+                      <span className="px-1 py-0.5 rounded-md bg-slate-900/90 text-white shadow">
                         [{idx + 1}]
                       </span>
                       {(wState?.papLevel || 0) > 0 && (
                         <span className="text-fuchsia-300 font-bold">PaP{wState?.papLevel}</span>
                       )}
                     </div>
-                    <span className="text-[11px] sm:text-xs font-black text-white text-center leading-tight truncate w-full drop-shadow">
+                    <span className="text-[10px] sm:text-xs font-black text-white text-center leading-tight truncate w-full drop-shadow">
                       {wStats.displayName.split(' ')[0]}
                     </span>
-                    <span className="text-[10px] font-mono text-amber-300 tabular-nums font-black drop-shadow">
+                    <span className="text-[9px] sm:text-[10px] font-mono text-amber-300 tabular-nums font-black drop-shadow">
                       {wStats.damage} DMG
                     </span>
                   </button>
@@ -1390,46 +1950,48 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
       )}
 
       {/* 7 NEU-ANSPACH ARENA SELECTOR BAR WITH UNLOCK PROGRESSION (BOTTOM CENTER) */}
-      <div className="absolute bottom-16 lg:bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-white/15 text-[11px] font-mono text-slate-300 pointer-events-auto z-20 max-w-[96vw] overflow-x-auto shadow-2xl">
-        <span className="text-amber-400 font-bold flex items-center gap-1 pr-1 shrink-0">
-          <Layers className="w-3.5 h-3.5" />
-          <span>MAPS ({unlockedMaps.length}/7):</span>
-        </span>
-        {Object.values(ARENAS).map((a) => {
-          const isUnlocked = checkArenaUnlocked(a.id, totalWins, unlockedMaps);
-          const isCurrent = currentArena === a.id;
+      {!isMobileMode && (
+        <div className="absolute bottom-16 lg:bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-white/15 text-[11px] font-mono text-slate-300 pointer-events-auto z-20 max-w-[96vw] overflow-x-auto shadow-2xl">
+          <span className="text-amber-400 font-bold flex items-center gap-1 pr-1 shrink-0">
+            <Layers className="w-3.5 h-3.5" />
+            <span>MAPS ({unlockedMaps.length}/7):</span>
+          </span>
+          {Object.values(ARENAS).map((a) => {
+            const isUnlocked = checkArenaUnlocked(a.id, totalWins, unlockedMaps);
+            const isCurrent = currentArena === a.id;
 
-          return (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => {
-                if (isUnlocked) {
-                  setLockedArenaPrompt(null);
-                  onChangeArena(a.id);
-                } else {
-                  setLockedArenaPrompt(a.id);
-                }
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                isCurrent
-                  ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
-                  : isUnlocked
-                  ? 'hover:bg-slate-800 hover:text-white text-slate-200'
-                  : 'bg-slate-900/80 text-slate-500 hover:text-slate-300 border border-slate-800'
-              }`}
-            >
-              {!isUnlocked && <Lock className="w-3 h-3 text-amber-400/80 shrink-0" />}
-              <span>
-                {a.name
-                  .replace('Freilichtmuseum ', '')
-                  .replace(' Neu-Anspach', '')
-                  .replace(' (Taunusbahn)', '')}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => {
+                  if (isUnlocked) {
+                    setLockedArenaPrompt(null);
+                    onChangeArena(a.id);
+                  } else {
+                    setLockedArenaPrompt(a.id);
+                  }
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  isCurrent
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
+                    : isUnlocked
+                    ? 'hover:bg-slate-800 hover:text-white text-slate-200'
+                    : 'bg-slate-900/80 text-slate-500 hover:text-slate-300 border border-slate-800'
+                }`}
+              >
+                {!isUnlocked && <Lock className="w-3 h-3 text-amber-400/80 shrink-0" />}
+                <span>
+                  {a.name
+                    .replace('Freilichtmuseum ', '')
+                    .replace(' Neu-Anspach', '')
+                    .replace(' (Taunusbahn)', '')}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {showSettings && (
         <div

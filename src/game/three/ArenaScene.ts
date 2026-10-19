@@ -161,6 +161,42 @@ export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
   crouch: 'control',
 };
 
+import { MatchPerkId } from '../progression';
+
+export interface RadarBlip {
+  id: string;
+  x: number;
+  z: number;
+  kind: 'enemy' | 'boss' | 'ally' | 'loot' | 'chest' | 'taler';
+}
+
+export interface RadarState {
+  playerX: number;
+  playerZ: number;
+  playerYaw: number;
+  stormRadius: number;
+  blips: RadarBlip[];
+}
+
+export interface AbilityCooldownsState {
+  shockwave: number;
+  shockwaveMax: number;
+  dash: number;
+  dashMax: number;
+  overdrive: number;
+  overdriveMax: number;
+  overdriveActive: boolean;
+}
+
+export interface KillFeedNotification {
+  id: string;
+  label: string;
+  sublabel?: string;
+  points: number;
+  isCrit?: boolean;
+  isBoss?: boolean;
+}
+
 export interface GameEventCallbacks {
   onHealthChange: (hp: number, maxHp: number, shield: number, maxShield: number) => void;
   onKillsChange: (kills: number) => void;
@@ -191,6 +227,12 @@ export interface GameEventCallbacks {
     wave: number;
     isCrit: boolean;
   }) => void;
+  onComboChange?: (multiplier: number, timerRatio: number) => void;
+  onAbilityCooldownsChange?: (state: AbilityCooldownsState) => void;
+  onRadarUpdate?: (radar: RadarState) => void;
+  onKillFeedEvent?: (item: KillFeedNotification) => void;
+  onPlayerDamaged?: (amount: number, source?: string, shieldBroken?: boolean) => void;
+  onAbilityUsed?: (abilityId: 'shockwave' | 'dash' | 'overdrive', label: string) => void;
 }
 
 function createDamageSprite(amount: number, isCrit: boolean): THREE.Sprite {
@@ -205,13 +247,13 @@ function createDamageSprite(amount: number, isCrit: boolean): THREE.Sprite {
   ctx.textAlign = 'center';
   ctx.shadowColor = '#000000';
   ctx.shadowBlur = 8;
-  ctx.fillText(amount.toString(), 64, 46);
+  ctx.fillText(isCrit ? `${amount}!` : amount.toString(), 64, 46);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(1.8, 0.9, 1);
+  sprite.scale.set(isCrit ? 2.15 : 1.8, isCrit ? 1.08 : 0.9, 1);
   return sprite;
 }
 
@@ -276,6 +318,28 @@ export class ArenaSceneManager {
   private playerLevel = 1;
   private playerExperience = 0;
   private experienceToNextLevel = 500;
+
+  // Gamification: Adrenaline Combo, Roguelite Perks, Abilities & Camera Shake
+  private activeMatchPerks = new Set<MatchPerkId>();
+  private comboMultiplier = 1;
+  private comboTimer = 0;
+  private comboMaxTimer = 6.0;
+  private lastComboNotifyTime = 0;
+  private shockwaveCooldown = 0;
+  private shockwaveMaxCooldown = 10;
+  private dashCooldown = 0;
+  private dashMaxCooldown = 5;
+  private overdriveCooldown = 0;
+  private overdriveMaxCooldown = 22;
+  private overdriveActiveTimer = 0;
+  private dashInvulnTimer = 0;
+  private dashBurstX = 0;
+  private dashBurstZ = 0;
+  private lastAbilityNotifyTime = 0;
+  private lastRadarNotifyTime = 0;
+  private cameraShakeIntensity = 0;
+  private mobileAutoFire = true;
+  private shockwaveEffects: { mesh: THREE.Mesh; life: number; maxLife: number; maxRadius: number }[] = [];
 
   // Brawl Stars Detailed Combat Tracking (Player, Allies, Bots)
   private matchStartTime = performance.now();
@@ -798,6 +862,309 @@ export class ArenaSceneManager {
     }
   }
 
+  public setMobileFireHeld(held: boolean) {
+    if (this.peacefulMode || this.isGameOver) {
+      this.isMousePhysicallyHeld = false;
+      this.isMouseDown = false;
+      return;
+    }
+    this.isMousePhysicallyHeld = held;
+    this.isMouseDown = held;
+    if (held) {
+      this.firePlayerWeapon();
+    }
+  }
+
+  public toggleMobileAim(): boolean {
+    if (this.peacefulMode) {
+      this.isAiming = false;
+      return false;
+    }
+    this.isAiming = !this.isAiming;
+    return this.isAiming;
+  }
+
+  public setMobileAutoFire(enabled: boolean) {
+    this.mobileAutoFire = enabled;
+  }
+
+  public applyMatchPerk(perkId: MatchPerkId) {
+    this.activeMatchPerks.add(perkId);
+    soundFx.playPerkSelect();
+
+    if (perkId === 'panzer_weste') {
+      this.playerMaxShield += 40;
+      this.playerMaxHealth += 40;
+      this.playerShield = this.playerMaxShield;
+      this.playerHealth = this.playerMaxHealth;
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+    } else if (perkId === 'adrenalin_schub') {
+      this.playerSpeed *= 1.18;
+    } else if (perkId === 'schnellfinger') {
+      this.reloadDuration = Math.max(0.6, this.reloadDuration * 0.6);
+      const cap = this.getMagazineCapacity();
+      this.magazineAmmo = cap;
+      this.reserveAmmo = cap * 4;
+      this.notifyAmmoState();
+    } else if (perkId === 'trupp_moral') {
+      this.revitalizeAllies();
+      for (const ally of this.allies) {
+        ally.maxHealth += 35;
+        ally.health = ally.maxHealth;
+        ally.damage = Math.round(ally.damage * 1.4);
+        ally.speed *= 1.15;
+      }
+      this.notifyAllies();
+    } else if (perkId === 'goldrausch') {
+      this.callbacks.onLootPickup('taler', 60, 'Stadtkassen-Goldrausch (+60 NAT)');
+      this.score += 120;
+      this.callbacks.onScoreChange(this.score);
+    }
+  }
+
+  private spawnShockwaveRing(pos: THREE.Vector3, maxRadius: number, colorHex: number) {
+    const geo = new THREE.RingGeometry(0.4, 0.95, 32);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(pos.x, pos.y + 0.18, pos.z);
+    this.scene.add(mesh);
+    this.shockwaveEffects.push({
+      mesh,
+      life: 0.48,
+      maxLife: 0.48,
+      maxRadius,
+    });
+  }
+
+  private incrementCombo(basePoints: number, label: string, isCrit: boolean, isBoss: boolean): number {
+    this.comboTimer = this.comboMaxTimer;
+    const prevCombo = this.comboMultiplier;
+    this.comboMultiplier = Math.min(8, this.comboMultiplier + (isBoss ? 2 : 1));
+    if (this.comboMultiplier > prevCombo && this.comboMultiplier >= 2) {
+      soundFx.playComboMilestone(this.comboMultiplier);
+    }
+    const multipliedPoints = Math.round(basePoints * this.comboMultiplier);
+    this.score += multipliedPoints;
+    this.callbacks.onScoreChange(this.score);
+    this.callbacks.onComboChange?.(this.comboMultiplier, 1.0);
+    this.callbacks.onKillFeedEvent?.({
+      id: `kf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      label,
+      sublabel: this.comboMultiplier > 1 ? `${this.comboMultiplier}x ADRENALIN-SERIE` : undefined,
+      points: multipliedPoints,
+      isCrit,
+      isBoss,
+    });
+    return multipliedPoints;
+  }
+
+  public triggerAbility(ability: 'shockwave' | 'dash' | 'overdrive'): boolean {
+    if (this.peacefulMode || this.isGameOver || this.isPaused) return false;
+    const cdMultiplier = this.activeMatchPerks.has('adrenalin_schub') ? 0.7 : 1.0;
+
+    if (ability === 'shockwave') {
+      if (this.shockwaveCooldown > 0) return false;
+      this.shockwaveCooldown = this.shockwaveMaxCooldown * cdMultiplier;
+      soundFx.playShockwave();
+      this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.36);
+      this.spawnShockwaveRing(this.playerPos, 11.5, 0xF59E0B);
+      this.spawnImpactSparks(this.playerPos.clone().add(new THREE.Vector3(0, 1.0, 0)), 0xF59E0B, 16);
+
+      // Restore +35 Tactical Shield on Bembel-Nova cast
+      this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 35);
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+
+      const blastDamage = 95 + this.wave * 18;
+      for (let j = this.agents.length - 1; j >= 0; j--) {
+        const ag = this.agents[j];
+        const dist = this.playerPos.distanceTo(ag.position);
+        if (dist <= 11.5) {
+          ag.health -= blastDamage;
+          this.playerParticipantStats.damageDealt += blastDamage;
+          this.spawnDamageNumber(ag.position, blastDamage, true);
+          this.spawnImpactSparks(ag.position.clone().add(new THREE.Vector3(0, 1.1, 0)), 0xF59E0B, 8);
+
+          // Knockback away from player
+          const pushDir = ag.position.clone().sub(this.playerPos).setY(0).normalize();
+          ag.position.addScaledVector(pushDir, 4.2);
+          ag.mesh.position.copy(ag.position);
+
+          if (ag.health <= 0) {
+            this.eliminateEnemyAt(j, true, 'Bembel-Nova [Q]');
+          }
+        }
+      }
+      this.callbacks.onAbilityUsed?.('shockwave', 'Bembel-Nova Schockwelle (+35 Schild)!');
+      return true;
+    }
+
+    if (ability === 'dash') {
+      if (this.dashCooldown > 0) return false;
+      this.dashCooldown = this.dashMaxCooldown * cdMultiplier;
+      soundFx.playDash();
+      this.dashInvulnTimer = 0.65;
+      this.spawnShockwaveRing(this.playerPos, 3.6, 0x38BDF8);
+
+      // Instant combat reload boost (+10 rounds directly into magazine)
+      const cap = this.getMagazineCapacity();
+      this.magazineAmmo = Math.min(cap, this.magazineAmmo + Math.max(4, Math.round(cap * 0.5)));
+      this.notifyAmmoState();
+
+      // Surge forward in movement or camera direction
+      const dashDir = new THREE.Vector3(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw)).normalize();
+      if (Math.hypot(this.playerVelX, this.playerVelZ) > 0.5) {
+        dashDir.set(this.playerVelX, 0, this.playerVelZ).normalize();
+      }
+      this.playerVelX = dashDir.x * 26;
+      this.playerVelZ = dashDir.z * 26;
+      if (this.isGrounded) {
+        this.playerVelY = 4.6;
+        this.isGrounded = false;
+      }
+      this.callbacks.onAbilityUsed?.('dash', 'Taktischer Dash & Schnell-Magazin!');
+      return true;
+    }
+
+    if (ability === 'overdrive') {
+      if (this.overdriveCooldown > 0) return false;
+      this.overdriveCooldown = this.overdriveMaxCooldown * cdMultiplier;
+      this.overdriveActiveTimer = 7.0;
+      soundFx.playOrbitalStrike();
+      this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.48);
+
+      // Refill magazine immediately and heal +30 HP & Shield
+      this.magazineAmmo = this.getMagazineCapacity();
+      this.notifyAmmoState();
+      this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 40);
+      this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + 30);
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+
+      // Strike up to 3 highest-priority targets from orbit
+      const sortedTargets = [...this.agents].sort((a, b) => {
+        if (a.role === 'boss') return -1;
+        if (b.role === 'boss') return 1;
+        return this.playerPos.distanceTo(a.position) - this.playerPos.distanceTo(b.position);
+      });
+      const strikeTargets = sortedTargets.slice(0, 3);
+      const orbitalDmg = 185 + this.wave * 25;
+
+      if (strikeTargets.length === 0) {
+        const forwardStrike = this.playerPos
+          .clone()
+          .add(new THREE.Vector3(-Math.sin(this.cameraYaw) * 10, 0, -Math.cos(this.cameraYaw) * 10));
+        this.spawnShockwaveRing(forwardStrike, 8.5, 0xEF4444);
+        this.spawnImpactSparks(forwardStrike.add(new THREE.Vector3(0, 1, 0)), 0xF59E0B, 20);
+      } else {
+        for (const target of strikeTargets) {
+          const strikePos = target.position.clone();
+          this.spawnShockwaveRing(strikePos, 7.5, 0xEF4444);
+          this.spawnImpactSparks(strikePos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xF59E0B, 18);
+
+          for (let j = this.agents.length - 1; j >= 0; j--) {
+            const ag = this.agents[j];
+            if (ag.position.distanceTo(strikePos) <= 6.5) {
+              ag.health -= orbitalDmg;
+              this.playerParticipantStats.damageDealt += orbitalDmg;
+              this.spawnDamageNumber(ag.position, orbitalDmg, true);
+              if (ag.health <= 0) {
+                this.eliminateEnemyAt(j, true, 'Feldberg-Luftschlag [F]');
+              }
+            }
+          }
+        }
+      }
+
+      this.callbacks.onAbilityUsed?.('overdrive', 'FELDBERG-LUFTSCHLAG & 7s OVERDRIVE AKTIV!');
+      return true;
+    }
+
+    return false;
+  }
+
+  private eliminateEnemyAt(j: number, isCrit: boolean, sourceLabel?: string) {
+    const ag = this.agents[j];
+    if (!ag) return;
+
+    this.playerParticipantStats.kills += 1;
+    const enemyStats = this.allEnemiesStats.get(ag.id);
+    if (enemyStats) {
+      enemyStats.deaths += 1;
+    }
+
+    // Vampir-Äppler Perk: heal +12 Shield & +6 HP on every kill
+    if (this.activeMatchPerks.has('vampir_aeppler')) {
+      this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 12);
+      this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + 6);
+      this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+    }
+
+    if (this.trainingMode) {
+      this.kills += 1;
+      this.callbacks.onKillsChange(this.kills);
+      this.incrementCombo(50, `${ag.name} getroffen`, isCrit, false);
+      soundFx.playKill();
+      ag.health = ag.maxHealth;
+      ag.position.x = (Math.random() - 0.5) * 18;
+      ag.position.z = -8 - Math.random() * 5;
+      ag.mesh.position.copy(ag.position);
+      this.notifyWaveState();
+      return;
+    }
+
+    this.awardExperience(ag.role === 'boss' ? 250 : 100);
+    this.kills += 1;
+    this.callbacks.onKillsChange(this.kills);
+
+    const baseScore = ag.role === 'boss' ? 500 : 100;
+    const killTitle =
+      ag.role === 'boss'
+        ? `BOSS ELIMINIERT: ${ag.name}`
+        : isCrit
+        ? `KRIT-TREFFER: ${ag.name}`
+        : `${ag.name} ausgeschaltet${sourceLabel ? ` (${sourceLabel})` : ''}`;
+    this.incrementCombo(baseScore, killTitle, isCrit, ag.role === 'boss');
+
+    this.callbacks.onEnemyKilled?.({
+      arenaId: this.currentArenaId,
+      role: ag.role,
+      isBoss: ag.role === 'boss',
+      weaponId: this.currentWeapon.id,
+      wave: this.wave,
+      isCrit,
+    });
+    this.dropLoot(ag.position);
+    soundFx.playKill();
+
+    this.scene.remove(ag.mesh);
+    this.agents.splice(j, 1);
+
+    if (this.agents.length === 0) {
+      this.awardExperience(250 + this.wave * 50);
+      if (this.wave < this.totalWaves) {
+        this.waveIntermissionTimer = 6.5;
+        soundFx.playWaveVictory();
+        this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 35);
+        this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + 25);
+        this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
+        this.revitalizeAllies();
+        this.notifyWaveState();
+      } else {
+        this.isGameOver = true;
+        this.unlockPointer();
+        soundFx.playLevelUp();
+        this.callbacks.onGameOver(true, this.getDetailedMatchStats(true));
+      }
+    } else {
+      this.notifyWaveState();
+    }
+  }
+
   private spawnImpactSparks(pos: THREE.Vector3, colorHex: number, count = 7) {
     const geo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
     const mat = new THREE.MeshBasicMaterial({ color: colorHex });
@@ -1247,6 +1614,11 @@ export class ArenaSceneManager {
         if (k === '2' || code === 'Digit2' || code === 'Numpad2') this.setWeapon('zwille');
         if (k === '3' || code === 'Digit3' || code === 'Numpad3') this.setWeapon('spritzer');
         if (k === '4' || code === 'Digit4' || code === 'Numpad4') this.setWeapon('handkaes');
+        if (!e.repeat) {
+          if (lowerKey === 'q') this.triggerAbility('shockwave');
+          if (lowerKey === 'e') this.triggerAbility('dash');
+          if (lowerKey === 'f') this.triggerAbility('overdrive');
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -1413,18 +1785,21 @@ export class ArenaSceneManager {
     });
 
     const now = performance.now() / 1000;
-    const effectiveFireRate = effectiveStats.fireRate;
+    const overdriveFireMult = this.overdriveActiveTimer > 0 ? 1.45 : 1.0;
+    const effectiveFireRate = effectiveStats.fireRate * overdriveFireMult;
     if (now - this.lastFireTime < 1 / effectiveFireRate) {
       return;
     }
-    if (this.magazineAmmo <= 0) {
+    if (this.magazineAmmo <= 0 && this.overdriveActiveTimer <= 0) {
       this.reloadWeapon();
       return;
     }
-    this.magazineAmmo -= 1;
-    this.notifyAmmoState();
+    if (this.overdriveActiveTimer <= 0) {
+      this.magazineAmmo -= 1;
+      this.notifyAmmoState();
+    }
     this.lastFireTime = now;
-    soundFx.playShoot();
+    soundFx.playShoot(this.currentWeapon.id);
 
     const crouchRecoilMult = 1 - this.currentCrouchAmount * 0.35;
     const recoilReduction = Math.max(0.3, (1 - (this.attachments.scope || 0) * 0.16) * crouchRecoilMult);
@@ -1447,10 +1822,15 @@ export class ArenaSceneManager {
     this.muzzleLight.intensity = 4.5 + (upgState.papLevel || 0) * 1.5;
     this.muzzleFlashTimer = 0.045;
 
-    const effectiveDamage = effectiveStats.damage;
+    const perkDmgMult =
+      (this.activeMatchPerks.has('explosiv_kerne') ? 1.25 : 1.0) *
+      (this.overdriveActiveTimer > 0 ? 1.25 : 1.0);
+    const perkSplashBonus = this.activeMatchPerks.has('explosiv_kerne') ? 1.15 : 0;
+
+    const effectiveDamage = Math.round(effectiveStats.damage * perkDmgMult);
     const effectiveSpeed = effectiveStats.bulletSpeed;
-    const effectiveSplash = effectiveStats.splashRadius;
-    const activeTracerColor = effectiveStats.tracerColor;
+    const effectiveSplash = effectiveStats.splashRadius + perkSplashBonus;
+    const activeTracerColor = this.overdriveActiveTimer > 0 ? '#FACC15' : effectiveStats.tracerColor;
 
     const isMine = this.currentWeapon.id === 'handkaes';
     const isShotgun = this.currentWeapon.id === 'spritzer';
@@ -1694,9 +2074,83 @@ export class ArenaSceneManager {
       this.recoilPitch = Math.max(0, this.recoilPitch - delta * 0.28);
     }
 
-    // Auto-Fire while holding left mouse button (Battle Royale mode only)
-    if (this.isMouseDown && !this.isGameOver && !this.peacefulMode) {
-      this.firePlayerWeapon();
+    // Tactical Operator Ability Cooldowns & Overdrive Timer
+    if (this.shockwaveCooldown > 0) this.shockwaveCooldown = Math.max(0, this.shockwaveCooldown - delta);
+    if (this.dashCooldown > 0) this.dashCooldown = Math.max(0, this.dashCooldown - delta);
+    if (this.overdriveCooldown > 0) this.overdriveCooldown = Math.max(0, this.overdriveCooldown - delta);
+    if (this.overdriveActiveTimer > 0) this.overdriveActiveTimer = Math.max(0, this.overdriveActiveTimer - delta);
+    if (this.dashInvulnTimer > 0) this.dashInvulnTimer = Math.max(0, this.dashInvulnTimer - delta);
+
+    if (elapsed - this.lastAbilityNotifyTime > 0.1) {
+      this.lastAbilityNotifyTime = elapsed;
+      const cdMult = this.activeMatchPerks.has('adrenalin_schub') ? 0.7 : 1.0;
+      this.callbacks.onAbilityCooldownsChange?.({
+        shockwave: Math.round(this.shockwaveCooldown * 10) / 10,
+        shockwaveMax: Math.round(this.shockwaveMaxCooldown * cdMult * 10) / 10,
+        dash: Math.round(this.dashCooldown * 10) / 10,
+        dashMax: Math.round(this.dashMaxCooldown * cdMult * 10) / 10,
+        overdrive: Math.round(this.overdriveCooldown * 10) / 10,
+        overdriveMax: Math.round(this.overdriveMaxCooldown * cdMult * 10) / 10,
+        overdriveActive: this.overdriveActiveTimer > 0,
+      });
+    }
+
+    // Adrenaline Combo Streak Decay
+    if (this.comboTimer > 0) {
+      this.comboTimer = Math.max(0, this.comboTimer - delta);
+      this.callbacks.onComboChange?.(this.comboMultiplier, this.comboTimer / this.comboMaxTimer);
+      if (this.comboTimer === 0 && this.comboMultiplier > 1) {
+        this.comboMultiplier = 1;
+        this.callbacks.onComboChange?.(1, 0);
+      }
+    }
+
+    // Expanding 3D Shockwave & Orbital Rings
+    for (let sIdx = this.shockwaveEffects.length - 1; sIdx >= 0; sIdx--) {
+      const sw = this.shockwaveEffects[sIdx];
+      sw.life -= delta;
+      const progress = 1 - Math.max(0, sw.life / sw.maxLife);
+      const scale = Math.max(0.2, progress * sw.maxRadius);
+      sw.mesh.scale.set(scale, scale, 1);
+      const mat = sw.mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0, (sw.life / sw.maxLife) * 0.9);
+      if (sw.life <= 0) {
+        this.scene.remove(sw.mesh);
+        this.shockwaveEffects.splice(sIdx, 1);
+      }
+    }
+
+    // Auto-Fire while holding left mouse button OR Mobile Auto-Fire when locked onto target
+    if (!this.isGameOver && !this.peacefulMode) {
+      if (this.isMouseDown) {
+        this.firePlayerWeapon();
+      } else if (this.mobileAutoFire && this.agents.length > 0) {
+        // Mobile Smart Aim-Assist & Auto-Fire when an enemy is within frontal cone
+        this.camera.getWorldDirection(_bulletDir);
+        let bestDot = 0.92; // ~23 degree cone
+        let lockTarget: WehrheimerAgent | null = null;
+        for (const ag of this.agents) {
+          const dist = this.playerPos.distanceTo(ag.position);
+          if (dist <= this.currentWeapon.range * 1.15) {
+            _tempVec.subVectors(ag.position.clone().add(new THREE.Vector3(0, 1.1, 0)), this.camera.position).normalize();
+            const dot = _bulletDir.dot(_tempVec);
+            if (dot > bestDot) {
+              bestDot = dot;
+              lockTarget = ag;
+            }
+          }
+        }
+        if (lockTarget) {
+          // Gentle magnetic aim assist toward target
+          const dx = lockTarget.position.x - this.playerPos.x;
+          const dz = lockTarget.position.z - this.playerPos.z;
+          const targetYaw = Math.atan2(-dx, -dz);
+          let yawDiff = targetYaw - this.cameraYaw;
+          yawDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
+          this.cameraYaw += yawDiff * Math.min(1, delta * 4.5);
+          this.firePlayerWeapon();
+        }
+      }
     }
 
     // Wave Intermission Breather countdown
@@ -1729,6 +2183,57 @@ export class ArenaSceneManager {
     this.updateFloatingDamages(delta);
     this.updateImpactParticles(delta);
     this.updateLoot();
+
+    // Throttled 2D Tactical Radar Telemetry Update (~8 Hz)
+    if (elapsed - this.lastRadarNotifyTime > 0.12) {
+      this.lastRadarNotifyTime = elapsed;
+      const blips: RadarBlip[] = [];
+      for (const ag of this.agents) {
+        blips.push({
+          id: ag.id,
+          x: ag.position.x,
+          z: ag.position.z,
+          kind: ag.role === 'boss' ? 'boss' : 'enemy',
+        });
+      }
+      for (const al of this.allies) {
+        blips.push({
+          id: al.id,
+          x: al.position.x,
+          z: al.position.z,
+          kind: 'ally',
+        });
+      }
+      for (let cIdx = 0; cIdx < this.destructibles.length; cIdx++) {
+        const prop = this.destructibles[cIdx];
+        if (prop.kind === 'tech_case') {
+          blips.push({
+            id: `chest_${cIdx}`,
+            x: prop.position.x,
+            z: prop.position.z,
+            kind: 'chest',
+          });
+        }
+      }
+      for (let lIdx = 0; lIdx < this.lootItems.length; lIdx++) {
+        const lt = this.lootItems[lIdx];
+        if (lt.type === 'taler' || lt.type === 'attachment') {
+          blips.push({
+            id: `loot_${lIdx}`,
+            x: lt.pos.x,
+            z: lt.pos.z,
+            kind: lt.type === 'taler' ? 'taler' : 'chest',
+          });
+        }
+      }
+      this.callbacks.onRadarUpdate?.({
+        playerX: this.playerPos.x,
+        playerZ: this.playerPos.z,
+        playerYaw: this.cameraYaw,
+        stormRadius: this.stormRadius,
+        blips,
+      });
+    }
 
     // Throttled Compass Heading Update (prevents React state thrashing on mousemove!)
     if (elapsed - this.lastHeadingNotifyTime > 0.08) {
@@ -1771,6 +2276,15 @@ export class ArenaSceneManager {
       .addScaledVector(_forward, -this.cameraDistance * Math.cos(effectivePitch))
       .addScaledVector(_right, this.shoulderOffset)
       .add(new THREE.Vector3(0, this.cameraDistance * Math.sin(effectivePitch) + 0.18, 0));
+
+    // Apply procedural screen-shake from explosions, abilities, or incoming damage
+    if (this.cameraShakeIntensity > 0.005) {
+      _desiredCamPos.x += (Math.random() - 0.5) * this.cameraShakeIntensity;
+      _desiredCamPos.y += (Math.random() - 0.5) * this.cameraShakeIntensity;
+      this.cameraShakeIntensity = Math.max(0, this.cameraShakeIntensity - delta * 1.6);
+    } else {
+      this.cameraShakeIntensity = 0;
+    }
 
     // Clamp camera height so it never clips under the ground when looking up
     _desiredCamPos.y = Math.max(this.playerPos.y + 0.38, _desiredCamPos.y);
@@ -2244,9 +2758,11 @@ export class ArenaSceneManager {
           const hitDist = _closest.distanceTo(enemyChest);
 
           if (hitDist <= (b.splashRadius || 1.45)) {
-            const critChance = 0.22 + this.attachments.mag * 0.08;
+            const perkCritBonus = this.activeMatchPerks.has('scharfschuetzen_fokus') ? 0.35 : 0;
+            const critChance = 0.22 + this.attachments.mag * 0.08 + perkCritBonus;
             const isCrit = b.fromPlayer && Math.random() < critChance;
-            const finalDmg = isCrit ? Math.round(b.damage * 1.5) : b.damage;
+            const critMult = this.activeMatchPerks.has('scharfschuetzen_fokus') ? 2.1 : 1.5;
+            const finalDmg = isCrit ? Math.round(b.damage * critMult) : b.damage;
             ag.health -= finalDmg;
 
             if (b.fromPlayer) {
@@ -2259,7 +2775,11 @@ export class ArenaSceneManager {
               enemyStats.damageTaken += finalDmg;
             }
 
-            soundFx.playHit();
+            if (isCrit) {
+              soundFx.playCritHit();
+            } else {
+              soundFx.playHit();
+            }
             this.spawnImpactSparks(_closest, isCrit ? 0xEF4444 : 0x38BDF8, 6);
             this.spawnDamageNumber(ag.position, finalDmg, isCrit);
             if (b.fromPlayer) {
@@ -2270,67 +2790,10 @@ export class ArenaSceneManager {
             this.bullets.splice(i, 1);
 
             if (ag.health <= 0) {
-              if (b.fromPlayer) {
-                this.playerParticipantStats.kills += 1;
-              } else if (b.fromAllyId && this.allAlliesStats.has(b.fromAllyId)) {
+              if (!b.fromPlayer && b.fromAllyId && this.allAlliesStats.has(b.fromAllyId)) {
                 this.allAlliesStats.get(b.fromAllyId)!.kills += 1;
               }
-              if (enemyStats) {
-                enemyStats.deaths += 1;
-              }
-
-              if (this.trainingMode) {
-                this.score += 50;
-                this.kills += 1;
-                this.callbacks.onKillsChange(this.kills);
-                this.callbacks.onScoreChange(this.score);
-                soundFx.playKill();
-                ag.health = ag.maxHealth;
-                ag.position.x = (Math.random() - 0.5) * 18;
-                ag.position.z = -8 - Math.random() * 5;
-                ag.mesh.position.copy(ag.position);
-                this.notifyWaveState();
-                continue;
-              }
-              this.awardExperience(100);
-              this.kills += 1;
-              this.score += ag.role === 'boss' ? 500 : 100;
-              this.callbacks.onKillsChange(this.kills);
-              this.callbacks.onScoreChange(this.score);
-              this.callbacks.onEnemyKilled?.({
-                arenaId: this.currentArenaId,
-                role: ag.role,
-                isBoss: ag.role === 'boss',
-                weaponId: this.currentWeapon.id,
-                wave: this.wave,
-                isCrit,
-              });
-              this.dropLoot(ag.position);
-              soundFx.playKill();
-
-              this.scene.remove(ag.mesh);
-              this.agents.splice(j, 1);
-
-              if (this.agents.length === 0) {
-                this.awardExperience(250 + this.wave * 50);
-                if (this.wave < this.totalWaves) {
-                  this.waveIntermissionTimer = 5.0;
-                  soundFx.playWaveVictory();
-                  this.playerShield = Math.min(this.playerMaxShield, this.playerShield + 35);
-                  this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + 25);
-                  this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
-                  this.revitalizeAllies();
-                  this.notifyWaveState();
-                } else {
-                  this.isGameOver = true;
-                  this.unlockPointer();
-                  soundFx.playLevelUp();
-                  this.callbacks.onGameOver(true, this.getDetailedMatchStats(true));
-                }
-
-              } else {
-                this.notifyWaveState();
-              }
+              this.eliminateEnemyAt(j, isCrit);
             } else if (ag.role === 'boss') {
               this.notifyWaveState();
             }
@@ -2439,11 +2902,21 @@ export class ArenaSceneManager {
   }
 
   private updateLoot() {
+    const hasMagnet = this.activeMatchPerks.has('goldrausch');
+    const pickupRadius = hasMagnet ? 7.5 : 2.35;
+
     for (let i = this.lootItems.length - 1; i >= 0; i--) {
       const item = this.lootItems[i];
       item.mesh.rotation.y += 0.04;
 
-      if (this.playerPos.distanceTo(item.pos) <= 2.35) {
+      const distToLoot = this.playerPos.distanceTo(item.pos);
+      if (hasMagnet && distToLoot <= 9.5 && distToLoot > 1.2) {
+        _tempVec.subVectors(this.playerPos, item.pos).normalize();
+        item.pos.addScaledVector(_tempVec, 0.28);
+        item.mesh.position.copy(item.pos);
+      }
+
+      if (distToLoot <= pickupRadius) {
         soundFx.playCoin();
         if (item.type === 'attachment') {
           const att = item.attachmentType || 'barrel';
@@ -2466,7 +2939,8 @@ export class ArenaSceneManager {
           this.score += 50;
           this.callbacks.onScoreChange(this.score);
         } else if (item.type === 'taler') {
-          const amt = item.amount || 8;
+          const baseAmt = item.amount || 8;
+          const amt = hasMagnet ? Math.round(baseAmt * 1.6) : baseAmt;
           this.callbacks.onLootPickup('taler', amt);
           this.score += amt * 2;
           this.callbacks.onScoreChange(this.score);
@@ -2515,7 +2989,10 @@ export class ArenaSceneManager {
   }
 
   private damagePlayer(amount: number, _source: string, ignoreShield = false) {
-    if (this.peacefulMode) return;
+    if (this.peacefulMode || this.dashInvulnTimer > 0) return;
+
+    const incomingAmount = amount;
+    const hadShield = this.playerShield > 0;
 
     if (!ignoreShield && this.playerShield > 0) {
       if (this.playerShield >= amount) {
@@ -2527,10 +3004,16 @@ export class ArenaSceneManager {
       }
     }
 
+    if (hadShield && this.playerShield <= 0) {
+      soundFx.playShieldBreak();
+    }
+
     if (amount > 0) {
       this.playerHealth = Math.max(0, this.playerHealth - amount);
     }
 
+    this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.25);
+    this.callbacks.onPlayerDamaged?.(incomingAmount);
     this.callbacks.onHealthChange(this.playerHealth, this.playerMaxHealth, this.playerShield, this.playerMaxShield);
 
     if (this.playerHealth <= 0) {
