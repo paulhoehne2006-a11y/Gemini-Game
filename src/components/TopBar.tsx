@@ -130,7 +130,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       label: 'Mein Clan',
       mobileLabel: 'Clan',
       icon: Users,
-    },,
+    },
   ];
 
   return (

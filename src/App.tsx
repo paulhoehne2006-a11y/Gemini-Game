@@ -12,6 +12,7 @@ import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
 import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MobileTacticalHub } from './components/MobileTacticalHub';
+import { ClanHub } from './components/ClanHub';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -1288,7 +1289,7 @@ export default function App() {
                     <h2 className="font-bold text-white">{title}</h2>
                     <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
                   </div>
-                </div>
+                ))}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {ACHIEVEMENTS_LIST.map((ach) => {
@@ -1476,6 +1477,16 @@ export default function App() {
             signatureWeapon={signatureWeaponName}
             currentArenaName={ARENAS[currentArena]?.name || currentArena}
             onEditProfile={() => setShowProfileModal(true)}
+          />
+        )}
+
+        {!showHome && activeTab === 'clan' && (
+          <ClanHub
+            playerName={playerName}
+            onClanTagChange={(tag) => {
+              setClanTag(tag);
+              localStorage.setItem('na_clan_tag', tag);
+            }}
           />
         )}
       </main>
