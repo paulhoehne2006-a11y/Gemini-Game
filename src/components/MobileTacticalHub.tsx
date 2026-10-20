@@ -38,6 +38,7 @@ interface MobileTacticalHubProps {
   onNavigateTab: (tab: 'gunsmith' | 'skilltree' | 'tycoon' | 'leaderboard' | 'multiplayer') => void;
   onSwitchToPcMode: () => void;
   onSimulatePatrol: (arenaId: string) => void;
+  onLaunch3DMobileCombat?: (arenaId?: string) => void;
 }
 
 export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
@@ -57,6 +58,7 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
   onNavigateTab,
   onSwitchToPcMode,
   onSimulatePatrol,
+  onLaunch3DMobileCombat,
 }) => {
   const currentRank = getReputationRank(reputation);
   const [patrolFeedback, setPatrolFeedback] = useState<string | null>(null);
@@ -136,6 +138,17 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
             </div>
           </div>
         </div>
+
+        {onLaunch3DMobileCombat && (
+          <button
+            type="button"
+            onClick={() => onLaunch3DMobileCombat()}
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Flame className="w-4 h-4 fill-slate-950" />
+            <span>Zurück in den 3D Touch-Shooter (Battle Royale)</span>
+          </button>
+        )}
       </div>
 
       {/* 2. Daily Missions Card (Tagesbefehle) */}

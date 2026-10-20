@@ -125,6 +125,12 @@ export const TopBar: React.FC<TopBarProps> = ({
       mobileLabel: 'Freunde',
       icon: Users,
     },
+    {
+      id: 'clan',
+      label: 'Mein Clan',
+      mobileLabel: 'Clan',
+      icon: Users,
+    },,
   ];
 
   return (

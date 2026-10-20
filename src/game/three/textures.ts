@@ -14,6 +14,11 @@ export interface DestructibleProp {
 
 const textureCache: Record<string, THREE.CanvasTexture> = {};
 
+function seededNoise(index: number): number {
+  const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
 function getCachedTexture(
   key: string,
   width: number,
@@ -46,7 +51,7 @@ function getCachedTexture(
 }
 
 export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.CanvasTexture {
-  return getCachedTexture('cobble_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('cobble_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Rich deep slate mortar base
     ctx.fillStyle = '#1E242D';
     ctx.fillRect(0, 0, w, h);
@@ -66,7 +71,7 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
 
         // Rich German cobblestone hues (Taunus Slate & Basalt)
         const stoneHues = ['#64748B', '#526071', '#5E7083', '#4A5568', '#6D7F92', '#586877'];
-        const baseColor = stoneHues[(r * 3 + c * 5) % stoneHues.length];
+        const baseColor = stoneHues[Math.abs(r * 3 + c * 5) % stoneHues.length] || '#64748B';
 
         // Soft contact drop shadow
         ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
@@ -90,8 +95,16 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
         ctx.roundRect(x + 2, y + 2, cw - 4, ch - 4, 8);
         ctx.stroke();
 
+        // Fine stone grain keeps the material from looking like flat colored tiles.
+        for (let grain = 0; grain < 8; grain++) {
+          const gx = x + 8 + seededNoise(r * 97 + c * 31 + grain) * Math.max(1, cw - 16);
+          const gy = y + 8 + seededNoise(r * 53 + c * 71 + grain + 11) * Math.max(1, ch - 16);
+          ctx.fillStyle = grain % 2 === 0 ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.1)';
+          ctx.fillRect(gx, gy, 1.5, 1.5);
+        }
+
         // Delicate moss accents in corners
-        if ((r + c * 2) % 3 === 0) {
+        if (Math.abs(r + c * 2) % 3 === 0) {
           ctx.fillStyle = 'rgba(74, 222, 128, 0.45)';
           ctx.beginPath();
           ctx.arc(x + cw - 5, y + ch - 5, 3.5, 0, Math.PI * 2);
@@ -103,43 +116,50 @@ export function createCobblestoneTexture(repeatX = 18, repeatY = 18): THREE.Canv
 }
 
 export function createAsphaltTexture(repeatX = 12, repeatY = 12): THREE.CanvasTexture {
-  return getCachedTexture('asphalt_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('asphalt_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Rich charcoal asphalt
     ctx.fillStyle = '#1E232A';
     ctx.fillRect(0, 0, w, h);
 
-    // Multi-toned aggregate flecks
+    // Multi-toned aggregate flecks with a deterministic distribution.
     for (let i = 0; i < 3000; i++) {
-      const x = (i * 73) % w;
-      const y = (i * 139) % h;
-      const v = 48 + (i % 28);
-      ctx.fillStyle = `rgb(${v}, ${v + 4}, ${v + 10})`;
-      ctx.fillRect(x, y, 2.5, 2.5);
+      const x = seededNoise(i * 2 + 1) * w;
+      const y = seededNoise(i * 2 + 2) * h;
+      const v = 42 + Math.floor(seededNoise(i * 3 + 4) * 32);
+      ctx.fillStyle = `rgba(${v}, ${v + 4}, ${v + 10}, ${0.35 + seededNoise(i + 8) * 0.4})`;
+      ctx.fillRect(x, y, 1 + seededNoise(i + 9) * 2, 1 + seededNoise(i + 10) * 2);
     }
 
-    // Clean stylized road markings
-    ctx.fillStyle = '#F8FAFC';
-    ctx.shadowColor = '#0F172A';
-    ctx.shadowBlur = 4;
-    ctx.fillRect(w * 0.46, h * 0.15, w * 0.08, h * 0.7);
-    ctx.shadowBlur = 0;
+    // Subtle repaired seams and cracks; road markings belong to road meshes,
+    // not to a reusable asphalt tile that is also used for plazas and yards.
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 18; i++) {
+      const x = seededNoise(i * 5 + 2) * w;
+      const y = seededNoise(i * 5 + 3) * h;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (seededNoise(i * 5 + 4) - 0.5) * 34, y + 4 + seededNoise(i * 5 + 5) * 16);
+      ctx.stroke();
+    }
   });
 }
 
 export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.CanvasTexture {
-  return getCachedTexture('grass_stylized_v2', 512, 512, repeatX, repeatY, (ctx, w, h) => {
-    // Vibrant Fortnite-style lush Taunus emerald base
+  return getCachedTexture('grass_stylized_v2', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
+    // Slightly desaturated Taunus green leaves room for lighting and shadows
+    // to provide the color contrast instead of a flat neon surface.
     const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, '#1E6F34');
-    grad.addColorStop(0.5, '#2D8E47');
-    grad.addColorStop(1, '#1A612E');
+    grad.addColorStop(0, '#285F37');
+    grad.addColorStop(0.5, '#347A45');
+    grad.addColorStop(1, '#245B34');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
     // Organic stylized lighter lawn patches
     for (let p = 0; p < 8; p++) {
-      const px = ((p * 137) % w);
-      const py = ((p * 193) % h);
+      const px = seededNoise(p * 17 + 1) * w;
+      const py = seededNoise(p * 17 + 2) * h;
       const pr = 65 + (p % 4) * 20;
       const patchGrad = ctx.createRadialGradient(px, py, 10, px, py, pr);
       patchGrad.addColorStop(0, 'rgba(74, 222, 128, 0.22)');
@@ -152,8 +172,8 @@ export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.Canv
 
     // Multi-shade stylized grass tufts & lawn texture
     for (let i = 0; i < 3800; i++) {
-      const x = (i * 97) % w;
-      const y = (i * 181) % h;
+      const x = seededNoise(i * 2 + 21) * w;
+      const y = seededNoise(i * 2 + 22) * h;
       const light = i % 3 === 0;
       ctx.fillStyle = light ? 'rgba(134, 239, 172, 0.45)' : 'rgba(20, 83, 45, 0.45)';
       ctx.fillRect(x, y, 3, 5);
@@ -161,8 +181,8 @@ export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.Canv
 
     // Tiny sunny wildflowers (golden yellow & daisy white)
     for (let i = 0; i < 200; i++) {
-      const fx = (i * 163) % w;
-      const fy = (i * 257) % h;
+      const fx = seededNoise(i * 2 + 101) * w;
+      const fy = seededNoise(i * 2 + 102) * h;
       ctx.fillStyle = i % 2 === 0 ? '#FACC15' : '#FFFFFF';
       ctx.beginPath();
       ctx.arc(fx, fy, 2.5, 0, Math.PI * 2);
@@ -172,7 +192,7 @@ export function createGrassGroundTexture(repeatX = 20, repeatY = 20): THREE.Canv
 }
 
 export function createFachwerkTexture(repeatX = 2, repeatY = 1): THREE.CanvasTexture {
-  return getCachedTexture('fachwerk', 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('fachwerk', 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     // Warm Hessian plaster background
     ctx.fillStyle = '#F3EDE0';
     ctx.fillRect(0, 0, w, h);
@@ -238,7 +258,7 @@ export function createFachwerkTexture(repeatX = 2, repeatY = 1): THREE.CanvasTex
 }
 
 export function createModernFacadeTexture(repeatX = 2, repeatY = 1, accentHex = '#0284C7'): THREE.CanvasTexture {
-  return getCachedTexture(`facade_${accentHex}`, 512, 512, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture(`facade_${accentHex}`, 1024, 1024, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#E2E8F0';
     ctx.fillRect(0, 0, w, h);
 
@@ -275,7 +295,7 @@ export function createModernFacadeTexture(repeatX = 2, repeatY = 1, accentHex = 
 }
 
 export function createRoofTileTexture(repeatX = 4, repeatY = 3): THREE.CanvasTexture {
-  return getCachedTexture('rooftiles', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('rooftiles', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#8C2D19';
     ctx.fillRect(0, 0, w, h);
 
@@ -297,7 +317,7 @@ export function createRoofTileTexture(repeatX = 4, repeatY = 3): THREE.CanvasTex
 }
 
 export function createPoolTileTexture(repeatX = 8, repeatY = 8): THREE.CanvasTexture {
-  return getCachedTexture('pooltiles', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('pooltiles', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#0284C7';
     ctx.fillRect(0, 0, w, h);
 
@@ -312,7 +332,7 @@ export function createPoolTileTexture(repeatX = 8, repeatY = 8): THREE.CanvasTex
 }
 
 export function createWoodPlankTexture(repeatX = 2, repeatY = 2): THREE.CanvasTexture {
-  return getCachedTexture('woodplank', 256, 256, repeatX, repeatY, (ctx, w, h) => {
+  return getCachedTexture('woodplank', 512, 512, repeatX, repeatY, (ctx, w, h) => {
     ctx.fillStyle = '#78472A';
     ctx.fillRect(0, 0, w, h);
 

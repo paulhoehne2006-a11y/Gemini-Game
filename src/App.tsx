@@ -15,11 +15,18 @@ import { MobileTacticalHub } from './components/MobileTacticalHub';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
-  saveDailyMissions,
   processDailyMissionEvent,
   claimDailyMission,
   claimDailyGrandBonus,
+  getReputationRank,
 } from './game/missions';
+import {
+  SEASON_BATTLE_PASS,
+  ACHIEVEMENTS_LIST,
+  CareerStats,
+  loadCareerStats,
+  saveCareerStats,
+} from './game/progression';
 import { AgentRole } from './game/agents/microAgents';
 import { INITIAL_FACILITIES, Facility } from './game/tycoon';
 import {
@@ -27,9 +34,24 @@ import {
   updateMultiplayerState,
   submitScore,
   registerOperatorProfile,
-  connectLeaderboardSocket,
 } from './game/multiplayer';
-import { ArrowRight, Crosshair, ShieldAlert, Trophy, Users, Wrench } from 'lucide-react';
+import {
+  ArrowRight,
+  Award,
+  Building2,
+  CheckCircle2,
+  Coins,
+  Crosshair,
+  Flame,
+  Gift,
+  Lock,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  Trophy,
+  Users,
+  Wrench,
+} from 'lucide-react';
 import {
   WEAPONS,
   INITIAL_WEAPON_UPGRADES,
@@ -88,6 +110,7 @@ export default function App() {
   const [sessionSupersededNotice, setSessionSupersededNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>('battle');
   const [showHome, setShowHome] = useState(true);
+  const [showMobileCommandOverlay, setShowMobileCommandOverlay] = useState(false);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
   // Strict Mobile & Landscape ("Handy Querformat") Hardware Lock:
@@ -163,6 +186,7 @@ export default function App() {
     const saved = localStorage.getItem('na_reputation');
     return saved ? parseInt(saved, 10) : 150;
   });
+  const [careerStats, setCareerStats] = useState<CareerStats>(() => loadCareerStats());
   const [completedMissionToast, setCompletedMissionToast] = useState<{
     id: string;
     title: string;
@@ -352,10 +376,11 @@ export default function App() {
 
   // Compute current signature weapon display name for Real Leaderboard
   const primaryWeaponObj = WEAPONS[selectedGunsmithWeapon] || WEAPONS.bembel;
-  const signatureWeaponName = getEffectiveWeaponStats(
+  const primaryWeaponStats = getEffectiveWeaponStats(
     primaryWeaponObj,
     weaponUpgrades[selectedGunsmithWeapon]
-  ).displayName;
+  );
+  const signatureWeaponName = primaryWeaponStats.displayName;
 
   // Total count of unlocked maps (combining explicit unlocks + win threshold unlocks)
   const effectiveUnlockedMaps = Object.keys(ARENAS).filter((id) =>
@@ -447,6 +472,57 @@ export default function App() {
     }
   }, [isOperatorRegistered, legalConsent]);
 
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+  const canClaimDailyLogin = careerStats.lastLoginDate !== todayDateStr;
+
+  const handleClaimDailyLoginBonus = () => {
+    if (!canClaimDailyLogin) return;
+    const nextStreak = careerStats.loginStreakDays + 1;
+    const rewardNAT = 75 + Math.min(150, nextStreak * 25);
+    const rewardRep = 40;
+    soundFx.playRewardClaim();
+    setBudget((prev) => prev + rewardNAT);
+    setReputation((prev) => prev + rewardRep);
+    setCareerStats((prev) => ({
+      ...prev,
+      loginStreakDays: nextStreak,
+      lastLoginDate: todayDateStr,
+      totalTalerEarned: prev.totalTalerEarned + rewardNAT,
+    }));
+  };
+
+  const handleClaimBattlePassTier = (tier: number) => {
+    const tierDef = SEASON_BATTLE_PASS.find((t) => t.tier === tier);
+    if (!tierDef) return;
+    if (reputation < tierDef.requiredReputation) return;
+    if (careerStats.claimedBattlePassTiers.includes(tier)) return;
+
+    soundFx.playRewardClaim();
+    setBudget((prev) => prev + tierDef.rewardNAT);
+    setReputation((prev) => prev + 25);
+    setCareerStats((prev) => ({
+      ...prev,
+      claimedBattlePassTiers: [...prev.claimedBattlePassTiers, tier],
+      totalTalerEarned: prev.totalTalerEarned + tierDef.rewardNAT,
+    }));
+  };
+
+  const handleClaimAchievement = (achievementId: string) => {
+    const ach = ACHIEVEMENTS_LIST.find((a) => a.id === achievementId);
+    if (!ach) return;
+    if (!ach.checkUnlocked(careerStats)) return;
+    if (careerStats.claimedAchievements.includes(achievementId)) return;
+
+    soundFx.playRewardClaim();
+    setBudget((prev) => prev + ach.rewardNAT);
+    setReputation((prev) => prev + ach.rewardReputation);
+    setCareerStats((prev) => ({
+      ...prev,
+      claimedAchievements: [...prev.claimedAchievements, achievementId],
+      totalTalerEarned: prev.totalTalerEarned + ach.rewardNAT,
+    }));
+  };
+
   const handleCompleteOnboarding = (profile: {
     name: string;
     clanTag: string;
@@ -507,6 +583,7 @@ export default function App() {
     if (budget < cost) return;
     setBudget((prev) => prev - cost);
     triggerMissionEvent({ type: 'gunsmith' });
+    setCareerStats((prev) => ({ ...prev, gunsmithUpgrades: prev.gunsmithUpgrades + 1 }));
     setWeaponUpgrades((prev) => {
       const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
       return {
@@ -525,6 +602,7 @@ export default function App() {
   const handleUpgradeRarity = (weaponId: string, targetTier: number, cost: number) => {
     if (budget < cost) return;
     setBudget((prev) => prev - cost);
+    setCareerStats((prev) => ({ ...prev, gunsmithUpgrades: prev.gunsmithUpgrades + 1 }));
     setWeaponUpgrades((prev) => {
       const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
       return {
@@ -541,6 +619,7 @@ export default function App() {
     if (budget < cost) return;
     setBudget((prev) => prev - cost);
     triggerMissionEvent({ type: 'gunsmith' });
+    setCareerStats((prev) => ({ ...prev, gunsmithUpgrades: prev.gunsmithUpgrades + 1 }));
     const papWeaponName = WEAPONS[weaponId]?.papNames[targetLevel - 1] || WEAPONS[weaponId]?.name;
     setWeaponUpgrades((prev) => {
       const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
@@ -782,6 +861,10 @@ export default function App() {
   const handleCollectTaler = (amount: number) => {
     setBudget((prev) => prev + amount);
     triggerMissionEvent({ type: 'taler', amount });
+    setCareerStats((prev) => ({
+      ...prev,
+      totalTalerEarned: prev.totalTalerEarned + amount,
+    }));
   };
 
   const handleEnemyEliminated = (details: {
@@ -800,6 +883,18 @@ export default function App() {
       weaponId: details.weaponId,
       wave: details.wave,
     });
+    setCareerStats((prev) => ({
+      ...prev,
+      totalKills: prev.totalKills + 1,
+      bossesDefeated: details.isBoss ? prev.bossesDefeated + 1 : prev.bossesDefeated,
+      highestWave: Math.max(prev.highestWave, details.wave),
+    }));
+  };
+
+  const handleComboRecord = (combo: number) => {
+    setCareerStats((prev) =>
+      combo > prev.highestCombo ? { ...prev, highestCombo: combo } : prev
+    );
   };
 
   const handleStreakAchieved = (streakCount: number) => {
@@ -814,6 +909,9 @@ export default function App() {
       type: 'wave',
       wave,
     });
+    setCareerStats((prev) =>
+      wave > prev.highestWave ? { ...prev, highestWave: wave } : prev
+    );
   };
 
   const handleClaimMission = (missionId: string) => {
@@ -861,7 +959,6 @@ export default function App() {
     setLastMatchScore((prev) => prev + earnedScore);
     handleWeaponXpGain(selectedGunsmithWeapon, earnedWeaponXp);
 
-    // Trigger daily missions progression for each kill in this arena!
     for (let i = 0; i < patrolKills; i++) {
       triggerMissionEvent({
         type: 'kill',
@@ -873,7 +970,6 @@ export default function App() {
       });
     }
 
-    // Also trigger taler event for the collected NAT
     triggerMissionEvent({
       type: 'taler',
       amount: earnedNAT,
@@ -882,8 +978,8 @@ export default function App() {
     submitScore({
       name: playerName,
       clanTag,
-      score: earnedScore,
-      kills: patrolKills,
+      score: Math.min(24900, earnedScore),
+      kills: Math.min(295, patrolKills),
       victory: false,
       city: playerCity,
       unlockedMapsCount: effectiveUnlockedMaps.length,
@@ -913,6 +1009,7 @@ export default function App() {
     );
     setLastMatchReward(reward);
     setBudget((prev) => prev + reward);
+    setReputation((prev) => prev + (victory ? 65 : 25));
 
     let nextWins = totalWins;
     let nextUnlocked = [...unlockedMaps];
@@ -923,7 +1020,6 @@ export default function App() {
       setSkillPoints((prev) => prev + 1);
       setOperatorLevel((prev) => prev + 1);
 
-      // Automatically unlock maps whose requiredWins <= nextWins
       Object.values(ARENA_UNLOCK_RULES).forEach((rule) => {
         if (nextWins >= rule.requiredWins && !nextUnlocked.includes(rule.id)) {
           nextUnlocked.push(rule.id);
@@ -932,12 +1028,16 @@ export default function App() {
       setUnlockedMaps(nextUnlocked);
     }
 
+    const clampedScore = Math.min(24900, Math.max(0, Math.round(stats.score)));
+    const clampedKills = Math.min(295, Math.max(0, Math.round(stats.kills)));
+    const clampedWave = Math.min(50, Math.max(1, Math.round(stats.wave)));
+
     submitScore({
       name: playerName,
       clanTag,
-      score: stats.score,
-      kills: stats.kills,
-      wave: stats.wave,
+      score: clampedScore,
+      kills: clampedKills,
+      wave: clampedWave,
       victory,
       city: playerCity,
       unlockedMapsCount: nextUnlocked.length,
@@ -949,10 +1049,10 @@ export default function App() {
       updateMultiplayerState(
         activeRoom.code,
         localPlayerId,
-        stats.kills,
+        clampedKills,
         victory ? 100 : 0,
-        stats.score,
-        stats.wave
+        clampedScore,
+        clampedWave
       ).catch(console.error);
     }
   };
@@ -966,11 +1066,9 @@ export default function App() {
   };
 
   const openTab = (tab: AppTab) => {
-    if (matchState === 'active' || matchState === 'paused') {
-      return;
-    }
     setActiveTab(tab);
     setShowHome(false);
+    setShowMobileCommandOverlay(false);
   };
 
   const facilityLevels = Object.fromEntries(
@@ -1062,6 +1160,7 @@ export default function App() {
         onSelectArenaAndPlay={(arenaId) => {
           setCurrentArena(arenaId);
           setActiveTab('battle');
+          setShowHome(false);
         }}
       />
 
@@ -1127,7 +1226,7 @@ export default function App() {
           unclaimedMissionsCount={unclaimedMissionsCount}
           completedMissionsCount={completedMissionsCount}
           totalMissionsCount={dailyMissionsState.missions.length}
-          navigationDisabled={matchState === 'active' || matchState === 'paused'}
+          navigationDisabled={false}
         />
       )}
 
@@ -1165,11 +1264,11 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openTab('multiplayer')}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-5 py-3 font-bold text-slate-200 transition hover:border-amber-400/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+                    onClick={() => setShowDailyMissionsModal(true)}
+                    className="flex items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-900 hover:bg-slate-800 px-3.5 py-2 font-mono text-xs font-bold text-white cursor-pointer"
                   >
-                    <Users className="h-5 w-5" aria-hidden="true" />
-                    Freunde-Lobby
+                    <Target className="h-4 w-4 text-amber-400" />
+                    <span>Tagesbefehle ({completedMissionsCount}/{dailyMissionsState.missions.length})</span>
                   </button>
                 </div>
                 <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
@@ -1189,7 +1288,59 @@ export default function App() {
                     <h2 className="font-bold text-white">{title}</h2>
                     <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
                   </div>
-                ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {ACHIEVEMENTS_LIST.map((ach) => {
+                    const unlocked = ach.checkUnlocked(careerStats);
+                    const claimed = careerStats.claimedAchievements.includes(ach.id);
+                    const prog = ach.progressText(careerStats);
+
+                    return (
+                      <div
+                        key={ach.id}
+                        className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 ${
+                          claimed
+                            ? 'border-emerald-500/30 bg-emerald-950/15'
+                            : unlocked
+                            ? 'border-amber-400 bg-amber-500/15'
+                            : 'border-slate-800 bg-slate-900/70'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-white truncate">{ach.title}</span>
+                            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              {prog}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-400 leading-snug">{ach.description}</p>
+                          <div className="mt-1 font-mono text-[10px] font-bold text-emerald-400">
+                            Prämie: +{ach.rewardNAT} NAT · +{ach.rewardReputation} RUF
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          {claimed ? (
+                            <span className="flex items-center gap-1 font-mono text-[10px] font-bold text-emerald-400">
+                              <CheckCircle2 className="h-4 w-4" />
+                            </span>
+                          ) : unlocked ? (
+                            <button
+                              type="button"
+                              onClick={() => handleClaimAchievement(ach.id)}
+                              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-3 py-1.5 font-mono text-[10px] font-black uppercase text-slate-950 shadow cursor-pointer"
+                            >
+                              Holen
+                            </button>
+                          ) : (
+                            <Lock className="h-4 w-4 text-slate-600" />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>
@@ -1226,7 +1377,7 @@ export default function App() {
               unlockedFacilities={facilityLevels}
               latestCommanderBark={latestCommanderBark}
               commanderDirectives={commanderDirectives}
-              isMobileMode={false}
+              isMobileMode={isMobileMode}
               onCollectTaler={handleCollectTaler}
               onOpenTycoon={() => openTab('tycoon')}
               onOpenLeaderboard={() => openTab('leaderboard')}
@@ -1251,7 +1402,7 @@ export default function App() {
           )
         )}
 
-        {activeTab === 'gunsmith' && (
+        {!showHome && activeTab === 'gunsmith' && (
           <GunsmithView
             budget={budget}
             weaponUpgrades={weaponUpgrades}
@@ -1279,7 +1430,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'tycoon' && (
+        {!showHome && activeTab === 'tycoon' && (
           <TycoonHub
             budget={budget}
             onUpgradeFacility={handleUpgradeFacility}
@@ -1293,6 +1444,8 @@ export default function App() {
             onStartArena={(arenaId) => {
               setCurrentArena(arenaId);
               setActiveTab('battle');
+              setShowHome(false);
+              setShowMobileCommandOverlay(false);
             }}
             mapLevels={mapLevels}
             onUpgradeMapLevel={handleUpgradeMapLevel}
@@ -1300,7 +1453,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'multiplayer' && (
+        {!showHome && activeTab === 'multiplayer' && (
           <MultiplayerLobby
             onStartGameWithRoom={handleStartGameWithRoom}
             playerName={playerName}
@@ -1312,7 +1465,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'leaderboard' && (
+        {!showHome && activeTab === 'leaderboard' && (
           <LeaderboardView
             currentScore={lastMatchScore}
             currentKills={lastMatchKills}

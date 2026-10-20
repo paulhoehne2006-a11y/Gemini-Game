@@ -347,7 +347,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                             <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
                             <span>Einfordern</span>
                           </button>
-                        ) : mission.arenaId && onSelectArenaAndPlay ? (
+                        ) : mission.arenaId && mission.arenaId !== 'any' && onSelectArenaAndPlay ? (
                           <button
                             type="button"
                             onClick={() => {
