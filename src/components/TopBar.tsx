@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
-export type AppTab = 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard';
+export type AppTab = 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
 
 interface TopBarProps {
   activeTab: AppTab;
@@ -100,6 +100,12 @@ export const TopBar: React.FC<TopBarProps> = ({
       mobileLabel: 'Skills',
       icon: Zap,
       badge: skillPoints > 0 ? skillPoints : undefined,
+    },
+    {
+      id: 'clan',
+      label: 'Mein Clan',
+      mobileLabel: 'Clan',
+      icon: Users,
     },
     {
       id: 'tycoon',
