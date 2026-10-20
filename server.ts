@@ -84,6 +84,214 @@ app.use((req, res, next) => {
 export let storage: GameStorage;
 export let authStore: AuthStore;
 
+// ---------------------------------------------------------------------------
+// Real-Time Visitor & Geo-Location Analytics (Render Console Logger)
+// ---------------------------------------------------------------------------
+interface VisitorRecord {
+  timestamp: string;
+  maskedIp: string;
+  account: string;
+  location: string;
+  device: string;
+  action: string;
+}
+
+const geoCache = new Map<string, { location: string; country: string }>();
+const recentVisitorLogs = new Map<string, number>();
+const knownUniqueIps = new Set<string>();
+export const ipAccountMap = new Map<string, string>();
+const cityCounters: Record<string, number> = {};
+const accountCounters: Record<string, number> = {};
+const deviceCounters: Record<string, number> = {};
+const recentVisitorList: VisitorRecord[] = [];
+let totalVisitorCounter = 0;
+
+function anonymizeIp(ip: string): string {
+  const clean = ip.trim();
+  if (clean.includes('.')) {
+    const parts = clean.split('.');
+    if (parts.length === 4) {
+      return `${parts[0]}.${parts[1]}.${parts[2]}.***`;
+    }
+  } else if (clean.includes(':')) {
+    const parts = clean.split(':');
+    return `${parts.slice(0, 3).join(':')}:****`;
+  }
+  return clean;
+}
+
+function parseDevice(userAgent?: string): string {
+  if (!userAgent) return 'Unbekanntes Gerät';
+  const ua = userAgent.toLowerCase();
+  let os = 'Desktop';
+  if (ua.includes('iphone') || ua.includes('ipad')) os = '📱 iOS';
+  else if (ua.includes('android')) os = '📱 Android';
+  else if (ua.includes('windows')) os = '💻 Windows PC';
+  else if (ua.includes('macintosh') || ua.includes('mac os')) os = '💻 Mac';
+  else if (ua.includes('linux')) os = '💻 Linux';
+
+  let browser = 'Browser';
+  if (ua.includes('edg/')) browser = 'Edge';
+  else if (ua.includes('chrome')) browser = 'Chrome';
+  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'Safari';
+  else if (ua.includes('firefox')) browser = 'Firefox';
+
+  return `${os} (${browser})`;
+}
+
+async function resolveVisitorAccount(req: express.Request, rawIp: string): Promise<string> {
+  try {
+    if (authStore) {
+      const token = extractRequestToken(req);
+      if (token) {
+        const sessionData = await authStore.getSession(token);
+        if (sessionData?.account) {
+          const accTag = `[${sessionData.account.clanTag}] ${sessionData.account.username}`;
+          ipAccountMap.set(rawIp, accTag);
+          return accTag;
+        }
+      }
+    }
+  } catch {}
+
+  if (ipAccountMap.has(rawIp)) {
+    return ipAccountMap.get(rawIp)!;
+  }
+  return 'Gast (Nicht angemeldet)';
+}
+
+async function resolveGeo(ip: string, headers: http.IncomingHttpHeaders): Promise<{ location: string; country: string }> {
+  const cfCountry = headers['cf-ipcountry'] as string;
+  const cfCity = headers['cf-ipcity'] as string;
+  if (cfCountry && cfCity) {
+    return { location: `${decodeURIComponent(cfCity)}, ${cfCountry}`, country: cfCountry };
+  }
+
+  if (geoCache.has(ip)) {
+    return geoCache.get(ip)!;
+  }
+
+  if (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === 'localhost' ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('172.16.')
+  ) {
+    const local = { location: 'Lokales Netzwerk / Dev', country: 'DE' };
+    geoCache.set(ip, local);
+    return local;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2200);
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      if (data.status === 'success') {
+        const cityPart = data.city || '';
+        const regionPart = data.regionName ? `, ${data.regionName}` : '';
+        const countryPart = data.country ? `, ${data.country}` : '';
+        const loc = cityPart ? `${cityPart}${regionPart}${countryPart}` : data.country || 'Global';
+        const info = { location: loc, country: data.country || 'DE' };
+        geoCache.set(ip, info);
+        return info;
+      }
+    }
+  } catch {}
+
+  const fallback = { location: 'Online-Besucher', country: 'DE' };
+  geoCache.set(ip, fallback);
+  return fallback;
+}
+
+// Log incoming visitors in Render console with location, device & authenticated account
+app.use((req, res, next) => {
+  const p = req.path;
+  if (
+    p.startsWith('/assets') ||
+    p.endsWith('.js') ||
+    p.endsWith('.css') ||
+    p.endsWith('.png') ||
+    p.endsWith('.ico') ||
+    p.endsWith('.svg') ||
+    p.endsWith('.map') ||
+    p.endsWith('.woff') ||
+    p.endsWith('.woff2')
+  ) {
+    return next();
+  }
+
+  const rawIp =
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+    req.socket.remoteAddress ||
+    '127.0.0.1';
+
+  const now = Date.now();
+  const lastLog = recentVisitorLogs.get(rawIp) || 0;
+  const isAction = req.method === 'POST' || p.startsWith('/api/');
+
+  // Throttle regular page loads to once every 2 minutes per IP
+  if (isAction || now - lastLog > 120000) {
+    recentVisitorLogs.set(rawIp, now);
+    totalVisitorCounter += 1;
+    knownUniqueIps.add(anonymizeIp(rawIp));
+
+    const device = parseDevice(req.headers['user-agent']);
+    deviceCounters[device] = (deviceCounters[device] || 0) + 1;
+
+    Promise.all([resolveGeo(rawIp, req.headers), resolveVisitorAccount(req, rawIp)])
+      .then(([geo, accountTag]) => {
+        cityCounters[geo.location] = (cityCounters[geo.location] || 0) + 1;
+        accountCounters[accountTag] = (accountCounters[accountTag] || 0) + 1;
+        const masked = anonymizeIp(rawIp);
+        const timeStr = new Date().toLocaleTimeString('de-DE', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+        const actionLabel = p === '/' ? 'Startseite geöffnet' : `${req.method} ${p}`;
+
+        const entry: VisitorRecord = {
+          timestamp: timeStr,
+          maskedIp: masked,
+          account: accountTag,
+          location: geo.location,
+          device,
+          action: actionLabel,
+        };
+        recentVisitorList.unshift(entry);
+        if (recentVisitorList.length > 30) recentVisitorList.pop();
+
+        if (process.env.NODE_ENV !== 'test') {
+          console.log(
+            `🌍 [Besucher ${timeStr}] IP: ${masked} · Account: ${accountTag} · Ort: ${geo.location} · Gerät: ${device} · ${actionLabel}`
+          );
+        }
+      })
+      .catch(() => {});
+  }
+
+  next();
+});
+
+// Visitor Analytics Overview Endpoint
+app.get('/api/analytics/visitors', (_req, res) => {
+  res.json({
+    totalVisits: totalVisitorCounter,
+    uniqueIps: knownUniqueIps.size,
+    topLocations: cityCounters,
+    topAccounts: accountCounters,
+    devices: deviceCounters,
+    recent: recentVisitorList,
+  });
+});
+
 // Rate limiting in-memory storage with periodic pruning
 interface RateLimitEntry {
   count: number;
@@ -460,6 +668,12 @@ app.post('/api/auth/register', async (req, res) => {
     setSessionCookie(req, res, session.token, session.expiresAt);
     notifySessionSuperseded(account.id, session.token);
 
+    const accTag = `[${account.clanTag}] ${account.username}`;
+    ipAccountMap.set(ip, accTag);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(`✨ [Registrierung] IP: ${anonymizeIp(ip)} · Account: ${accTag} erfolgreich erstellt`);
+    }
+
     // Initial operator profile in leaderboard
     await storage.saveLeaderboardEntry({
       id: `op_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
@@ -525,6 +739,12 @@ app.post('/api/auth/login', async (req, res) => {
     setSessionCookie(req, res, session.token, session.expiresAt);
     notifySessionSuperseded(account.id, session.token);
 
+    const accTag = `[${account.clanTag}] ${account.username}`;
+    ipAccountMap.set(ip, accTag);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(`🔑 [Login] IP: ${anonymizeIp(ip)} · Account: ${accTag} angemeldet`);
+    }
+
     res.json({
       success: true,
       account,
@@ -547,11 +767,16 @@ app.get('/api/auth/me', requireAccount, (_req, res) => {
 
 // Auth: Logout
 app.post('/api/auth/logout', async (req, res) => {
+  const ip = getClientIp(req);
+  ipAccountMap.delete(ip);
   const token = extractRequestToken(req);
   if (token) {
     await authStore.revokeSession(token);
   }
   clearSessionCookie(req, res);
+  if (process.env.NODE_ENV !== 'test') {
+    console.log(`🚪 [Logout] IP: ${anonymizeIp(ip)} hat sich abgemeldet`);
+  }
   res.json({ success: true });
 });
 

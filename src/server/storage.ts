@@ -1146,7 +1146,7 @@ export class PostgresStorageAdapter implements GameStorage {
 // ---------------------------------------------------------------------------
 export async function createStorage(dbPath?: string): Promise<GameStorage> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
-  if (databaseUrl && (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'))) {
+  if (!dbPath && databaseUrl && (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'))) {
     console.log('[Storage] Attempting PostgreSQL storage from DATABASE_URL');
     try {
       const adapter = new PostgresStorageAdapter(databaseUrl);
