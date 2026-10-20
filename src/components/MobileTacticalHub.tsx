@@ -36,7 +36,9 @@ interface MobileTacticalHubProps {
   isLandscape?: boolean;
   onOpenDailyMissions: () => void;
   onClaimDailyMission: (missionId: string) => void;
-  onNavigateTab: (tab: 'gunsmith' | 'skilltree' | 'tycoon' | 'leaderboard' | 'multiplayer') => void;
+  onNavigateTab: (
+    tab: 'overview' | 'gunsmith' | 'skilltree' | 'tycoon' | 'leaderboard' | 'multiplayer' | 'clan'
+  ) => void;
   onSwitchToPcMode: () => void;
   onSimulatePatrol: (arenaId: string) => void;
   onLaunch3DMobileCombat?: (arenaId?: string) => void;

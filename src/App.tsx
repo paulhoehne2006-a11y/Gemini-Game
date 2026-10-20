@@ -46,12 +46,14 @@ import {
   Flame,
   Gift,
   Lock,
+  Map,
   ShieldAlert,
   Sparkles,
   Target,
   Trophy,
   Users,
   Wrench,
+  Zap,
 } from 'lucide-react';
 import {
   WEAPONS,
@@ -109,8 +111,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [sessionSupersededNotice, setSessionSupersededNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AppTab>('battle');
-  const [showHome, setShowHome] = useState(true);
+  const [activeTab, setActiveTab] = useState<AppTab>('overview');
   const [showMobileCommandOverlay, setShowMobileCommandOverlay] = useState(false);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
@@ -1063,12 +1064,10 @@ export default function App() {
     setLocalPlayerId(playerId);
     setCurrentArena(room.arena || 'hessenpark');
     setActiveTab('battle');
-    setShowHome(false);
   };
 
   const openTab = (tab: AppTab) => {
     setActiveTab(tab);
-    setShowHome(false);
     setShowMobileCommandOverlay(false);
   };
 
@@ -1128,7 +1127,7 @@ export default function App() {
 
   return (
     <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-      !showHome && activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
+      activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
     }`}>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
@@ -1161,7 +1160,6 @@ export default function App() {
         onSelectArenaAndPlay={(arenaId) => {
           setCurrentArena(arenaId);
           setActiveTab('battle');
-          setShowHome(false);
         }}
       />
 
@@ -1203,7 +1201,7 @@ export default function App() {
         </div>
       )}
 
-      {!showHome && (activeTab !== 'battle' || effectiveMobileMode) && (
+      {(activeTab !== 'battle' || effectiveMobileMode) && (
         <TopBar
           activeTab={activeTab}
           setActiveTab={openTab}
@@ -1219,7 +1217,7 @@ export default function App() {
           skillPoints={skillPoints}
           playerName={playerName}
           clanTag={clanTag}
-          onOpenHome={() => setShowHome(true)}
+          onOpenHome={() => openTab('overview')}
           onOpenProfileModal={() => setShowProfileModal(true)}
           onOpenLegalModal={() => setShowLegalModal(true)}
           onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
@@ -1233,121 +1231,85 @@ export default function App() {
 
       {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
       <main className={`flex-1 w-full relative ${
-        showHome || activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+        activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
       }`}>
-        {showHome && (
-          <section className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 py-12 sm:px-10 lg:px-20">
-            <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full border border-amber-400/20 bg-amber-400/5 blur-3xl" aria-hidden="true" />
-            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-              <div>
-                <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-400">
-                  61267 · Neu-Anspach
-                </p>
-                <h1 className="max-w-3xl text-5xl font-black tracking-tight text-white sm:text-7xl">
-                  Hessenpark
-                  <span className="block text-amber-400">Battle Royale</span>
-                </h1>
-                <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-                  Dein taktischer Einsatz beginnt hier. Erkunde die überarbeiteten 3D-Arenen am PC, levele deinen Skilltree & deine Waffen hoch und überliste die Wehrheimer in Neu-Anspach.
-                </p>
-                <div className="mt-9 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('battle');
-                      setShowHome(false);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
-                  >
-                    <Crosshair className="h-5 w-5" aria-hidden="true" />
-                    {effectiveMobileMode ? 'Taktik-Zentrale öffnen' : 'Einsatz starten'}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDailyMissionsModal(true)}
-                    className="flex items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-900 hover:bg-slate-800 px-3.5 py-2 font-mono text-xs font-bold text-white cursor-pointer"
-                  >
-                    <Target className="h-4 w-4 text-amber-400" />
-                    <span>Tagesbefehle ({completedMissionsCount}/{dailyMissionsState.missions.length})</span>
-                  </button>
+        {activeTab === 'overview' && (
+          <section className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 sm:px-8 lg:py-10">
+            <div className="flex flex-col gap-5 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.16),_transparent_42%),#0f172a] p-5 shadow-2xl sm:p-8">
+              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+                <div>
+                  <p className="font-mono text-[11px] font-bold uppercase tracking-[0.28em] text-amber-400">
+                    Einsatzübersicht · {playerCity}
+                  </p>
+                  <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-5xl">
+                    Willkommen, {playerName}
+                  </h1>
+                  <p className="mt-2 max-w-xl text-sm text-slate-400">
+                    Alles Wichtige auf einen Blick. Starte direkt einen Einsatz oder öffne einen Bereich.
+                  </p>
                 </div>
-                <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
-                  {effectiveMobileMode
-                    ? 'Handy-Modus (Hoch- & Querformat): Taktik-Hub, Skilltree & Waffenschmiede · 3D-Shooter nur am PC'
-                    : 'Maus: umsehen · WASD: bewegen · Linksklick: feuern'}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => openTab('battle')}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
+                >
+                  <Crosshair className="h-4 w-4" aria-hidden="true" />
+                  {effectiveMobileMode ? 'Taktik-Zentrale' : 'Einsatz starten'}
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
-                  { icon: Crosshair, title: '7 Überarbeitete Maps', text: 'Taktische Deckung, Lichtstimmungen & Map-Level 1–10' },
-                  { icon: Wrench, title: 'Waffen-Level & Skilltree', text: 'Waffen bis Lv. 30, Meisterschafts-Tarnungen & 12 Perks' },
-                  { icon: Trophy, title: 'Rangliste', text: 'Sichere dir deinen Platz in Neu-Anspach' },
-                ].map(({ icon: Icon, title, text }) => (
-                  <div key={title} className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 backdrop-blur-sm">
-                    <Icon className="mb-3 h-5 w-5 text-amber-400" aria-hidden="true" />
-                    <h2 className="font-bold text-white">{title}</h2>
-                    <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
+                  { label: 'NAT', value: budget.toLocaleString('de-DE'), icon: Coins, tone: 'text-amber-400' },
+                  { label: 'Ruf', value: reputation.toLocaleString('de-DE'), icon: Award, tone: 'text-purple-300' },
+                  { label: 'Siege', value: totalWins.toLocaleString('de-DE'), icon: Trophy, tone: 'text-emerald-300' },
+                  { label: 'Karten', value: `${effectiveUnlockedMaps.length}/${Object.keys(ARENAS).length}`, icon: Map, tone: 'text-cyan-300' },
+                ].map(({ label, value, icon: Icon, tone }) => (
+                  <div key={label} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <Icon className={`h-4 w-4 ${tone}`} aria-hidden="true" />
+                    <div className="mt-3 text-xl font-black tabular-nums text-white">{value}</div>
+                    <div className="mt-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
                   </div>
                 ))}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {ACHIEVEMENTS_LIST.map((ach) => {
-                    const unlocked = ach.checkUnlocked(careerStats);
-                    const claimed = careerStats.claimedAchievements.includes(ach.id);
-                    const prog = ach.progressText(careerStats);
-
-                    return (
-                      <div
-                        key={ach.id}
-                        className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 ${
-                          claimed
-                            ? 'border-emerald-500/30 bg-emerald-950/15'
-                            : unlocked
-                            ? 'border-amber-400 bg-amber-500/15'
-                            : 'border-slate-800 bg-slate-900/70'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-white truncate">{ach.title}</span>
-                            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                              {prog}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-slate-400 leading-snug">{ach.description}</p>
-                          <div className="mt-1 font-mono text-[10px] font-bold text-emerald-400">
-                            Prämie: +{ach.rewardNAT} NAT · +{ach.rewardReputation} RUF
-                          </div>
-                        </div>
-
-                        <div className="shrink-0">
-                          {claimed ? (
-                            <span className="flex items-center gap-1 font-mono text-[10px] font-bold text-emerald-400">
-                              <CheckCircle2 className="h-4 w-4" />
-                            </span>
-                          ) : unlocked ? (
-                            <button
-                              type="button"
-                              onClick={() => handleClaimAchievement(ach.id)}
-                              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-3 py-1.5 font-mono text-[10px] font-black uppercase text-slate-950 shadow cursor-pointer"
-                            >
-                              Holen
-                            </button>
-                          ) : (
-                            <Lock className="h-4 w-4 text-slate-600" />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <button type="button" onClick={() => setShowDailyMissionsModal(true)} className="rounded-2xl border border-amber-500/30 bg-slate-900 p-5 text-left transition hover:border-amber-400/70">
+                <Target className="h-5 w-5 text-amber-400" aria-hidden="true" />
+                <h2 className="mt-3 font-bold text-white">Tagesbefehle</h2>
+                <p className="mt-1 text-sm text-slate-400">{completedMissionsCount}/{dailyMissionsState.missions.length} erledigt · {unclaimedMissionsCount} offen</p>
+              </button>
+              <button type="button" onClick={() => openTab('skilltree')} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-left transition hover:border-cyan-400/60">
+                <Zap className="h-5 w-5 text-cyan-300" aria-hidden="true" />
+                <h2 className="mt-3 font-bold text-white">Skilltree</h2>
+                <p className="mt-1 text-sm text-slate-400">{skillPoints} Skillpunkte verfügbar</p>
+              </button>
+              <button type="button" onClick={() => openTab('clan')} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-left transition hover:border-emerald-400/60">
+                <Users className="h-5 w-5 text-emerald-300" aria-hidden="true" />
+                <h2 className="mt-3 font-bold text-white">Mein Clan</h2>
+                <p className="mt-1 text-sm text-slate-400">[{clanTag || '61267'}] · Clan-Zentrale öffnen</p>
+              </button>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <span className="mr-2 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">Schnellzugriff</span>
+              {[
+                ['gunsmith', 'Waffenschmiede'],
+                ['tycoon', 'Maps & Tycoon'],
+                ['leaderboard', 'Rangliste'],
+                ['multiplayer', 'Freunde-Lobby'],
+              ].map(([tab, label]) => (
+                <button key={tab} type="button" onClick={() => openTab(tab as AppTab)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-slate-300 transition hover:border-amber-400 hover:text-white">
+                  {label}
+                </button>
+              ))}
             </div>
           </section>
         )}
 
-        {!showHome && activeTab === 'battle' && (
+        {activeTab === 'battle' && (
           effectiveMobileMode ? (
             <MobileTacticalHub
               budget={budget}
@@ -1403,7 +1365,7 @@ export default function App() {
           )
         )}
 
-        {!showHome && activeTab === 'gunsmith' && (
+        {activeTab === 'gunsmith' && (
           <GunsmithView
             budget={budget}
             weaponUpgrades={weaponUpgrades}
@@ -1431,7 +1393,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'tycoon' && (
+        {activeTab === 'tycoon' && (
           <TycoonHub
             budget={budget}
             onUpgradeFacility={handleUpgradeFacility}
@@ -1445,7 +1407,6 @@ export default function App() {
             onStartArena={(arenaId) => {
               setCurrentArena(arenaId);
               setActiveTab('battle');
-              setShowHome(false);
               setShowMobileCommandOverlay(false);
             }}
             mapLevels={mapLevels}
@@ -1454,7 +1415,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'multiplayer' && (
+        {activeTab === 'multiplayer' && (
           <MultiplayerLobby
             onStartGameWithRoom={handleStartGameWithRoom}
             playerName={playerName}
@@ -1466,7 +1427,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'leaderboard' && (
+        {activeTab === 'leaderboard' && (
           <LeaderboardView
             currentScore={lastMatchScore}
             currentKills={lastMatchKills}
@@ -1480,7 +1441,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'clan' && (
+        {activeTab === 'clan' && (
           <ClanHub
             playerName={playerName}
             onClanTagChange={(tag) => {

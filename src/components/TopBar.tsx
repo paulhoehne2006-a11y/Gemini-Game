@@ -19,7 +19,15 @@ import {
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
-export type AppTab = 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
+export type AppTab =
+  | 'overview'
+  | 'battle'
+  | 'gunsmith'
+  | 'skilltree'
+  | 'tycoon'
+  | 'multiplayer'
+  | 'leaderboard'
+  | 'clan';
 
 interface TopBarProps {
   activeTab: AppTab;
@@ -83,6 +91,12 @@ export const TopBar: React.FC<TopBarProps> = ({
     badge?: number;
   }[] = [
     {
+      id: 'overview',
+      label: 'Übersicht',
+      mobileLabel: 'Übersicht',
+      icon: Target,
+    },
+    {
       id: 'battle',
       label: isMobileMode || isMobileHardware ? 'Taktische Zentrale' : '3D Battle Royale',
       mobileLabel: 'Zentrale',
@@ -123,12 +137,6 @@ export const TopBar: React.FC<TopBarProps> = ({
       id: 'multiplayer',
       label: 'Freunde-Lobby',
       mobileLabel: 'Freunde',
-      icon: Users,
-    },
-    {
-      id: 'clan',
-      label: 'Mein Clan',
-      mobileLabel: 'Clan',
       icon: Users,
     },
   ];
