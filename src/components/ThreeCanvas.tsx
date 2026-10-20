@@ -103,6 +103,9 @@ interface ThreeCanvasProps {
   onStreakAchieved?: (count: number) => void;
   onWaveAdvanced?: (wave: number) => void;
   onOpenDailyMissions?: () => void;
+  onOpenMobileCommandHub?: () => void;
+  onExitToMenu?: () => void;
+  onComboRecord?: (multiplier: number) => void;
   skillTree?: SkillTreeLevels;
   mapLevels?: MapLevelsState;
   onWeaponXpGain?: (weaponId: string, xpAmount: number) => void;
@@ -136,6 +139,9 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
   onStreakAchieved,
   onWaveAdvanced,
   onOpenDailyMissions,
+  onOpenMobileCommandHub,
+  onExitToMenu,
+  onComboRecord,
   skillTree = INITIAL_SKILL_TREE,
   mapLevels = INITIAL_MAP_LEVELS,
   onWeaponXpGain,
@@ -1815,30 +1821,6 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
               </div>
             )}
 
-            {/* Live weapon status: upgrades are shown as combat telemetry */}
-            {!isMobileMode && (
-              <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-white/10 bg-slate-950/90 px-3 py-1.5 text-[10px] font-mono shadow-lg">
-                <span
-                  className="font-bold mr-1"
-                  style={{ color: activeWeaponStats.rarityObj.colorHex }}
-                >
-                  {mod.label} {mod.lv}
-                </div>
-              ))}
-            </div>
-
-            {/* Active weapon readout */}
-            <div className="w-full max-w-[22rem] rounded-2xl border border-white/15 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    <Crosshair className="h-3.5 w-3.5 text-amber-400" />
-                    <span>Aktive Waffe · LV. {activeWeaponStats.weaponLevel}/{MAX_WEAPON_LEVEL}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* Active weapon readout (PC) */}
             {!isMobileMode && (
               <div className="w-full max-w-[22rem] rounded-2xl border border-white/15 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-md">
@@ -1876,37 +1858,30 @@ export const ThreeCanvas: React.FC<ThreeCanvasProps> = ({
                   </span>
                   <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponObj.fireRate.toFixed(1)} SCHUSS/S</span>
                 </div>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono">
-                <span className="font-bold" style={{ color: activeWeaponStats.rarityObj.colorHex }}>
-                  {activeWeaponStats.rarityObj.name}
-                </span>
-                <span className="text-slate-400">{activeWeaponStats.damage} DMG · {activeWeaponStats.fireRate.toFixed(1)} SCHUSS/S</span>
-              </div>
-              {/* Weapon Level XP Bar */}
-              <div className="mt-1.5 space-y-0.5 font-mono">
-                <div className="flex items-center justify-between text-[9px] text-amber-300/90">
-                  <span>WAFFEN-XP (LV. {activeWeaponStats.weaponLevel})</span>
-                  <span>
-                    {activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
-                      ? 'MAX-LEVEL 30'
-                      : `${activeWeaponState?.weaponXp || 0} / ${activeWeaponXpNext} XP`}
-                  </span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-200"
-                    style={{
-                      width: `${
-                        activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
-                          ? 100
-                          : Math.min(100, ((activeWeaponState?.weaponXp || 0) / activeWeaponXpNext) * 100)
-                      }%`,
-                    }}
-                  />
+                <div className="mt-1.5 space-y-0.5 font-mono">
+                  <div className="flex items-center justify-between text-[9px] text-amber-300/90">
+                    <span>WAFFEN-XP (LV. {activeWeaponStats.weaponLevel})</span>
+                    <span>
+                      {activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
+                        ? 'MAX-LEVEL 30'
+                        : `${activeWeaponState?.weaponXp || 0} / ${activeWeaponXpNext} XP`}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-200"
+                      style={{
+                        width: `${
+                          activeWeaponStats.weaponLevel >= MAX_WEAPON_LEVEL
+                            ? 100
+                            : Math.min(100, ((activeWeaponState?.weaponXp || 0) / activeWeaponXpNext) * 100)
+                        }%`,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Four-slot weapon hotbar */}
             <div className="flex items-center gap-1.5 sm:gap-2 rounded-2xl border-2 border-white/15 bg-slate-950/95 p-1.5 sm:p-2 shadow-2xl">

@@ -32,6 +32,21 @@ const _camTarget = new THREE.Vector3();
 const _desiredCamPos = new THREE.Vector3();
 const _skyGradientCanvas = document.createElement('canvas');
 
+interface RendererQuality {
+  pixelRatio: number;
+  shadowMapSize: number;
+  shadowFrustum: number;
+}
+
+function getRendererQuality(): RendererQuality {
+  const pixelRatio = typeof window === 'undefined' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  return {
+    pixelRatio,
+    shadowMapSize: pixelRatio > 1.5 ? 2048 : 1024,
+    shadowFrustum: 70,
+  };
+}
+
 function createSkyGradientTexture(topColor: string, midColor: string, horizonColor: string): THREE.CanvasTexture {
   _skyGradientCanvas.width = 16;
   _skyGradientCanvas.height = 512;
@@ -450,6 +465,9 @@ export class ArenaSceneManager {
     this.container = container;
     this.currentArenaId = arenaId;
     this.callbacks = callbacks;
+    const initialW = Math.max(1, container.clientWidth || window.innerWidth || 800);
+    const initialH = Math.max(1, container.clientHeight || window.innerHeight || 600);
+    const renderQuality = getRendererQuality();
     this.peacefulMode = !!initialPerks.peacefulMode;
     this.trainingMode = !!initialPerks.trainingMode;
     if (initialPerks.playerName) {
@@ -2918,12 +2936,10 @@ export class ArenaSceneManager {
             } else {
               soundFx.playHit();
             }
-            this.spawnImpactSparks(hitPos, isCrit ? 0xEF4444 : 0x38BDF8, 6);
+            this.spawnImpactSparks(_closest, isCrit ? 0xEF4444 : 0x38BDF8, 6);
 
-            // Adjust damage number position so it clearly pops out of the head for headshots!
             const numberPos = ag.position.clone();
-            if (hitPart === 'head') numberPos.y += isBoss ? 3.0 : 1.8;
-            else if (hitPart === 'legs') numberPos.y += isBoss ? 1.0 : 0.5;
+            numberPos.y += ag.role === 'boss' ? 2.5 : 1.4;
             this.spawnDamageNumber(numberPos, finalDmg, isCrit);
 
             if (b.fromPlayer) {

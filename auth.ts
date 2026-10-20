@@ -112,6 +112,19 @@ export class AuthStore {
     return null;
   }
 
+  async updateClanTag(accountId: string, clanTag: string): Promise<PublicAccount | null> {
+    const account = await this.storage.getAccountById(accountId);
+    if (!account) return null;
+    account.clanTag = clanTag;
+    await this.storage.saveAccount(account);
+    return toPublicAccount(account);
+  }
+
+  async getPublicAccountByUsername(username: string): Promise<PublicAccount | null> {
+    const account = await this.storage.getAccountByUsername(username);
+    return account ? toPublicAccount(account) : null;
+  }
+
   async createSession(
     accountId: string,
     ttlMs: number

@@ -443,6 +443,107 @@ interface ClientMeta {
 const connectedClients = new Map<WebSocket, ClientMeta>();
 export const wss = new WebSocketServer({ server, path: '/ws' });
 
+interface ClanRecord {
+  id: string;
+  tag: string;
+  name: string;
+  description: string;
+  leaderAccountId: string;
+  createdAt: string;
+}
+
+interface ClanInvitationRecord {
+  id: string;
+  clanTag: string;
+  clanName: string;
+  inviterName: string;
+  recipientAccountId: string;
+  createdAt: string;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
+interface ClanMessageRecord {
+  id: string;
+  clanTag: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}
+
+const clans = new Map<string, ClanRecord>();
+const clanInvitations = new Map<string, ClanInvitationRecord>();
+const clanMessages = new Map<string, ClanMessageRecord[]>();
+
+async function getClanPayload(account: PublicAccount) {
+  const tag = account.clanTag || '61267';
+  let record = clans.get(tag);
+  if (!record) {
+    record = {
+      id: `clan_${tag.toLowerCase()}`,
+      tag,
+      name: `Einsatzgruppe ${tag}`,
+      description: 'Gemeinsam für Neu-Anspach.',
+      leaderAccountId: account.id,
+      createdAt: account.createdAt || new Date().toISOString(),
+    };
+    clans.set(tag, record);
+  }
+
+  const leaderboard = await storage.getLeaderboard();
+  const members = leaderboard
+    .filter((entry) => entry.clanTag.toUpperCase() === tag.toUpperCase())
+    .map((entry) => ({
+      accountId: entry.accountId || `leaderboard_${entry.id}`,
+      username: entry.name,
+      role: entry.accountId === record!.leaderAccountId ? 'leader' : 'member',
+      joinedAt: new Date(entry.lastSeen || Date.now()).toISOString(),
+      score: entry.score,
+      wins: entry.wins,
+      kills: entry.kills,
+      isOnline: Date.now() - entry.lastSeen < 90000,
+    }));
+
+  if (!members.some((member) => member.accountId === account.id)) {
+    members.push({
+      accountId: account.id,
+      username: account.username,
+      role: account.id === record.leaderAccountId ? 'leader' : 'member',
+      joinedAt: account.createdAt || new Date().toISOString(),
+      score: 0,
+      wins: 0,
+      kills: 0,
+      isOnline: true,
+    });
+  }
+
+  const totalScore = members.reduce((sum, member) => sum + member.score, 0);
+  const totalWins = members.reduce((sum, member) => sum + member.wins, 0);
+  const totalKills = members.reduce((sum, member) => sum + member.kills, 0);
+  const allTags = new Map<string, number>();
+  leaderboard.forEach((entry) => allTags.set(entry.clanTag.toUpperCase(), (allTags.get(entry.clanTag.toUpperCase()) || 0) + entry.score));
+  allTags.set(tag.toUpperCase(), totalScore);
+  const rank = [...allTags.values()].filter((score) => score > totalScore).length + 1;
+
+  return {
+    ...record,
+    rank,
+    totalScore,
+    totalWins,
+    totalKills,
+    memberCount: members.length,
+    members,
+  };
+}
+
+async function broadcastClanMessage(message: ClanMessageRecord) {
+  const payload = JSON.stringify({ type: 'clan:message', clanTag: message.clanTag, message });
+  connectedClients.forEach((meta, client) => {
+    if (meta.clanTag?.toUpperCase() === message.clanTag.toUpperCase() && client.readyState === WebSocket.OPEN) {
+      try { client.send(payload); } catch {}
+    }
+  });
+}
+
 function notifySessionSuperseded(accountId: string, currentSessionToken?: string, reason?: string) {
   const payload = JSON.stringify({
     type: 'auth:session_superseded',
@@ -967,6 +1068,147 @@ app.post('/api/leaderboard/submit', requireAccount, requireCsrf, async (req, res
   await broadcastLeaderboardSync();
   const payload = await getPublicLeaderboardPayload();
   res.json({ success: true, ...payload });
+});
+
+// ---------------------------------------------------------------------------
+// Clan API
+// ---------------------------------------------------------------------------
+
+app.get('/api/clans/me', requireAccount, async (_req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const clan = await getClanPayload(account);
+    const invitations = [...clanInvitations.values()]
+      .filter((invite) => invite.recipientAccountId === account.id && invite.status === 'pending')
+      .map(({ id, clanTag, clanName, inviterName, createdAt }) => ({ id, clanTag, clanName, inviterName, createdAt }));
+    res.json({ clan, invitations });
+  } catch (error) {
+    console.error('[Clan] Could not load clan:', error);
+    res.status(500).json({ error: 'Clan konnte nicht geladen werden.' });
+  }
+});
+
+app.post('/api/clans', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = String(req.body?.tag || '').trim().toUpperCase();
+    const name = String(req.body?.name || '').trim().slice(0, 32);
+    const description = String(req.body?.description || '').trim().slice(0, 160);
+    if (!/^[A-Z0-9_-]{2,6}$/.test(tag) || !name) {
+      return res.status(400).json({ error: 'Clan-Tag oder Clanname ist ungültig.' });
+    }
+    if (clans.has(tag)) return res.status(409).json({ error: 'Dieser Clan-Tag ist bereits vergeben.' });
+    const existingMembers = (await storage.getLeaderboard()).some((entry) => entry.clanTag.toUpperCase() === tag);
+    if (existingMembers) return res.status(409).json({ error: 'Dieser Clan-Tag wird bereits verwendet.' });
+    await authStore.updateClanTag(account.id, tag);
+    clans.set(tag, {
+      id: `clan_${crypto.randomUUID()}`,
+      tag,
+      name,
+      description,
+      leaderAccountId: account.id,
+      createdAt: new Date().toISOString(),
+    });
+    const clan = await getClanPayload({ ...account, clanTag: tag });
+    res.status(201).json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Create error:', error);
+    res.status(500).json({ error: 'Clan konnte nicht gegründet werden.' });
+  }
+});
+
+app.post('/api/clans/leave', requireAccount, requireCsrf, async (_req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const fallbackTag = '61267';
+    await authStore.updateClanTag(account.id, fallbackTag);
+    const clan = await getClanPayload({ ...account, clanTag: fallbackTag });
+    res.json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Leave error:', error);
+    res.status(500).json({ error: 'Clan konnte nicht verlassen werden.' });
+  }
+});
+
+app.post('/api/clans/invitations', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const clan = await getClanPayload(account);
+    const username = String(req.body?.username || '').trim();
+    const recipient = await authStore.getPublicAccountByUsername(username);
+    if (!recipient) return res.status(404).json({ error: 'Operator nicht gefunden.' });
+    if (recipient.id === account.id) return res.status(400).json({ error: 'Du kannst dich nicht selbst einladen.' });
+    if (recipient.clanTag.toUpperCase() === clan.tag.toUpperCase()) return res.status(409).json({ error: 'Der Operator ist bereits in deinem Clan.' });
+    const duplicate = [...clanInvitations.values()].find((invite) => invite.recipientAccountId === recipient.id && invite.clanTag === clan.tag && invite.status === 'pending');
+    if (duplicate) return res.status(409).json({ error: 'Es gibt bereits eine offene Einladung.' });
+    const invitation: ClanInvitationRecord = {
+      id: `invite_${crypto.randomUUID()}`,
+      clanTag: clan.tag,
+      clanName: clan.name,
+      inviterName: account.username,
+      recipientAccountId: recipient.id,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    clanInvitations.set(invitation.id, invitation);
+    res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('[Clan] Invitation error:', error);
+    res.status(500).json({ error: 'Einladung konnte nicht erstellt werden.' });
+  }
+});
+
+app.post('/api/clans/invitations/:id/:action', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const invitation = clanInvitations.get(String(req.params.id));
+    const action = String(req.params.action);
+    if (!invitation || invitation.recipientAccountId !== account.id || invitation.status !== 'pending') {
+      return res.status(404).json({ error: 'Einladung nicht gefunden.' });
+    }
+    if (action !== 'accept' && action !== 'decline') return res.status(400).json({ error: 'Ungültige Einladungsaktion.' });
+    invitation.status = action === 'accept' ? 'accepted' : 'declined';
+    if (action === 'accept') {
+      const clan = clans.get(invitation.clanTag);
+      if (!clan) return res.status(404).json({ error: 'Der Clan existiert nicht mehr.' });
+      await authStore.updateClanTag(account.id, clan.tag);
+      res.json({ success: true, clan: await getClanPayload({ ...account, clanTag: clan.tag }) });
+    } else {
+      res.json({ success: true, clan: await getClanPayload(account) });
+    }
+  } catch (error) {
+    console.error('[Clan] Invitation response error:', error);
+    res.status(500).json({ error: 'Einladung konnte nicht verarbeitet werden.' });
+  }
+});
+
+app.get('/api/clans/messages', requireAccount, async (_req, res) => {
+  const account = res.locals.account as PublicAccount;
+  const tag = account.clanTag || '61267';
+  res.json({ messages: (clanMessages.get(tag) || []).slice(-50) });
+});
+
+app.post('/api/clans/messages', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const text = String(req.body?.text || '').trim().slice(0, 240);
+    if (!text) return res.status(400).json({ error: 'Nachricht darf nicht leer sein.' });
+    const message: ClanMessageRecord = {
+      id: `msg_${crypto.randomUUID()}`,
+      clanTag: account.clanTag || '61267',
+      authorName: account.username,
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    const messages = clanMessages.get(message.clanTag) || [];
+    messages.push(message);
+    clanMessages.set(message.clanTag, messages.slice(-100));
+    await broadcastClanMessage(message);
+    res.status(201).json({ success: true, message });
+  } catch (error) {
+    console.error('[Clan] Chat error:', error);
+    res.status(500).json({ error: 'Nachricht konnte nicht gesendet werden.' });
+  }
 });
 
 // ---------------------------------------------------------------------------

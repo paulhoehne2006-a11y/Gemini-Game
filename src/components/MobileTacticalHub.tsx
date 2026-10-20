@@ -16,6 +16,7 @@ import {
   Lock,
   Zap,
   Smartphone,
+  Flame,
 } from 'lucide-react';
 import { DailyMissionsState, getReputationRank } from '../game/missions';
 import { ARENAS, checkArenaUnlocked } from '../game/three/arenas';

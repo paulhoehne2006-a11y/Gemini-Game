@@ -1,4 +1,5 @@
 import { getCsrfToken } from '../auth';
+import type { ClanMessage } from './clans';
 
 export interface RoomPlayer {
   id: string;
@@ -193,7 +194,8 @@ export async function updateMultiplayerState(
 export function connectLeaderboardSocket(
   onSync: (payload: LeaderboardPayload) => void,
   onStatusChange?: (connected: boolean) => void,
-  onSessionSuperseded?: (reason: string) => void
+  onSessionSuperseded?: (reason: string) => void,
+  onClanMessage?: (clanTag: string, message: ClanMessage) => void
 ) {
   let ws: WebSocket | null = null;
   let reconnectTimer: number | null = null;
@@ -215,6 +217,8 @@ export function connectLeaderboardSocket(
           const msg = JSON.parse(event.data);
           if (msg.type === 'leaderboard:sync' && msg.data) {
             onSync(msg.data);
+          } else if (msg.type === 'clan:message' && msg.clanTag && msg.message) {
+            onClanMessage?.(msg.clanTag, msg.message);
           } else if (msg.type === 'auth:session_superseded') {
             onSessionSuperseded?.(
               msg.reason ||
