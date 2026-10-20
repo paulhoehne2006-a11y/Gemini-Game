@@ -1,40 +1,41 @@
 import React, { useState } from 'react';
 import {
   Target,
-  Shield,
   Coins,
   Award,
   Wrench,
   Building2,
   Trophy,
   Users,
-  Sparkles,
   CheckCircle2,
   ChevronRight,
-  Flame,
   Radio,
-  Clock,
   Play,
   Monitor,
   MapPin,
   Lock,
+  Zap,
+  Smartphone,
 } from 'lucide-react';
-import { DailyMissionsState, getReputationRank, getTimeUntilDailyReset } from '../game/missions';
+import { DailyMissionsState, getReputationRank } from '../game/missions';
 import { ARENAS, checkArenaUnlocked } from '../game/three/arenas';
 import { soundFx } from '../audio/soundFx';
 
 interface MobileTacticalHubProps {
   budget: number;
   reputation: number;
+  skillPoints?: number;
   playerName: string;
   clanTag: string;
   totalIncomePerSec: number;
   totalWins: number;
   unlockedMaps: string[];
   dailyMissionsState: DailyMissionsState;
+  isMobileHardware?: boolean;
+  isLandscape?: boolean;
   onOpenDailyMissions: () => void;
   onClaimDailyMission: (missionId: string) => void;
-  onNavigateTab: (tab: 'gunsmith' | 'tycoon' | 'leaderboard' | 'multiplayer') => void;
+  onNavigateTab: (tab: 'gunsmith' | 'skilltree' | 'tycoon' | 'leaderboard' | 'multiplayer') => void;
   onSwitchToPcMode: () => void;
   onSimulatePatrol: (arenaId: string) => void;
   onLaunch3DMobileCombat?: (arenaId?: string) => void;
@@ -43,12 +44,15 @@ interface MobileTacticalHubProps {
 export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
   budget,
   reputation,
+  skillPoints = 0,
   playerName,
   clanTag,
   totalIncomePerSec,
   totalWins,
   unlockedMaps,
   dailyMissionsState,
+  isMobileHardware = true,
+  isLandscape = false,
   onOpenDailyMissions,
   onClaimDailyMission,
   onNavigateTab,
@@ -79,7 +83,22 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
   const completedMissionsCount = dailyMissionsState.missions.filter((m) => m.completed).length;
 
   return (
-    <div className="w-full max-w-lg mx-auto p-4 space-y-5 pb-24 text-slate-100 animate-in fade-in duration-150">
+    <div className="w-full max-w-2xl mx-auto p-4 space-y-5 pb-24 text-slate-100 animate-in fade-in duration-150">
+      {/* Mobile Landscape & 3D Lock Notice */}
+      {isLandscape && (
+        <div className="p-3.5 rounded-2xl bg-red-950/70 border border-red-500/50 text-red-200 text-xs flex items-start gap-3 shadow-lg">
+          <Lock className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-mono font-bold text-red-300 uppercase block">
+              Handy-Querformat erkannt · 3D Battle Royale gesperrt
+            </span>
+            <p className="text-[11px] text-red-200/90 mt-0.5 leading-relaxed">
+              Das 3D Battle Royale ist auf dem Handy komplett deaktiviert (weder im Hochformat noch im Querformat spielbar). Hier in der Taktischen Zentrale kannst du Streifen entsenden, Waffen leveln, deinen Skilltree ausbauen und Maps upgraden!
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* 1. Header Card: Operator & Budget Overview */}
       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
         <div className="flex items-center justify-between">
@@ -254,7 +273,7 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
         </div>
 
         <p className="text-xs text-slate-400">
-          Entsende Bürgerwehr-Patrouillen, um Wehrheimer Späher abzuwehren, Beute zu sichern und deine Tagesbefehle zu erfüllen:
+          Entsende Bürgerwehr-Patrouillen, um Wehrheimer Späher abzuwehren, Waffen-XP & Beute zu sichern und deine Tagesbefehle zu erfüllen:
         </p>
 
         <div className="grid grid-cols-1 gap-2.5">
@@ -319,8 +338,34 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
         </div>
       </div>
 
-      {/* 5. Mobile Fast Navigation Grid (4 Large Thumb Tiles) */}
+      {/* 5. Mobile Fast Navigation Grid (Skilltree, Gunsmith, Tycoon, Leaderboard, Lobby) */}
       <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => onNavigateTab('skilltree')}
+          className="col-span-2 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-slate-900 to-cyan-500/15 border border-amber-500/40 hover:border-amber-400 transition-colors text-left flex items-center justify-between gap-3 cursor-pointer shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white">Operator-Skilltree</span>
+                {skillPoints > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-mono text-[10px] font-black">
+                    {skillPoints} SP verfügbar
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-300 block font-mono">
+                Bembel-Wucht, Taunus-Panzerung & Feldberg-Taktik skillen
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-amber-400 shrink-0" />
+        </button>
+
         <button
           type="button"
           onClick={() => onNavigateTab('gunsmith')}
@@ -330,9 +375,9 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
             <Wrench className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-xs font-bold text-white block">Waffenschmiede</span>
+            <span className="text-xs font-bold text-white block">Waffenschmiede & Level</span>
             <span className="text-[10px] text-slate-400 block font-mono">
-              Cold War Aufsätze & Pack-a-Punch
+              Waffen-Level 1–30, Tarnungen & Aufsätze
             </span>
           </div>
         </button>
@@ -346,9 +391,9 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
             <Building2 className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-xs font-bold text-white block">Stadt-Infrastruktur</span>
+            <span className="text-xs font-bold text-white block">Maps & Stadt-Level</span>
             <span className="text-[10px] text-slate-400 block font-mono">
-              Gebäude upgraden & Einnahmen
+              Maps leveln (Stärkere Bots & Beute)
             </span>
           </div>
         </button>
@@ -386,26 +431,49 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
         </button>
       </div>
 
-      {/* 6. PC Mode Switch Banner */}
-      <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Monitor className="w-5 h-5 text-slate-400" />
-          <div>
-            <span className="text-xs font-bold text-white block">3D Battle Royale (PC)</span>
-            <span className="text-[10px] text-slate-400 block font-mono">
-              Für Desktop-Maus & Tastatur optimiert
-            </span>
+      {/* 6. Mobile 3D Battle Royale Restriction Notice (or PC Return Button on Desktop) */}
+      {isMobileHardware ? (
+        <div className="p-4 rounded-2xl bg-slate-950/90 border border-red-500/30 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-red-300 block">
+                3D Battle Royale auf dem Handy gesperrt
+              </span>
+              <span className="text-[10px] text-slate-400 block font-mono">
+                Auf Smartphones weder im Hochformat noch im Querformat spielbar · Bitte am PC öffnen
+              </span>
+            </div>
           </div>
-        </div>
 
-        <button
-          type="button"
-          onClick={onSwitchToPcMode}
-          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold transition-colors cursor-pointer shrink-0"
-        >
-          Aktivieren
-        </button>
-      </div>
+          <span className="px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-[10px] font-mono font-bold uppercase shrink-0 flex items-center gap-1">
+            <Lock className="w-3 h-3" />
+            <span>Nur PC</span>
+          </span>
+        </div>
+      ) : (
+        <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Monitor className="w-5 h-5 text-amber-400" />
+            <div>
+              <span className="text-xs font-bold text-white block">Zurück zum 3D Battle Royale (PC)</span>
+              <span className="text-[10px] text-slate-400 block font-mono">
+                Desktop-Modus mit Maus & Tastatur wieder öffnen
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSwitchToPcMode}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer shrink-0"
+          >
+            3D Starten
+          </button>
+        </div>
+      )}
     </div>
   );
 };

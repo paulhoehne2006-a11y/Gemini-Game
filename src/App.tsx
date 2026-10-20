@@ -7,6 +7,7 @@ import { TycoonHub } from './components/TycoonHub';
 import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { LeaderboardView } from './components/LeaderboardView';
 import { GunsmithView } from './components/GunsmithView';
+import { SkillTreeView } from './components/SkillTreeView';
 import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
 import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
@@ -55,11 +56,52 @@ import {
   WEAPONS,
   INITIAL_WEAPON_UPGRADES,
   getEffectiveWeaponStats,
+  addWeaponXpToState,
+  MAX_WEAPON_LEVEL,
 } from './game/weapons';
-import { ARENAS, ARENA_UNLOCK_RULES, checkArenaUnlocked } from './game/three/arenas';
-import { AllWeaponsUpgrades, AttachmentType, WeaponAttachments } from './types';
+import {
+  ARENAS,
+  ARENA_UNLOCK_RULES,
+  checkArenaUnlocked,
+  INITIAL_MAP_LEVELS,
+  MAX_MAP_LEVEL,
+  getMapBotScaling,
+} from './game/three/arenas';
+import {
+  INITIAL_SKILL_TREE,
+  SKILL_TREE_NODES,
+  computeSkillTreeBonuses,
+  getTotalSpentSkillPoints,
+} from './game/skillTree';
+import {
+  AllWeaponsUpgrades,
+  AttachmentType,
+  WeaponAttachments,
+  SkillTreeLevels,
+  MapLevelsState,
+} from './types';
 import { soundFx } from './audio/soundFx';
 import { LegalConsentRecord } from './legal';
+
+/**
+ * Detects whether the user is on a mobile/smartphone device (both in portrait AND landscape / "Handy Querformat").
+ * Even when a smartphone is rotated to landscape (e.g. 844x390), its shortest side is < 620px or it reports a mobile UA / coarse pointer.
+ */
+function detectMobileHardware(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const hasTouch =
+    'ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+  const isCoarsePointer =
+    typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const shortestSide = Math.min(window.innerWidth, window.innerHeight);
+  return (
+    isMobileUA ||
+    (hasTouch && (isCoarsePointer || shortestSide < 620)) ||
+    window.innerWidth < 820
+  );
+}
 
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -71,13 +113,41 @@ export default function App() {
   const [showMobileCommandOverlay, setShowMobileCommandOverlay] = useState(false);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
-  // Auto-detect mobile device/screen, or allow switching anytime in the TopBar
-  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 820 || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
-    }
-    return false;
+  // Strict Mobile & Landscape ("Handy Querformat") Hardware Lock:
+  // On mobile devices, 3D Battle Royale is completely disabled in both portrait and landscape orientation.
+  const [isMobileHardware, setIsMobileHardware] = useState<boolean>(() => detectMobileHardware());
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth > window.innerHeight;
   });
+  const [isMobileMode, setIsMobileMode] = useState<boolean>(() => detectMobileHardware());
+
+  useEffect(() => {
+    const syncViewportAndOrientation = () => {
+      const mobileHw = detectMobileHardware();
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsMobileHardware(mobileHw);
+      setIsLandscape(landscape);
+      if (mobileHw) {
+        // Never allow switching out of mobile mode on mobile hardware (even in landscape / Handy Querformat!)
+        setIsMobileMode(true);
+      }
+    };
+    window.addEventListener('resize', syncViewportAndOrientation);
+    window.addEventListener('orientationchange', syncViewportAndOrientation);
+    return () => {
+      window.removeEventListener('resize', syncViewportAndOrientation);
+      window.removeEventListener('orientationchange', syncViewportAndOrientation);
+    };
+  }, []);
+
+  const handleSetMobileMode = (nextMobile: boolean) => {
+    if (isMobileHardware || detectMobileHardware()) {
+      setIsMobileMode(true);
+      return;
+    }
+    setIsMobileMode(nextMobile);
+  };
 
   // Operator Profile & Onboarding State ("Am anfang soll man sich mit einen Benutzernamen geben")
   const [isOperatorRegistered, setIsOperatorRegistered] = useState<boolean>(() => {
@@ -151,12 +221,56 @@ export default function App() {
     return ['hessenpark'];
   });
 
-  // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III)
+  // Map Levels State (Lv. 1-10 per map -> stronger bots & higher NAT/XP rewards)
+  const [mapLevels, setMapLevels] = useState<MapLevelsState>(() => {
+    try {
+      const saved = localStorage.getItem('na_map_levels');
+      if (saved) {
+        return { ...INITIAL_MAP_LEVELS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return INITIAL_MAP_LEVELS;
+  });
+
+  // Operator Skilltree State (3 branches, 12 skills) & Skill Points (SP)
+  const [skillTree, setSkillTree] = useState<SkillTreeLevels>(() => {
+    try {
+      const saved = localStorage.getItem('na_skill_tree');
+      if (saved) {
+        return { ...INITIAL_SKILL_TREE, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return INITIAL_SKILL_TREE;
+  });
+  const [skillPoints, setSkillPoints] = useState<number>(() => {
+    const saved = localStorage.getItem('na_skill_points');
+    return saved ? parseInt(saved, 10) : 3;
+  });
+  const [operatorLevel, setOperatorLevel] = useState<number>(() => {
+    const saved = localStorage.getItem('na_operator_level');
+    return saved ? parseInt(saved, 10) : 1;
+  });
+
+  // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III, Weapon Level 1-30 & Mastery Camos)
   const [weaponUpgrades, setWeaponUpgrades] = useState<AllWeaponsUpgrades>(() => {
     try {
       const saved = localStorage.getItem('na_weapon_upgrades');
       if (saved) {
-        return { ...INITIAL_WEAPON_UPGRADES, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        const merged: AllWeaponsUpgrades = { ...INITIAL_WEAPON_UPGRADES };
+        for (const k of Object.keys(merged)) {
+          if (parsed[k]) {
+            merged[k] = {
+              ...merged[k],
+              ...parsed[k],
+              attachments: {
+                ...merged[k].attachments,
+                ...(parsed[k].attachments || {}),
+              },
+            };
+          }
+        }
+        return merged;
       }
     } catch {}
     return INITIAL_WEAPON_UPGRADES;
@@ -319,8 +433,20 @@ export default function App() {
   }, [reputation]);
 
   useEffect(() => {
-    saveCareerStats(careerStats);
-  }, [careerStats]);
+    localStorage.setItem('na_map_levels', JSON.stringify(mapLevels));
+  }, [mapLevels]);
+
+  useEffect(() => {
+    localStorage.setItem('na_skill_tree', JSON.stringify(skillTree));
+  }, [skillTree]);
+
+  useEffect(() => {
+    localStorage.setItem('na_skill_points', skillPoints.toString());
+  }, [skillPoints]);
+
+  useEffect(() => {
+    localStorage.setItem('na_operator_level', operatorLevel.toString());
+  }, [operatorLevel]);
 
   // Toast auto-dismiss timer
   useEffect(() => {
@@ -447,7 +573,7 @@ export default function App() {
     });
   };
 
-  // CoD Cold War Gunsmith Handlers
+  // CoD Cold War Gunsmith & Weapon Leveling Handlers
   const handleUpgradeAttachment = (
     weaponId: string,
     slot: AttachmentType,
@@ -520,6 +646,111 @@ export default function App() {
         eventNotice: `hat „${papWeaponName}“ (Pack-a-Punch Stufe ${targetLevel}) geschmiedet!`,
       }).catch(() => {});
     }
+  };
+
+  const handleTrainWeaponLevel = (weaponId: string, levelsToGain: number, costNAT: number) => {
+    if (budget < costNAT) return;
+    setBudget((prev) => prev - costNAT);
+    triggerMissionEvent({ type: 'gunsmith' });
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      const currentLv = cur.weaponLevel || 1;
+      const nextLv = Math.min(MAX_WEAPON_LEVEL, currentLv + levelsToGain);
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          weaponLevel: nextLv,
+          weaponXp: nextLv >= MAX_WEAPON_LEVEL ? 0 : cur.weaponXp || 0,
+        },
+      };
+    });
+  };
+
+  const handleSelectWeaponMastery = (weaponId: string, masteryId: string) => {
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      return {
+        ...prev,
+        [weaponId]: {
+          ...cur,
+          masteryId,
+        },
+      };
+    });
+  };
+
+  const handleWeaponXpGain = (weaponId: string, xpAmount: number) => {
+    setWeaponUpgrades((prev) => {
+      const cur = prev[weaponId] || INITIAL_WEAPON_UPGRADES[weaponId];
+      const { nextState, leveledUp } = addWeaponXpToState(cur, xpAmount);
+      if (leveledUp) {
+        soundFx.playLevelUp();
+      }
+      return {
+        ...prev,
+        [weaponId]: nextState,
+      };
+    });
+  };
+
+  const handleOperatorLevelUp = (newLevel: number) => {
+    setOperatorLevel((prev) => {
+      if (newLevel > prev) {
+        const gainedSP = newLevel - prev;
+        setSkillPoints((sp) => sp + gainedSP);
+        return newLevel;
+      }
+      return prev;
+    });
+  };
+
+  // Operator Skilltree Handlers
+  const handleUpgradeSkillWithSP = (nodeId: string, costSP: number) => {
+    const node = SKILL_TREE_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const currentLv = skillTree[nodeId] || 0;
+    if (currentLv >= node.maxLevel) return;
+    if (skillPoints < costSP) return;
+
+    setSkillPoints((prev) => prev - costSP);
+    setSkillTree((prev) => ({
+      ...prev,
+      [nodeId]: (prev[nodeId] || 0) + 1,
+    }));
+  };
+
+  const handleUpgradeSkillWithNAT = (nodeId: string, costNAT: number) => {
+    const node = SKILL_TREE_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const currentLv = skillTree[nodeId] || 0;
+    if (currentLv >= node.maxLevel) return;
+    if (budget < costNAT) return;
+
+    setBudget((prev) => prev - costNAT);
+    setSkillTree((prev) => ({
+      ...prev,
+      [nodeId]: (prev[nodeId] || 0) + 1,
+    }));
+  };
+
+  const handleResetSkillTree = () => {
+    const spent = getTotalSpentSkillPoints(skillTree);
+    if (spent <= 0) return;
+    setSkillTree(INITIAL_SKILL_TREE);
+    setSkillPoints((prev) => prev + spent);
+  };
+
+  // Map Level Upgrade Handler (Lv. 1-10 -> stronger bots & higher NAT/XP rewards)
+  const handleUpgradeMapLevel = (arenaId: string, costNAT: number) => {
+    if (budget < costNAT) return;
+    const curLv = mapLevels[arenaId] || 1;
+    if (curLv >= MAX_MAP_LEVEL) return;
+    setBudget((prev) => prev - costNAT);
+    setMapLevels((prev) => ({
+      ...prev,
+      [arenaId]: Math.min(MAX_MAP_LEVEL, (prev[arenaId] || 1) + 1),
+    }));
   };
 
   const handleLootAttachmentUpdate = (weaponId: string, newAtt: WeaponAttachments) => {
@@ -690,6 +921,7 @@ export default function App() {
       setDailyMissionsState(res.nextState);
       setBudget((prev) => prev + res.rewardedNAT);
       setReputation((prev) => prev + res.rewardedReputation);
+      setSkillPoints((prev) => prev + 1);
       if (completedMissionToast?.id === missionId) {
         setCompletedMissionToast(null);
       }
@@ -703,22 +935,29 @@ export default function App() {
       setDailyMissionsState(res.nextState);
       setBudget((prev) => prev + res.rewardedNAT);
       setReputation((prev) => prev + res.rewardedReputation);
+      setSkillPoints((prev) => prev + 2);
     }
   };
 
   const handleSimulatePatrol = (arenaId: string) => {
+    const mapLv = mapLevels[arenaId] || 1;
+    const botScaling = getMapBotScaling(arenaId, mapLv);
+    const skillBonuses = computeSkillTreeBonuses(skillTree);
+
+    // Generate 2-4 tactical enemy eliminations in the target arena
     const patrolKills = Math.floor(Math.random() * 3) + 2;
-    const earnedNAT = 45 + patrolKills * 12;
+    const earnedNAT = Math.round(
+      (45 + patrolKills * 12) * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
+    );
     const earnedScore = patrolKills * 125;
+    const earnedWeaponXp = Math.round(
+      patrolKills * 45 * botScaling.xpRewardMult * skillBonuses.weaponXpMultiplier
+    );
 
     setBudget((prev) => prev + earnedNAT);
     setLastMatchKills((prev) => prev + patrolKills);
     setLastMatchScore((prev) => prev + earnedScore);
-    setCareerStats((prev) => ({
-      ...prev,
-      totalKills: prev.totalKills + patrolKills,
-      totalTalerEarned: prev.totalTalerEarned + earnedNAT,
-    }));
+    handleWeaponXpGain(selectedGunsmithWeapon, earnedWeaponXp);
 
     for (let i = 0; i < patrolKills; i++) {
       triggerMissionEvent({
@@ -757,10 +996,17 @@ export default function App() {
     setLastMatchKills(stats.kills);
     setLastMatchScore(stats.score);
 
+    const mapLv = mapLevels[currentArena] || 1;
+    const botScaling = getMapBotScaling(currentArena, mapLv);
+    const skillBonuses = computeSkillTreeBonuses(skillTree);
+
     const waveBonus = stats.wave * 6;
     const scoreBonus = Math.round(stats.score * 0.06);
     const winBonus = victory ? 45 : 12;
-    const reward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    const rawReward = Math.max(8, waveBonus + scoreBonus + winBonus);
+    const reward = Math.round(
+      rawReward * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
+    );
     setLastMatchReward(reward);
     setBudget((prev) => prev + reward);
     setReputation((prev) => prev + (victory ? 65 : 25));
@@ -771,6 +1017,8 @@ export default function App() {
     if (victory) {
       nextWins = totalWins + 1;
       setTotalWins(nextWins);
+      setSkillPoints((prev) => prev + 1);
+      setOperatorLevel((prev) => prev + 1);
 
       Object.values(ARENA_UNLOCK_RULES).forEach((rule) => {
         if (nextWins >= rule.requiredWins && !nextUnlocked.includes(rule.id)) {
@@ -834,8 +1082,9 @@ export default function App() {
     (m) => m.completed
   ).length;
 
-  const currentRankObj = getReputationRank(reputation);
-  const primaryWeaponDps = Math.round(primaryWeaponStats.damage * primaryWeaponStats.fireRate);
+  // Hard Mobile & Landscape ("Handy Querformat") Lock:
+  // If on mobile hardware, ALWAYS use Mobile Tactical Hub and never render the 3D Battle Royale canvas.
+  const effectiveMobileMode = isMobileMode || isMobileHardware;
 
   if (authLoading) {
     return (
@@ -877,13 +1126,9 @@ export default function App() {
   }
 
   return (
-    <div
-      className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-        !showHome && activeTab === 'battle' && !showMobileCommandOverlay
-          ? 'h-screen overflow-hidden'
-          : 'min-h-screen'
-      }`}
-    >
+    <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
+      !showHome && activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`}>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
         <OperatorOnboardingModal
@@ -957,7 +1202,7 @@ export default function App() {
         </div>
       )}
 
-      {!showHome && (activeTab !== 'battle' || isMobileMode) && (
+      {!showHome && (activeTab !== 'battle' || effectiveMobileMode) && (
         <TopBar
           activeTab={activeTab}
           setActiveTab={openTab}
@@ -967,8 +1212,10 @@ export default function App() {
           setIsMuted={setIsMuted}
           onRequestCommander={requestCommanderOrders}
           isCommanderThinking={isCommanderThinking}
-          isMobileMode={isMobileMode}
-          setIsMobileMode={setIsMobileMode}
+          isMobileMode={effectiveMobileMode}
+          setIsMobileMode={handleSetMobileMode}
+          isMobileHardware={isMobileHardware}
+          skillPoints={skillPoints}
           playerName={playerName}
           clanTag={clanTag}
           onOpenHome={() => setShowHome(true)}
@@ -983,68 +1230,38 @@ export default function App() {
         />
       )}
 
-      {/* Main View Router */}
-      <main
-        className={`flex-1 w-full relative ${
-          showHome || activeTab !== 'battle' || showMobileCommandOverlay
-            ? 'overflow-y-auto'
-            : 'overflow-hidden'
-        }`}
-      >
+      {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
+      <main className={`flex-1 w-full relative ${
+        showHome || activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+      }`}>
         {showHome && (
-          <section className="relative isolate min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.22),_transparent_40%),radial-gradient(circle_at_bottom_left,_rgba(16,185,129,0.14),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-4 py-8 sm:px-8 lg:px-14">
-            <div className="mx-auto max-w-7xl space-y-8">
-              {/* TOP COMMAND CENTER HEADER BAR */}
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-slate-950/75 p-4 sm:px-6 backdrop-blur-md shadow-2xl">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 font-mono text-sm font-black text-slate-950 shadow-lg">
-                    {clanTag}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-black uppercase tracking-widest text-amber-400">
-                        SAISON 1 · OPERATION TAUNUS-STURM
-                      </span>
-                      <span className="rounded-md bg-purple-500/20 border border-purple-400/40 px-2 py-0.5 font-mono text-[10px] font-bold text-purple-300">
-                        Rang {currentRankObj.rank}: {currentRankObj.title}
-                      </span>
-                    </div>
-                    <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-                      <span>{playerName}</span>
-                      <span className="text-xs font-mono font-normal text-slate-400">({playerCity})</span>
-                    </h2>
-                  </div>
-                </div>
-
-                {/* Live Economy, Streak & Quick Actions */}
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {canClaimDailyLogin ? (
-                    <button
-                      type="button"
-                      onClick={handleClaimDailyLoginBonus}
-                      className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 px-3.5 py-2 text-xs font-black text-slate-950 shadow-lg shadow-emerald-500/20 hover:scale-105 transition-transform cursor-pointer animate-pulse"
-                    >
-                      <Gift className="h-4 w-4" />
-                      <span>Tages-Bonus holen (+{75 + Math.min(150, (careerStats.loginStreakDays + 1) * 25)} NAT)</span>
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 rounded-2xl border border-emerald-500/30 bg-emerald-950/30 px-3 py-1.5 font-mono text-xs text-emerald-300">
-                      <Flame className="h-3.5 w-3.5 text-amber-400" />
-                      <span>Serie: {careerStats.loginStreakDays}T</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-1.5 rounded-2xl border border-amber-500/40 bg-slate-900/90 px-3.5 py-2 font-mono text-xs font-black text-amber-400">
-                    <Coins className="h-4 w-4" />
-                    <span>{budget.toLocaleString('de-DE')} NAT</span>
-                    <span className="text-[10px] text-emerald-400 font-bold">(+{totalIncomePerSec}/s)</span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 rounded-2xl border border-purple-500/40 bg-slate-900/90 px-3.5 py-2 font-mono text-xs font-black text-purple-300">
-                    <Award className="h-4 w-4 text-purple-400" />
-                    <span>{reputation} RUF</span>
-                  </div>
-
+          <section className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 py-12 sm:px-10 lg:px-20">
+            <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full border border-amber-400/20 bg-amber-400/5 blur-3xl" aria-hidden="true" />
+            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+              <div>
+                <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-400">
+                  61267 · Neu-Anspach
+                </p>
+                <h1 className="max-w-3xl text-5xl font-black tracking-tight text-white sm:text-7xl">
+                  Hessenpark
+                  <span className="block text-amber-400">Battle Royale</span>
+                </h1>
+                <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+                  Dein taktischer Einsatz beginnt hier. Erkunde die überarbeiteten 3D-Arenen am PC, levele deinen Skilltree & deine Waffen hoch und überliste die Wehrheimer in Neu-Anspach.
+                </p>
+                <div className="mt-9 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('battle');
+                      setShowHome(false);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
+                  >
+                    <Crosshair className="h-5 w-5" aria-hidden="true" />
+                    {effectiveMobileMode ? 'Taktik-Zentrale öffnen' : 'Einsatz starten'}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowDailyMissionsModal(true)}
@@ -1054,268 +1271,22 @@ export default function App() {
                     <span>Tagesbefehle ({completedMissionsCount}/{dailyMissionsState.missions.length})</span>
                   </button>
                 </div>
+                <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                  {effectiveMobileMode
+                    ? 'Handy-Modus (Hoch- & Querformat): Taktik-Hub, Skilltree & Waffenschmiede · 3D-Shooter nur am PC'
+                    : 'Maus: umsehen · WASD: bewegen · Linksklick: feuern'}
+                </p>
               </div>
-
-              {/* HERO DEPLOYMENT & OPERATOR SHOWCASE GRID */}
-              <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-                <div className="space-y-6">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3.5 py-1 font-mono text-xs font-bold uppercase tracking-[0.25em] text-amber-300">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>61267 · Neu-Anspach · PC & Mobile 3D Crossplay</span>
-                  </div>
-
-                  <h1 className="max-w-3xl text-4xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl leading-[1.05]">
-                    Hessenpark
-                    <span className="block bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-300 bg-clip-text text-transparent">
-                      Battle Royale
-                    </span>
-                  </h1>
-
-                  <p className="max-w-2xl text-sm sm:text-base leading-relaxed text-slate-300">
-                    Dein taktischer Einsatz im Hochtaunus: Verteidige 7 reale Neu-Anspacher Einsatzgebiete mit
-                    aktiven Operator-Fähigkeiten (<span className="text-amber-300 font-mono font-bold">[Q] Bembel-Nova</span>,{' '}
-                    <span className="text-cyan-300 font-mono font-bold">[E] Taktik-Dash</span>,{' '}
-                    <span className="text-red-300 font-mono font-bold">[F] Feldberg-Luftschlag</span>),
-                    Roguelite-Feld-Upgrades und dem Saison-1 Taunus-Ehrenpass!
-                  </p>
-
-                  {/* QUICK ARENA SELECTOR CHIPS */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                      <span className="uppercase tracking-wider font-bold text-amber-400">
-                        Aktives Einsatzgebiet wählen ({effectiveUnlockedMaps.length}/7 freigeschaltet):
-                      </span>
-                      <span className="text-emerald-400 font-bold">{ARENAS[currentArena]?.name}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.values(ARENAS).map((arena) => {
-                        const unlocked = checkArenaUnlocked(arena.id, totalWins, unlockedMaps);
-                        const selected = currentArena === arena.id;
-                        return (
-                          <button
-                            key={arena.id}
-                            type="button"
-                            onClick={() => {
-                              if (unlocked) {
-                                soundFx.playUiClick();
-                                setCurrentArena(arena.id);
-                              } else {
-                                openTab('tycoon');
-                              }
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-mono text-xs font-bold border transition-all cursor-pointer ${
-                              selected
-                                ? 'bg-amber-500 text-slate-950 border-amber-300 font-black shadow-lg shadow-amber-500/25 scale-105'
-                                : unlocked
-                                ? 'bg-slate-900/80 text-slate-200 border-white/15 hover:border-amber-400/50'
-                                : 'bg-slate-950/60 text-slate-500 border-slate-800'
-                            }`}
-                          >
-                            {!unlocked && <Lock className="w-3 h-3 text-amber-400/70" />}
-                            <span>
-                              {arena.name
-                                .replace('Freilichtmuseum ', '')
-                                .replace(' Neu-Anspach', '')
-                                .replace(' (Taunusbahn)', '')}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* PRIMARY LAUNCH CTA BUTTONS */}
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMobileCommandOverlay(false);
-                        setActiveTab('battle');
-                        setShowHome(false);
-                      }}
-                      className="inline-flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400 px-6 py-4 text-base font-black text-slate-950 shadow-[0_0_30px_rgba(245,158,11,0.35)] transition hover:scale-[1.02] hover:from-amber-400 hover:to-yellow-300 cursor-pointer"
-                    >
-                      <Crosshair className="h-5 w-5" aria-hidden="true" />
-                      Einsatz starten
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openTab('gunsmith')}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/40 bg-slate-900/80 px-5 py-4 font-bold text-amber-300 transition hover:bg-slate-800 hover:text-white cursor-pointer"
-                    >
-                      <Wrench className="h-5 w-5" aria-hidden="true" />
-                      Waffenschmiede
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openTab('tycoon')}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-slate-900/80 px-5 py-4 font-bold text-emerald-300 transition hover:bg-slate-800 hover:text-white cursor-pointer"
-                    >
-                      <Building2 className="h-5 w-5" aria-hidden="true" />
-                      Stadt-Tycoon
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openTab('multiplayer')}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/70 px-5 py-4 font-bold text-slate-200 transition hover:border-amber-400/60 hover:text-white cursor-pointer"
-                    >
-                      <Users className="h-5 w-5" aria-hidden="true" />
-                      Freunde-Lobby
-                    </button>
-                  </div>
-
-                  <p className="font-mono text-[11px] uppercase tracking-wider text-slate-400">
-                    PC: Maus & WASD + [Q/E/F] Fähigkeiten · Handy: 3D Twin-Stick + Smart Auto-Fire
-                  </p>
-                </div>
-
-                {/* RIGHT COLUMN: ACTIVE OPERATOR LOADOUT & CAREER TELEMETRY CARD */}
-                <div className="rounded-3xl border border-white/15 bg-slate-950/80 p-6 backdrop-blur-md shadow-2xl space-y-5">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                    <div>
-                      <span className="font-mono text-[10px] font-black uppercase tracking-widest text-amber-400">
-                        AKTIVES KAMPF-LOADOUT
-                      </span>
-                      <h3 className="text-xl font-black text-white mt-0.5">{signatureWeaponName}</h3>
-                      <span className="text-xs font-mono text-slate-400">{primaryWeaponObj.codArchetype}</span>
-                    </div>
-                    <div className="text-right font-mono">
-                      <span className="text-[10px] text-slate-400 uppercase block">Feuerkraft</span>
-                      <span className="text-2xl font-black text-amber-400">{primaryWeaponDps} DPS</span>
-                    </div>
-                  </div>
-
-                  {/* Career Combat Telemetry Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center font-mono">
-                    <div className="p-3 rounded-2xl bg-slate-900/90 border border-white/10">
-                      <div className="text-[10px] text-slate-400 uppercase">Siege</div>
-                      <div className="text-lg font-black text-emerald-400 tabular-nums">{totalWins}</div>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/90 border border-white/10">
-                      <div className="text-[10px] text-slate-400 uppercase">Elims</div>
-                      <div className="text-lg font-black text-red-400 tabular-nums">{careerStats.totalKills}</div>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/90 border border-white/10">
-                      <div className="text-[10px] text-slate-400 uppercase">Max Combo</div>
-                      <div className="text-lg font-black text-amber-400 tabular-nums">x{careerStats.highestCombo}</div>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-slate-900/90 border border-white/10">
-                      <div className="text-[10px] text-slate-400 uppercase">Bosse</div>
-                      <div className="text-lg font-black text-purple-400 tabular-nums">{careerStats.bossesDefeated}</div>
-                    </div>
-                  </div>
-
-                  {/* Feature Cards */}
-                  <div className="grid gap-2.5 sm:grid-cols-3">
-                    {[
-                      { icon: Crosshair, title: '3D-Einsatz', text: 'Volle Action auf PC & Smartphone', tab: 'battle' as AppTab },
-                      { icon: Wrench, title: 'Waffenschmiede', text: 'Aufsätze & Pack-a-Punch', tab: 'gunsmith' as AppTab },
-                      { icon: Trophy, title: 'Rangliste', text: 'Live-Derby Neu-Anspach vs. Wehrheim', tab: 'leaderboard' as AppTab },
-                    ].map(({ icon: Icon, title, text, tab }) => (
-                      <button
-                        key={title}
-                        type="button"
-                        onClick={() => openTab(tab)}
-                        className="rounded-2xl border border-white/10 bg-slate-900/75 hover:border-amber-400/50 p-3.5 text-left transition-all cursor-pointer"
-                      >
-                        <Icon className="mb-2 h-4 w-4 text-amber-400" aria-hidden="true" />
-                        <h2 className="text-xs font-black text-white">{title}</h2>
-                        <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{text}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* ===================================================================== */}
-              {/* SEASON 1 BATTLE PASS ("TAUNUS-EHRENPASS")                             */}
-              {/* ===================================================================== */}
-              <div className="rounded-3xl border border-amber-500/30 bg-slate-950/85 p-5 sm:p-6 backdrop-blur-md shadow-2xl space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-widest text-amber-400">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>SAISON 1 EHRENPASS · FORTSCHRITT DURCH OPERATOR-RUF</span>
-                    </div>
-                    <h3 className="text-lg sm:text-xl font-black text-white">
-                      Taunus-Ehrenpass (Stufe {SEASON_BATTLE_PASS.filter((t) => reputation >= t.requiredReputation).length} / {SEASON_BATTLE_PASS.length})
-                    </h3>
-                  </div>
-                  <span className="rounded-xl bg-amber-500/15 border border-amber-400/40 px-3 py-1 font-mono text-xs font-black text-amber-300">
-                    Dein Ruf: {reputation} Pkt
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-                  {SEASON_BATTLE_PASS.map((tier) => {
-                    const isUnlocked = reputation >= tier.requiredReputation;
-                    const isClaimed = careerStats.claimedBattlePassTiers.includes(tier.tier);
-                    return (
-                      <div
-                        key={tier.tier}
-                        className={`flex flex-col justify-between rounded-2xl border p-3 transition-all ${
-                          isClaimed
-                            ? 'border-emerald-500/40 bg-emerald-950/20'
-                            : isUnlocked
-                            ? 'border-amber-400 bg-amber-500/15 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                            : 'border-slate-800 bg-slate-900/60 opacity-75'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between font-mono text-[10px] font-black">
-                            <span className="text-amber-400">STUFE {tier.tier}</span>
-                            <span className="text-slate-400">{tier.requiredReputation} RUF</span>
-                          </div>
-                          <div className="mt-1.5 text-xs font-black text-white leading-snug">
-                            {tier.title}
-                          </div>
-                          <div className="mt-1 text-[10px] font-mono text-amber-300 font-bold">
-                            {tier.rewardLabel}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 pt-2 border-t border-white/10">
-                          {isClaimed ? (
-                            <span className="flex items-center justify-center gap-1 text-[10px] font-mono font-bold text-emerald-400">
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              <span>Eingelöst</span>
-                            </span>
-                          ) : isUnlocked ? (
-                            <button
-                              type="button"
-                              onClick={() => handleClaimBattlePassTier(tier.tier)}
-                              className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 py-1.5 font-mono text-[10px] font-black uppercase text-slate-950 shadow cursor-pointer"
-                            >
-                              Abholen (+{tier.rewardNAT})
-                            </button>
-                          ) : (
-                            <span className="block text-center font-mono text-[10px] text-slate-500">
-                              Noch {tier.requiredReputation - reputation} Ruf
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ===================================================================== */}
-              {/* CAREER ACHIEVEMENTS ("TAUNUS-AUSZEICHNUNGEN")                         */}
-              {/* ===================================================================== */}
-              <div className="rounded-3xl border border-white/10 bg-slate-950/85 p-5 sm:p-6 backdrop-blur-md shadow-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-mono text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                      KARRIERE-MEILENSTEINE & PRÄMIEN
-                    </div>
-                    <h3 className="text-lg sm:text-xl font-black text-white">
-                      Taunus-Auszeichnungen ({careerStats.claimedAchievements.length}/{ACHIEVEMENTS_LIST.length} eingelöst)
-                    </h3>
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                {[
+                  { icon: Crosshair, title: '7 Überarbeitete Maps', text: 'Taktische Deckung, Lichtstimmungen & Map-Level 1–10' },
+                  { icon: Wrench, title: 'Waffen-Level & Skilltree', text: 'Waffen bis Lv. 30, Meisterschafts-Tarnungen & 12 Perks' },
+                  { icon: Trophy, title: 'Rangliste', text: 'Sichere dir deinen Platz in Neu-Anspach' },
+                ].map(({ icon: Icon, title, text }) => (
+                  <div key={title} className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 backdrop-blur-sm">
+                    <Icon className="mb-3 h-5 w-5 text-amber-400" aria-hidden="true" />
+                    <h2 className="font-bold text-white">{title}</h2>
+                    <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
                   </div>
                 </div>
 
@@ -1376,7 +1347,7 @@ export default function App() {
         )}
 
         {!showHome && activeTab === 'battle' && (
-          showMobileCommandOverlay ? (
+          effectiveMobileMode ? (
             <MobileTacticalHub
               budget={budget}
               reputation={reputation}
@@ -1389,15 +1360,11 @@ export default function App() {
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
               onClaimDailyMission={handleClaimMission}
               onNavigateTab={openTab}
-              onSwitchToPcMode={() => {
-                setIsMobileMode(false);
-                setShowMobileCommandOverlay(false);
-              }}
+              onSwitchToPcMode={() => handleSetMobileMode(false)}
               onSimulatePatrol={handleSimulatePatrol}
-              onLaunch3DMobileCombat={(arenaId) => {
-                if (arenaId) setCurrentArena(arenaId);
-                setShowMobileCommandOverlay(false);
-              }}
+              isMobileHardware={isMobileHardware}
+              isLandscape={isLandscape}
+              skillPoints={skillPoints}
             />
           ) : (
             <ThreeCanvas
@@ -1427,9 +1394,10 @@ export default function App() {
               onStreakAchieved={handleStreakAchieved}
               onWaveAdvanced={handleWaveAdvanced}
               onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-              onOpenMobileCommandHub={() => setShowMobileCommandOverlay(true)}
-              onComboRecord={handleComboRecord}
-              onExitToMenu={() => setShowHome(true)}
+              skillTree={skillTree}
+              mapLevels={mapLevels}
+              onWeaponXpGain={handleWeaponXpGain}
+              onOperatorLevelUp={handleOperatorLevelUp}
             />
           )
         )}
@@ -1443,6 +1411,21 @@ export default function App() {
             onUpgradeAttachment={handleUpgradeAttachment}
             onUpgradeRarity={handleUpgradeRarity}
             onUpgradePackAPunch={handleUpgradePackAPunch}
+            onTrainWeaponLevel={handleTrainWeaponLevel}
+            onSelectWeaponMastery={handleSelectWeaponMastery}
+            onClose={() => setActiveTab('battle')}
+          />
+        )}
+
+        {activeTab === 'skilltree' && (
+          <SkillTreeView
+            budget={budget}
+            skillPoints={skillPoints}
+            skillTree={skillTree}
+            operatorLevel={operatorLevel}
+            onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
+            onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
+            onResetSkillTree={handleResetSkillTree}
             onClose={() => setActiveTab('battle')}
           />
         )}
@@ -1464,6 +1447,9 @@ export default function App() {
               setShowHome(false);
               setShowMobileCommandOverlay(false);
             }}
+            mapLevels={mapLevels}
+            onUpgradeMapLevel={handleUpgradeMapLevel}
+            isMobileHardware={isMobileHardware}
           />
         )}
 

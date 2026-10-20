@@ -1158,3 +1158,209 @@ export function createFortniteGoldenChest(x: number, y: number, z: number, rotat
 
   return { group, beaconLight };
 }
+
+/**
+ * Creates a tactical sandbag bunker wall for mid-field cover.
+ */
+export function createSandbagBunker(
+  x: number,
+  z: number,
+  rotY = 0,
+  length = 4.2
+): { mesh: THREE.Group; box: THREE.Box3 } {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.rotation.y = rotY;
+
+  const bagMat = new THREE.MeshStandardMaterial({
+    color: 0xB49A67,
+    roughness: 0.9,
+  });
+  const postMat = new THREE.MeshStandardMaterial({
+    color: 0x451A03,
+    roughness: 0.85,
+  });
+
+  const rows = 3;
+  const cols = Math.max(2, Math.round(length / 1.1));
+  const bagW = length / cols;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const bag = new THREE.Mesh(
+        new THREE.BoxGeometry(bagW * 0.92, 0.38, 0.65),
+        bagMat
+      );
+      bag.position.set(
+        (c - (cols - 1) / 2) * bagW + (r % 2 === 1 ? bagW * 0.12 : 0),
+        0.2 + r * 0.36,
+        0
+      );
+      bag.castShadow = true;
+      bag.receiveShadow = true;
+      group.add(bag);
+    }
+  }
+
+  [-length / 2, length / 2].forEach((px) => {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.35, 0.8), postMat);
+    post.position.set(px, 0.68, 0);
+    post.castShadow = true;
+    group.add(post);
+  });
+
+  const halfX = Math.abs(Math.cos(rotY)) * (length / 2) + Math.abs(Math.sin(rotY)) * 0.55;
+  const halfZ = Math.abs(Math.sin(rotY)) * (length / 2) + Math.abs(Math.cos(rotY)) * 0.55;
+  const box = new THREE.Box3(
+    new THREE.Vector3(x - halfX, 0, z - halfZ),
+    new THREE.Vector3(x + halfX, 1.35, z + halfZ)
+  );
+
+  return { mesh: group, box };
+}
+
+/**
+ * Creates a climbable 3D tactical cargo container with optional ramp onto its roof.
+ */
+export function createShippingContainer(
+  x: number,
+  z: number,
+  rotY = 0,
+  colorHex = 0x0284C7,
+  hasSouthRamp = true
+): {
+  mesh: THREE.Group;
+  box: THREE.Box3;
+  obstacles: THREE.Box3[];
+  walkableSurfaces: WalkableSurface[];
+} {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.rotation.y = rotY;
+
+  const width = 3.2;
+  const depth = 6.8;
+  const height = 2.8;
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: colorHex,
+    metalness: 0.45,
+    roughness: 0.5,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0x1E293B,
+    metalness: 0.7,
+    roughness: 0.35,
+  });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), bodyMat);
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const topFrame = new THREE.Mesh(new THREE.BoxGeometry(width + 0.1, 0.16, depth + 0.1), trimMat);
+  topFrame.position.y = height;
+  group.add(topFrame);
+
+  const box = new THREE.Box3(
+    new THREE.Vector3(x - width / 2, 0, z - depth / 2),
+    new THREE.Vector3(x + width / 2, height, z + depth / 2)
+  );
+  const obstacles: THREE.Box3[] = [box];
+
+  const walkableSurfaces: WalkableSurface[] = [
+    {
+      minX: x - width / 2,
+      maxX: x + width / 2,
+      minZ: z - depth / 2,
+      maxZ: z + depth / 2,
+      yStart: height + 0.08,
+      yEnd: height + 0.08,
+      rampAxis: 'none',
+    },
+  ];
+
+  if (hasSouthRamp) {
+    const rampLen = 4.2;
+    const plankMat = new THREE.MeshStandardMaterial({
+      map: createWoodPlankTexture(2, 2),
+      roughness: 0.8,
+    });
+    const steps = 8;
+    for (let i = 0; i < steps; i++) {
+      const t = (i + 0.5) / steps;
+      const stepH = (height + 0.08) * (1 - t);
+      const stepZ = depth / 2 + t * rampLen;
+      const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, Math.max(0.2, stepH), 0.52), plankMat);
+      stepMesh.position.set(0, stepH / 2, stepZ);
+      stepMesh.castShadow = true;
+      group.add(stepMesh);
+    }
+
+    walkableSurfaces.push({
+      minX: x - 1.15,
+      maxX: x + 1.15,
+      minZ: z + depth / 2,
+      maxZ: z + depth / 2 + rampLen,
+      yStart: height + 0.08,
+      yEnd: 0,
+      rampAxis: 'z',
+    });
+  }
+
+  return { mesh: group, box, obstacles, walkableSurfaces };
+}
+
+/**
+ * Creates a stylized street lamp or stadium floodlight mast with glowing emissive head.
+ */
+export function createStreetLamp(
+  x: number,
+  z: number,
+  height = 5.6,
+  lightColorHex = 0xFDE047,
+  addPointLight = false
+): { mesh: THREE.Group; box: THREE.Box3 } {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+
+  const poleMat = new THREE.MeshStandardMaterial({
+    color: 0x334155,
+    metalness: 0.75,
+    roughness: 0.35,
+  });
+  const bulbMat = new THREE.MeshStandardMaterial({
+    color: lightColorHex,
+    emissive: lightColorHex,
+    emissiveIntensity: 2.2,
+    roughness: 0.15,
+  });
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, height, 8), poleMat);
+  pole.position.y = height / 2;
+  pole.castShadow = true;
+  group.add(pole);
+
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.12), poleMat);
+  arm.position.set(0.35, height - 0.1, 0);
+  group.add(arm);
+
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10), bulbMat);
+  bulb.position.set(0.7, height - 0.22, 0);
+  group.add(bulb);
+
+  if (addPointLight) {
+    const pt = new THREE.PointLight(lightColorHex, 1.35, 18);
+    pt.position.set(0.7, height - 0.35, 0);
+    group.add(pt);
+  }
+
+  const box = new THREE.Box3(
+    new THREE.Vector3(x - 0.35, 0, z - 0.35),
+    new THREE.Vector3(x + 0.35, height, z + 0.35)
+  );
+
+  return { mesh: group, box };
+}
+

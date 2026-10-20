@@ -4,6 +4,9 @@ import {
   COLD_WAR_RARITIES,
   PACK_A_PUNCH_TIERS,
   GUNSMITH_CATALOG,
+  WEAPON_MASTERY_CAMOS,
+  MAX_WEAPON_LEVEL,
+  getWeaponLevelTrainCostNAT,
   getEffectiveWeaponStats,
 } from '../game/weapons';
 import { AllWeaponsUpgrades, AttachmentType } from '../types';
@@ -17,6 +20,8 @@ import {
   Coins,
   Wrench,
   Sparkles,
+  Award,
+  Lock,
   X,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
@@ -29,6 +34,8 @@ interface GunsmithViewProps {
   onUpgradeAttachment: (weaponId: string, slot: AttachmentType, targetLevel: number, cost: number) => void;
   onUpgradeRarity: (weaponId: string, targetTier: number, cost: number) => void;
   onUpgradePackAPunch: (weaponId: string, targetLevel: number, cost: number) => void;
+  onTrainWeaponLevel?: (weaponId: string, levelsToAdd: number, costNAT: number) => void;
+  onSelectWeaponMastery?: (weaponId: string, masteryId: string) => void;
   onClose?: () => void;
 }
 
@@ -40,6 +47,8 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
   onUpgradeAttachment,
   onUpgradeRarity,
   onUpgradePackAPunch,
+  onTrainWeaponLevel,
+  onSelectWeaponMastery,
   onClose,
 }) => {
   const [selectedWeaponId, setSelectedWeaponId] = useState<string>(activeWeaponId || 'bembel');
@@ -48,11 +57,22 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
     rarityTier: 1,
     papLevel: 0,
     attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+    weaponLevel: 1,
+    weaponXp: 0,
+    masteryId: 'standard',
   };
 
   const stats = getEffectiveWeaponStats(weapon, currentState);
   const nextRarity = COLD_WAR_RARITIES.find((r) => r.tier === currentState.rarityTier + 1);
   const nextPap = PACK_A_PUNCH_TIERS.find((p) => p.level === currentState.papLevel + 1);
+
+  const train1Cost = getWeaponLevelTrainCostNAT(stats.weaponLevel);
+  const remainingLevels = Math.max(0, MAX_WEAPON_LEVEL - stats.weaponLevel);
+  const bulkCount = Math.min(5, remainingLevels);
+  const trainBulkCost = Array.from({ length: bulkCount }).reduce<number>(
+    (acc, _, idx) => acc + getWeaponLevelTrainCostNAT(stats.weaponLevel + idx),
+    0
+  );
 
   const handleSelectWeaponTab = (id: string) => {
     setSelectedWeaponId(id);
@@ -67,13 +87,13 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800">
           <div>
             <div className="text-xs font-mono text-amber-400 tracking-wider">
-              WAFFENSCHMIEDE (GUNSMITH) & PACK-A-PUNCH ARSENAL · BLACK OPS COLD WAR SYSTEM
+              WAFFENSCHMIEDE (GUNSMITH), WAFFEN-LEVEL & PACK-A-PUNCH ARSENAL
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight mt-0.5">
-              Waffen-Aufsätze, Seltenheitsstufen & Äppler-Pack-a-Punch
+              Waffen-Level (1–30), Meisterschafts-Tarnungen, Aufsätze & Pack-a-Punch
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Rüste deine Waffen an 5 Gunsmith-Stationen auf, steigere die Waffen-Seltenheit bis Legendär (Tier V) und aktiviere die 3-stufige Pack-a-Punch-Schmiede.
+              Sammle Waffen-XP durch Treffer & Kills oder trainiere dein Waffen-Level direkt mit NAT für bis zu +90% Bonusschaden, schnellere Nachladezeit und exklusive 3D-Meisterschafts-Skins!
             </p>
           </div>
 
@@ -108,9 +128,16 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
               rarityTier: 1,
               papLevel: 0,
               attachments: { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
+              weaponLevel: 1,
+              weaponXp: 0,
+              masteryId: 'standard',
             };
             const wStats = getEffectiveWeaponStats(w, wState);
             const isSelected = selectedWeaponId === w.id;
+            const xpPct =
+              wStats.weaponLevel >= MAX_WEAPON_LEVEL
+                ? 100
+                : Math.min(100, Math.round((wStats.weaponXp / wStats.nextLevelXp) * 100));
 
             return (
               <button
@@ -124,20 +151,176 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1">
-                  <span>{wStats.rarityObj.codLabel}</span>
-                  {wState.papLevel > 0 && (
-                    <span className="text-amber-400 font-bold">PaP {wState.papLevel}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-black">
+                    WAFFEN-LV. {wStats.weaponLevel}/{MAX_WEAPON_LEVEL}
+                  </span>
+                  {wState.papLevel > 0 ? (
+                    <span className="text-fuchsia-400 font-bold">PaP {wState.papLevel}</span>
+                  ) : (
+                    <span>{wStats.rarityObj.codLabel}</span>
                   )}
                 </div>
                 <div className="text-sm font-bold text-white truncate">{wStats.displayName}</div>
-                <div className="text-[11px] text-slate-400 truncate mt-0.5">{w.codArchetype}</div>
-                <div className="mt-3 flex items-center justify-between text-xs font-mono">
+                <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                  Skin: <span style={{ color: wStats.activeMastery.colorHex }}>{wStats.activeMastery.name}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden mt-2">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all"
+                    style={{ width: `${xpPct}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs font-mono">
                   <span className="text-amber-400 font-bold tabular-nums">{wStats.damage} DMG</span>
                   <span className="text-sky-400 tabular-nums">{wStats.fireRate}/s</span>
                 </div>
               </button>
             );
           })}
+        </div>
+
+        {/* WEAPON LEVEL & MASTERY CAMO FORGE PANEL */}
+        <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/25 border border-amber-500/40 shadow-xl space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
+                <Award className="w-4 h-4" />
+                <span>
+                  WAFFEN-LEVEL & MEISTERSCHAFTS-SCHMIEDE · {stats.displayName}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span className="text-3xl font-black text-white font-mono tabular-nums">
+                  STUFE {stats.weaponLevel} <span className="text-base text-slate-400">/ {MAX_WEAPON_LEVEL}</span>
+                </span>
+                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold">
+                  +{stats.levelDamageBonusPct}% Level-Schaden · +{stats.levelReloadBonusPct}% Nachladetempo · +{stats.bonusMagCapacity} Schuss Magazin
+                </span>
+              </div>
+              {/* XP Bar */}
+              <div className="max-w-xl pt-1">
+                <div className="flex justify-between text-[11px] font-mono text-slate-300 mb-1">
+                  <span>
+                    {stats.weaponLevel >= MAX_WEAPON_LEVEL
+                      ? 'MAXIMALES WAFFEN-LEVEL ERREICHT (MEISTER-PRESTIGE)'
+                      : `Waffen-Erfahrung (Kills, Crits & Wellen im Einsatz)`}
+                  </span>
+                  <span className="text-amber-400 font-bold tabular-nums">
+                    {stats.weaponXp} / {stats.nextLevelXp} W-XP
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-slate-950 border border-amber-500/30 p-0.5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-200"
+                    style={{
+                      width: `${
+                        stats.weaponLevel >= MAX_WEAPON_LEVEL
+                          ? 100
+                          : Math.min(100, (stats.weaponXp / stats.nextLevelXp) * 100)
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Direct NAT Weapon Level Up Buttons */}
+            {onTrainWeaponLevel && stats.weaponLevel < MAX_WEAPON_LEVEL && (
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={budget < train1Cost}
+                  onClick={() => {
+                    soundFx.playLevelUp();
+                    onTrainWeaponLevel(selectedWeaponId, 1, train1Cost);
+                  }}
+                  className={`px-4 py-2.5 rounded-xl font-mono font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    budget >= train1Cost
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  <span>+1 Waffen-Level ({train1Cost} NAT)</span>
+                </button>
+
+                {bulkCount > 1 && (
+                  <button
+                    type="button"
+                    disabled={budget < trainBulkCost}
+                    onClick={() => {
+                      soundFx.playLevelUp();
+                      onTrainWeaponLevel(selectedWeaponId, bulkCount, trainBulkCost);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl font-mono font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer border ${
+                      budget >= trainBulkCost
+                        ? 'bg-purple-500/25 hover:bg-purple-500/35 text-purple-200 border-purple-400 shadow-lg'
+                        : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 text-purple-300" />
+                    <span>+{bulkCount} Level Boost ({trainBulkCost} NAT)</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 6 Mastery Camo Skins Grid */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <div className="text-[11px] font-mono text-slate-400 uppercase mb-2.5 flex items-center justify-between">
+              <span>Waffen-Meisterschafts-Tarnungen (Durch Waffen-Level freischaltbar):</span>
+              <span className="text-amber-300 font-bold">
+                Aktiv: {stats.activeMastery.name}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+              {WEAPON_MASTERY_CAMOS.map((camo) => {
+                const isUnlocked = stats.weaponLevel >= camo.requiredLevel;
+                const isEquipped = stats.activeMastery.id === camo.id;
+
+                return (
+                  <button
+                    key={camo.id}
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => {
+                      if (isUnlocked && onSelectWeaponMastery) {
+                        soundFx.playShoot();
+                        onSelectWeaponMastery(selectedWeaponId, camo.id);
+                      }
+                    }}
+                    className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                      isEquipped
+                        ? 'bg-slate-950 border-amber-400 ring-1 ring-amber-400/50 cursor-pointer'
+                        : isUnlocked
+                        ? 'bg-slate-950/75 hover:bg-slate-950 border-slate-700 cursor-pointer'
+                        : 'bg-slate-950/35 border-slate-800/60 opacity-60 cursor-not-allowed'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                        <span className="flex items-center gap-1.5 font-bold" style={{ color: camo.colorHex }}>
+                          <span
+                            className="w-2.5 h-2.5 rounded-full inline-block"
+                            style={{ backgroundColor: camo.colorHex }}
+                          />
+                          Lv. {camo.requiredLevel}
+                        </span>
+                        {isEquipped ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                        ) : !isUnlocked ? (
+                          <Lock className="w-3 h-3 text-slate-500" />
+                        ) : null}
+                      </div>
+                      <div className="text-xs font-bold text-white leading-tight">{camo.name}</div>
+                      <div className="text-[10px] text-slate-400 mt-1 leading-snug">{camo.subtitle}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Main Weapon Overview + Cold War Rarity & Pack-a-Punch Row */}

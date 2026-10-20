@@ -64,7 +64,8 @@ export function create3DWeaponModel(
   weaponId: string = 'bembel',
   attachments: WeaponAttachments = { scope: 0, barrel: 0, bolt: 0, mag: 0, stock: 0 },
   papLevel: number = 0,
-  rarityTier: number = 1
+  rarityTier: number = 1,
+  masteryId: string = 'standard'
 ): THREE.Group {
   const gun = new THREE.Group();
 
@@ -77,12 +78,30 @@ export function create3DWeaponModel(
       ? 0x22D3EE
       : null;
 
+  const masteryColors: Record<string, { body: number; accent: number; emissive: number }> = {
+    waldgeist: { body: 0x14532D, accent: 0x22C55E, emissive: 0.25 },
+    kupferstich: { body: 0x7C2D12, accent: 0xF97316, emissive: 0.35 },
+    kobalt: { body: 0x0C4A6E, accent: 0x38BDF8, emissive: 0.45 },
+    gold_aeppler: { body: 0xD97706, accent: 0xFACC15, emissive: 0.55 },
+    dunkelaether: { body: 0x581C87, accent: 0xE879F9, emissive: 0.85 },
+  };
+  const masterySkin = masteryColors[masteryId];
+
+  const bodyColor = papColorHex
+    ? papColorHex
+    : masterySkin
+    ? masterySkin.body
+    : rarityTier >= 5
+    ? 0xD97706
+    : 0x1E293B;
+
   const gunMetal = new THREE.MeshStandardMaterial({
-    color: papColorHex ? papColorHex : rarityTier >= 5 ? 0xD97706 : 0x1E293B,
-    emissive: papColorHex ? papColorHex : 0x000000,
-    emissiveIntensity: papLevel > 0 ? 0.35 + papLevel * 0.15 : 0,
+    color: bodyColor,
+    emissive: papColorHex ? papColorHex : masterySkin ? masterySkin.accent : 0x000000,
+    emissiveIntensity:
+      papLevel > 0 ? 0.35 + papLevel * 0.15 : masterySkin ? masterySkin.emissive : 0,
     metalness: 0.85,
-    roughness: 0.24,
+    roughness: 0.22,
   });
   const gunDark = new THREE.MeshStandardMaterial({
     color: 0x0F172A,
@@ -92,7 +111,9 @@ export function create3DWeaponModel(
 
   const accentColor =
     papColorHex ||
-    (weaponId === 'bembel'
+    (masterySkin
+      ? masterySkin.accent
+      : weaponId === 'bembel'
       ? 0x38BDF8
       : weaponId === 'zwille'
       ? 0x4ADE80
@@ -103,7 +124,7 @@ export function create3DWeaponModel(
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: papLevel > 0 ? 1.2 : 0.45,
+    emissiveIntensity: papLevel > 0 ? 1.2 : masterySkin ? 0.9 : 0.45,
     metalness: 0.6,
     roughness: 0.25,
   });
@@ -714,7 +735,7 @@ export function createArticulatedHumanoid(options: {
   return { group, weaponMount };
 }
 
-export function createWehrheimerMesh(role: AgentRole): THREE.Group {
+export function createWehrheimerMesh(role: AgentRole, mapDifficultyLevel: number = 1): THREE.Group {
   const weaponId =
     role === 'sniper'
       ? 'bembel'
@@ -724,36 +745,54 @@ export function createWehrheimerMesh(role: AgentRole): THREE.Group {
       ? 'handkaes'
       : 'zwille';
 
+  const isElite = mapDifficultyLevel >= 4;
+  const isVeteran = mapDifficultyLevel >= 2;
+
   const jacketColor =
     role === 'shocktrooper'
-      ? 0xB91C1C
+      ? isElite
+        ? 0x7F1D1D
+        : 0xB91C1C
       : role === 'sniper'
-      ? 0x0369A1
+      ? isElite
+        ? 0x1E3A8A
+        : 0x0369A1
       : role === 'boss'
       ? 0x92400E
+      : isElite
+      ? 0x14532D
       : 0x15803D;
+
+  const botAttLv = Math.min(3, Math.floor((mapDifficultyLevel - 1) / 2));
 
   const { group } = createArticulatedHumanoid({
     jacketColor,
-    vestColor: 0x1E293B,
+    vestColor: isElite ? 0x3B0764 : 0x1E293B,
     pantsColor: 0x334155,
-    helmetColor: role === 'shocktrooper' ? 0x7F1D1D : 0x451A03,
+    helmetColor: isElite ? 0xD97706 : role === 'shocktrooper' ? 0x7F1D1D : 0x451A03,
     skinColor: 0xE2A77F,
     weaponId,
     attachments:
       role === 'sniper'
-        ? { scope: 2, barrel: 2, bolt: 0, mag: 0 }
+        ? { scope: Math.max(2, botAttLv), barrel: Math.max(2, botAttLv), bolt: botAttLv, mag: botAttLv }
         : role === 'boss'
-        ? { scope: 2, barrel: 2, bolt: 2, mag: 2 }
-        : { scope: 0, barrel: 0, bolt: 0, mag: 0 },
-    hasVisor: role === 'sniper',
+        ? { scope: 3, barrel: 3, bolt: 3, mag: 3 }
+        : { scope: botAttLv, barrel: botAttLv, bolt: botAttLv, mag: botAttLv },
+    hasVisor: role === 'sniper' || isVeteran,
   });
 
   if (role === 'boss') {
     // Detailed 200-PS Taunus-Traktor Chassis around Boss Traktor-Horst!
-    const tractorMat = new THREE.MeshStandardMaterial({ color: 0x15803D, roughness: 0.35, metalness: 0.5 });
+    const tractorMat = new THREE.MeshStandardMaterial({
+      color: isElite ? 0x7C2D12 : 0x15803D,
+      roughness: 0.35,
+      metalness: 0.5,
+    });
     const tireMat = new THREE.MeshStandardMaterial({ color: 0x18181B, roughness: 0.9 });
-    const rimMat = new THREE.MeshStandardMaterial({ color: 0xEF4444, roughness: 0.4 });
+    const rimMat = new THREE.MeshStandardMaterial({
+      color: isElite ? 0xFACC15 : 0xEF4444,
+      roughness: 0.4,
+    });
 
     const hood = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.95, 2.3), tractorMat);
     hood.position.set(0, 0.75, 0.35);
@@ -785,19 +824,25 @@ export function createWehrheimerMesh(role: AgentRole): THREE.Group {
       group.add(frontTire);
     });
 
-    group.scale.set(1.22, 1.22, 1.22);
+    const bossScale = 1.22 + Math.min(0.18, (mapDifficultyLevel - 1) * 0.025);
+    group.scale.set(bossScale, bossScale, bossScale);
   }
 
-  // RED target ring and indicator over Wehrheimer enemy
-  const ringGeo = new THREE.RingGeometry(0.36, 0.5, 16);
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0xEF4444, side: THREE.DoubleSide });
+  // Target ring over Wehrheimer enemy (Turns Orange/Magenta on higher leveled maps!)
+  const ringColor = isElite ? 0xE879F9 : isVeteran ? 0xF97316 : 0xEF4444;
+  const ringGeo = new THREE.RingGeometry(0.36, 0.52, 16);
+  const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 2.28;
   group.add(ring);
 
-  // Add 3D billboard title badge
-  const roleTitle = role === 'boss' ? 'BOSS HORST' : role.toUpperCase();
+  // Add 3D billboard title badge with Bot Level
+  const rankPrefix = isElite ? 'ELITE ' : isVeteran ? 'VET ' : '';
+  const roleTitle =
+    role === 'boss'
+      ? `BOSS HORST · LV.${mapDifficultyLevel}`
+      : `${rankPrefix}${role.toUpperCase()} · LV.${mapDifficultyLevel}`;
   const billboard = createCharacterBillboard('Wehrheimer', roleTitle, false);
   billboard.position.y = 2.85;
   group.add(billboard);

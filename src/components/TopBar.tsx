@@ -14,22 +14,26 @@ import {
   Target,
   Award,
   LogOut,
+  Zap,
+  Lock,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
-export type AppTab = 'battle' | 'gunsmith' | 'tycoon' | 'multiplayer' | 'leaderboard';
+export type AppTab = 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
 
 interface TopBarProps {
   activeTab: AppTab;
   setActiveTab: (tab: AppTab) => void;
   budget: number;
   reputation?: number;
+  skillPoints?: number;
   isMuted: boolean;
   setIsMuted: (muted: boolean) => void;
   onRequestCommander: () => void;
   isCommanderThinking: boolean;
   isMobileMode: boolean;
   setIsMobileMode: (mobile: boolean) => void;
+  isMobileHardware?: boolean;
   playerName: string;
   clanTag: string;
   onOpenHome?: () => void;
@@ -48,10 +52,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   setActiveTab,
   budget,
   reputation = 0,
+  skillPoints = 0,
   isMuted,
   setIsMuted,
   isMobileMode,
   setIsMobileMode,
+  isMobileHardware = false,
   playerName,
   clanTag,
   onOpenHome,
@@ -69,11 +75,17 @@ export const TopBar: React.FC<TopBarProps> = ({
     setIsMuted(next);
   };
 
-  const navItems: { id: AppTab; label: string; mobileLabel: string; icon: React.FC<{ className?: string }> }[] = [
+  const navItems: {
+    id: AppTab;
+    label: string;
+    mobileLabel: string;
+    icon: React.FC<{ className?: string }>;
+    badge?: number;
+  }[] = [
     {
       id: 'battle',
-      label: '3D Battle Royale',
-      mobileLabel: '3D-Kampf',
+      label: isMobileMode || isMobileHardware ? 'Taktische Zentrale' : '3D Battle Royale',
+      mobileLabel: 'Zentrale',
       icon: Map,
     },
     {
@@ -81,6 +93,19 @@ export const TopBar: React.FC<TopBarProps> = ({
       label: 'Waffenschmiede',
       mobileLabel: 'Waffen',
       icon: Wrench,
+    },
+    {
+      id: 'skilltree',
+      label: 'Skilltree',
+      mobileLabel: 'Skills',
+      icon: Zap,
+      badge: skillPoints > 0 ? skillPoints : undefined,
+    },
+    {
+      id: 'clan',
+      label: 'Mein Clan',
+      mobileLabel: 'Clan',
+      icon: Users,
     },
     {
       id: 'tycoon',
@@ -111,7 +136,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <>
       {/* 3-Zone Top Bar Contract - Sticky at Top */}
-      <header className="sticky top-0 flex items-center justify-between gap-3 sm:gap-6 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 z-30 shrink-0">
+      <header className="sticky top-0 flex items-center justify-between gap-3 sm:gap-5 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 z-30 shrink-0">
         {/* Zone 1: Wordmark */}
         <button
           type="button"
@@ -123,8 +148,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span className="hidden sm:inline">NEU-ANSPACH</span>
           <span>ROYALE</span>
         </button>
-        {/* Zone 2: Desktop 5 clean single-line navigation links */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
+        {/* Zone 2: Desktop navigation links */}
+        <nav className="hidden lg:flex items-center gap-5 text-sm font-medium text-slate-400">
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
             return (
@@ -135,13 +160,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                   if (!navigationDisabled) setActiveTab(item.id);
                 }}
                 aria-disabled={navigationDisabled}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 border-b-2 ${
+                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 border-b-2 flex items-center gap-1.5 ${
                   isActive
                     ? 'text-white border-amber-400 font-semibold'
                     : 'text-slate-400 border-transparent hover:text-white'
                 }`}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[10px] font-black">
+                    {item.badge} SP
+                  </span>
+                )}
               </button>
             );
           })}
@@ -198,29 +228,39 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
           )}
 
-          {/* Desktop Mode Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsMobileMode(!isMobileMode)}
-            title="Zwischen 3D-Battle-Royale und optimiertem Handy-Modus wechseln"
-            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
-              isMobileMode
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            {isMobileMode ? (
-              <>
-                <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Handy-Modus</span>
-              </>
-            ) : (
-              <>
-                <Monitor className="w-3.5 h-3.5 text-amber-400" />
-                <span>PC-Modus</span>
-              </>
-            )}
-          </button>
+          {/* Mode Toggle: Strictly locked on mobile hardware (including landscape!) */}
+          {isMobileHardware ? (
+            <div
+              title="3D Battle Royale ist auf Mobilgeräten (auch im Querformat) deaktiviert"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap shrink-0 bg-red-950/40 text-red-300 border border-red-500/30"
+            >
+              <Lock className="w-3.5 h-3.5 text-red-400" />
+              <span>Handy · Kein 3D-BR</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsMobileMode(!isMobileMode)}
+              title="Zwischen 3D-Battle-Royale (PC) und Taktischer Zentrale wechseln"
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
+                isMobileMode
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              {isMobileMode ? (
+                <>
+                  <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Zentrale-Ansicht</span>
+                </>
+              ) : (
+                <>
+                  <Monitor className="w-3.5 h-3.5 text-amber-400" />
+                  <span>PC-Modus (3D)</span>
+                </>
+              )}
+            </button>
+          )}
 
           {/* Sound Mute Button (Desktop) */}
           <button
@@ -281,12 +321,17 @@ export const TopBar: React.FC<TopBarProps> = ({
                 if (!navigationDisabled) setActiveTab(item.id);
               }}
               aria-disabled={navigationDisabled}
-              className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`relative flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 isActive ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
               <Icon className="w-4 h-4" />
               <span>{item.mobileLabel}</span>
+              {item.badge !== undefined && item.badge > 0 && (
+                <span className="absolute top-1.5 right-2 px-1 py-0.1 rounded-full bg-amber-500 text-slate-950 font-mono text-[8px] font-black">
+                  {item.badge}
+                </span>
+              )}
             </button>
           );
         })}

@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { Facility, DISTRICTS } from '../game/tycoon';
-import { ARENA_UNLOCK_RULES, checkArenaUnlocked } from '../game/three/arenas';
+import {
+  ARENAS,
+  ARENA_UNLOCK_RULES,
+  checkArenaUnlocked,
+  MAX_MAP_LEVEL,
+  INITIAL_MAP_LEVELS,
+  getMapUpgradeCostNAT,
+  getMapBotScaling,
+} from '../game/three/arenas';
+import { MapLevelsState } from '../types';
 import {
   Landmark,
   Wifi,
@@ -14,6 +23,10 @@ import {
   Sparkles,
   Building2,
   Unlock,
+  Skull,
+  Flame,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
@@ -33,6 +46,9 @@ interface TycoonHubProps {
   } | null;
   onAcceptCrisisEvent?: () => void;
   onStartArena: (arenaId: string) => void;
+  mapLevels?: MapLevelsState;
+  onUpgradeMapLevel?: (arenaId: string, costNAT: number) => void;
+  isMobileHardware?: boolean;
 }
 
 const FACILITY_ICONS: Record<string, React.FC<{ className?: string }>> = {
@@ -55,6 +71,9 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
   commanderCrisisEvent,
   onAcceptCrisisEvent,
   onStartArena,
+  mapLevels = INITIAL_MAP_LEVELS,
+  onUpgradeMapLevel,
+  isMobileHardware = false,
 }) => {
   const [selectedDistrict, setSelectedDistrict] = useState<string>('anspach');
 
@@ -77,13 +96,13 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800">
           <div>
             <div className="text-xs font-mono text-amber-400 uppercase tracking-wider mb-1">
-              Stadtverwaltung 61267 Neu-Anspach · Kommunalhaushalt & Map-Freischaltung
+              Stadtverwaltung 61267 Neu-Anspach · Kommunalhaushalt & Map-Aufwertung
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white">
               Wirtschafts-, Infrastruktur- & Einsatz-Zentrale
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Investiere Erträge in lokale Einrichtungen, um passive NAT-Einnahmen zu steigern, neue Neu-Anspacher Maps freizuschalten und deine Waffen hochzurüsten.
+              Investiere Erträge in lokale Einrichtungen, schalte überarbeitete Neu-Anspacher Maps frei und levele Maps hoch (Stufe 1–10) für härtere Bots und massiven NAT- & Waffen-XP-Bonus.
             </p>
           </div>
 
@@ -145,30 +164,35 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
           </div>
         )}
 
-        {/* 7 Neu-Anspach 3D Maps Campaign Progression & Unlock Grid */}
+        {/* 7 Neu-Anspach 3D Maps Campaign Progression, Rework & Map Leveling Grid */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div className="text-xs font-mono text-amber-400 uppercase tracking-wider">
-              7 Neu-Anspach 3D-Maps · Kampagnen-Freischaltung ({unlockedMaps.length}/7 freigeschaltet)
+              7 Überarbeitete Neu-Anspach Maps · Map-Stufen & Bot-Skalierung ({unlockedMaps.length}/7 freigeschaltet)
             </div>
             <div className="text-xs font-mono text-slate-400">
-              Durch Siege oder mit Neu-Anspach-Talern (NAT) freischalten
+              Gelevelte Maps machen Wehrheimer Bots stärker, gewähren aber deutlich mehr NAT & Waffen-XP!
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             {[
-              { id: 'hessenpark', title: '1. Freilichtmuseum Hessenpark', sub: 'Windmühle & Fachwerkscheunen' },
-              { id: 'waldschwimmbad', title: '2. Waldschwimmbad Neu-Anspach', sub: '50m-Becken & 5m-Sprungturm' },
-              { id: 'bahnhof', title: '3. Bahnhof (Taunusbahn RB15)', sub: 'LINT-Triebwagen & P+R-Autos' },
-              { id: 'buergerhaus', title: '4. Bürgerhaus & Rathausplatz', sub: 'Dachterrasse, Uhrturm & Feuerwehr' },
-              { id: 'taunuscenter', title: '5. Taunus-Center (Neue Mitte)', sub: 'Einkaufszentrum & oberes Parkdeck' },
-              { id: 'ars', title: '6. Adolf-Reichwein-Schule', sub: 'Mensa-Flachdach, Sporthalle & Schulbus' },
-              { id: 'feldbergblick', title: '7. Feldbergblick & Taunuskamm', sub: 'Holz-Aussichtsturm & Schutzhütte' },
+              { id: 'hessenpark', title: '1. Freilichtmuseum Hessenpark' },
+              { id: 'waldschwimmbad', title: '2. Waldschwimmbad Neu-Anspach' },
+              { id: 'bahnhof', title: '3. Bahnhof (Taunusbahn RB15)' },
+              { id: 'buergerhaus', title: '4. Bürgerhaus & Rathausplatz' },
+              { id: 'taunuscenter', title: '5. Taunus-Center (Neue Mitte)' },
+              { id: 'ars', title: '6. Adolf-Reichwein-Schule' },
+              { id: 'feldbergblick', title: '7. Feldbergblick & Taunuskamm' },
             ].map((arena) => {
               const unlocked = checkArenaUnlocked(arena.id, totalWins, unlockedMaps);
               const rule = ARENA_UNLOCK_RULES[arena.id];
+              const arenaDef = ARENAS[arena.id];
               const canAffordUnlock = rule && budget >= rule.unlockCostNAT;
+              const mapLv = mapLevels[arena.id] || 1;
+              const botScaling = getMapBotScaling(arena.id, mapLv);
+              const upgradeCost = getMapUpgradeCostNAT(arena.id, mapLv);
+              const canAffordLevelUp = budget >= upgradeCost && mapLv < MAX_MAP_LEVEL;
 
               return (
                 <div
@@ -180,29 +204,105 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
                   }`}
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
                       <span className="text-[10px] font-mono text-slate-400">
                         {rule?.difficultyLabel || 'Einsatzgebiet'}
                       </span>
-                      {unlocked ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {unlocked && (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-mono font-black">
+                            MAP-LV. {mapLv}/{MAX_MAP_LEVEL}
+                          </span>
+                        )}
+                        {unlocked ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                        )}
+                      </div>
                     </div>
+
                     <div className="text-xs font-bold text-white">{arena.title}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{arena.sub}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">
+                      {arenaDef?.subtitle}
+                    </div>
+
+                    {/* Atmosphere & Rework Badge */}
+                    {arenaDef?.atmosphere && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[10px] font-mono text-sky-300">
+                        {arenaDef.atmosphere.isNight ? (
+                          <Moon className="w-3 h-3 text-indigo-400" />
+                        ) : (
+                          <Sun className="w-3 h-3 text-amber-400" />
+                        )}
+                        <span>{arenaDef.atmosphere.timeOfDay}</span>
+                        <span className="text-emerald-400 font-bold">· REWORKED</span>
+                      </div>
+                    )}
+
+                    {/* Bot Strength Scaling Telemetry */}
+                    {unlocked && (
+                      <div className="mt-2.5 p-2 rounded-lg bg-slate-950/90 border border-slate-800/90 space-y-1 font-mono text-[10px]">
+                        <div className="flex items-center justify-between text-red-400 font-bold">
+                          <span className="flex items-center gap-1">
+                            <Skull className="w-3 h-3" />
+                            <span>{botScaling.threatTitle}</span>
+                          </span>
+                          <span>+{botScaling.extraBotsPerWave} Bots/Welle</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span>Bot-Kampfkraft:</span>
+                          <span className="text-amber-300 font-bold">
+                            +{Math.round((botScaling.hpMult - 1) * 100)}% HP · +{Math.round((botScaling.dmgMult - 1) * 100)}% DMG
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span>Map-Belohnung:</span>
+                          <span className="text-emerald-400 font-bold">
+                            +{Math.round((botScaling.natRewardMult - 1) * 100)}% NAT · +{Math.round((botScaling.xpRewardMult - 1) * 100)}% XP
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-4 pt-2.5 border-t border-slate-800">
+                  <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2">
                     {unlocked ? (
-                      <button
-                        type="button"
-                        onClick={() => onStartArena(arena.id)}
-                        className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
-                      >
-                        Map starten →
-                      </button>
+                      <>
+                        {onUpgradeMapLevel && (
+                          <button
+                            type="button"
+                            disabled={!canAffordLevelUp}
+                            onClick={() => {
+                              if (canAffordLevelUp) {
+                                soundFx.playLevelUp();
+                                onUpgradeMapLevel(arena.id, upgradeCost);
+                              }
+                            }}
+                            className={`w-full py-1.5 px-2.5 rounded-lg font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                              mapLv >= MAX_MAP_LEVEL
+                                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                : canAffordLevelUp
+                                ? 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300'
+                                : 'bg-slate-950 border border-slate-800 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <Flame className="w-3.5 h-3.5 text-amber-400" />
+                            {mapLv >= MAX_MAP_LEVEL ? (
+                              <span>Max. Map-Stufe (Lv. {MAX_MAP_LEVEL})</span>
+                            ) : (
+                              <span>Map auf Lv. {mapLv + 1} stufen ({upgradeCost} NAT)</span>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onStartArena(arena.id)}
+                          className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          {isMobileHardware ? 'Im Taktik-Hub auswählen →' : '3D-Map starten →'}
+                        </button>
+                      </>
                     ) : (
                       <div className="space-y-1.5">
                         <div className="text-[10px] font-mono text-slate-400">
