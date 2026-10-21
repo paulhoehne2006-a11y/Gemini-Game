@@ -109,8 +109,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [sessionSupersededNotice, setSessionSupersededNotice] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AppTab>('battle');
-  const [showHome, setShowHome] = useState(true);
+  const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [showMobileCommandOverlay, setShowMobileCommandOverlay] = useState(false);
   const [currentArena, setCurrentArena] = useState<string>('hessenpark');
 
@@ -1063,13 +1062,22 @@ export default function App() {
     setLocalPlayerId(playerId);
     setCurrentArena(room.arena || 'hessenpark');
     setActiveTab('battle');
-    setShowHome(false);
   };
 
   const openTab = (tab: AppTab) => {
     setActiveTab(tab);
-    setShowHome(false);
     setShowMobileCommandOverlay(false);
+  };
+
+  // Return from a running/finished match (pause menu or end screen) to the integrated main menu.
+  const handleExitToMenu = () => {
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    setActiveRoom(null);
+    setLocalPlayerId(null);
+    setMatchState('inactive');
+    openTab('home');
   };
 
   const facilityLevels = Object.fromEntries(
@@ -1128,7 +1136,7 @@ export default function App() {
 
   return (
     <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-      !showHome && activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
+      activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
     }`}>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
@@ -1161,7 +1169,6 @@ export default function App() {
         onSelectArenaAndPlay={(arenaId) => {
           setCurrentArena(arenaId);
           setActiveTab('battle');
-          setShowHome(false);
         }}
       />
 
@@ -1203,7 +1210,7 @@ export default function App() {
         </div>
       )}
 
-      {!showHome && (activeTab !== 'battle' || effectiveMobileMode) && (
+      {(activeTab !== 'battle' || effectiveMobileMode) && (
         <TopBar
           activeTab={activeTab}
           setActiveTab={openTab}
@@ -1219,7 +1226,7 @@ export default function App() {
           skillPoints={skillPoints}
           playerName={playerName}
           clanTag={clanTag}
-          onOpenHome={() => setShowHome(true)}
+          onOpenHome={() => openTab('home')}
           onOpenProfileModal={() => setShowProfileModal(true)}
           onOpenLegalModal={() => setShowLegalModal(true)}
           onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
@@ -1233,10 +1240,11 @@ export default function App() {
 
       {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
       <main className={`flex-1 w-full relative ${
-        showHome || activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+        activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
       }`}>
-        {showHome && (
-          <section className="relative isolate flex min-h-screen items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 py-12 sm:px-10 lg:px-20">
+        {/* Integrated main menu (former start page) - reachable via TopBar, pause menu & end screen */}
+        {activeTab === 'home' && (
+          <section className="relative isolate flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 pt-10 pb-24 sm:px-10 lg:px-20 lg:pb-12">
             <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full border border-amber-400/20 bg-amber-400/5 blur-3xl" aria-hidden="true" />
             <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div>
@@ -1255,7 +1263,6 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       setActiveTab('battle');
-                      setShowHome(false);
                     }}
                     className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
                   >
@@ -1347,7 +1354,7 @@ export default function App() {
           </section>
         )}
 
-        {!showHome && activeTab === 'battle' && (
+        {activeTab === 'battle' && (
           effectiveMobileMode ? (
             <MobileTacticalHub
               budget={budget}
@@ -1399,11 +1406,12 @@ export default function App() {
               mapLevels={mapLevels}
               onWeaponXpGain={handleWeaponXpGain}
               onOperatorLevelUp={handleOperatorLevelUp}
+              onExitToMenu={handleExitToMenu}
             />
           )
         )}
 
-        {!showHome && activeTab === 'gunsmith' && (
+        {activeTab === 'gunsmith' && (
           <GunsmithView
             budget={budget}
             weaponUpgrades={weaponUpgrades}
@@ -1414,7 +1422,7 @@ export default function App() {
             onUpgradePackAPunch={handleUpgradePackAPunch}
             onTrainWeaponLevel={handleTrainWeaponLevel}
             onSelectWeaponMastery={handleSelectWeaponMastery}
-            onClose={() => setActiveTab('battle')}
+            onClose={() => openTab('home')}
           />
         )}
 
@@ -1427,11 +1435,11 @@ export default function App() {
             onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
             onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
             onResetSkillTree={handleResetSkillTree}
-            onClose={() => setActiveTab('battle')}
+            onClose={() => openTab('home')}
           />
         )}
 
-        {!showHome && activeTab === 'tycoon' && (
+        {activeTab === 'tycoon' && (
           <TycoonHub
             budget={budget}
             onUpgradeFacility={handleUpgradeFacility}
@@ -1445,7 +1453,6 @@ export default function App() {
             onStartArena={(arenaId) => {
               setCurrentArena(arenaId);
               setActiveTab('battle');
-              setShowHome(false);
               setShowMobileCommandOverlay(false);
             }}
             mapLevels={mapLevels}
@@ -1454,7 +1461,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'multiplayer' && (
+        {activeTab === 'multiplayer' && (
           <MultiplayerLobby
             onStartGameWithRoom={handleStartGameWithRoom}
             playerName={playerName}
@@ -1466,7 +1473,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'leaderboard' && (
+        {activeTab === 'leaderboard' && (
           <LeaderboardView
             currentScore={lastMatchScore}
             currentKills={lastMatchKills}
@@ -1480,7 +1487,7 @@ export default function App() {
           />
         )}
 
-        {!showHome && activeTab === 'clan' && (
+        {activeTab === 'clan' && (
           <ClanHub
             playerName={playerName}
             onClanTagChange={(tag) => {

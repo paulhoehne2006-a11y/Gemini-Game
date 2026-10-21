@@ -16,10 +16,11 @@ import {
   LogOut,
   Zap,
   Lock,
+  Home,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
-export type AppTab = 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
+export type AppTab = 'home' | 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
 
 interface TopBarProps {
   activeTab: AppTab;
@@ -83,6 +84,12 @@ export const TopBar: React.FC<TopBarProps> = ({
     badge?: number;
   }[] = [
     {
+      id: 'home',
+      label: 'Hauptmenü',
+      mobileLabel: 'Menü',
+      icon: Home,
+    },
+    {
       id: 'battle',
       label: isMobileMode || isMobileHardware ? 'Taktische Zentrale' : '3D Battle Royale',
       mobileLabel: 'Zentrale',
@@ -125,12 +132,6 @@ export const TopBar: React.FC<TopBarProps> = ({
       mobileLabel: 'Freunde',
       icon: Users,
     },
-    {
-      id: 'clan',
-      label: 'Mein Clan',
-      mobileLabel: 'Clan',
-      icon: Users,
-    },
   ];
 
   return (
@@ -140,8 +141,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Zone 1: Wordmark */}
         <button
           type="button"
-          onClick={() => (onOpenHome ? onOpenHome() : setActiveTab('battle'))}
-          aria-label="Startseite öffnen"
+          onClick={() => (onOpenHome ? onOpenHome() : setActiveTab('home'))}
+          aria-label="Hauptmenü öffnen"
           className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
         >
           <span className="text-amber-400 font-mono">61267</span>
