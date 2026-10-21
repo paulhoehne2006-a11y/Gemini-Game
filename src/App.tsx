@@ -13,6 +13,7 @@ import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MobileTacticalHub } from './components/MobileTacticalHub';
 import { ClanHub } from './components/ClanHub';
+import { HomeDashboard } from './components/HomeDashboard';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -1244,114 +1245,38 @@ export default function App() {
       }`}>
         {/* Integrated main menu (former start page) - reachable via TopBar, pause menu & end screen */}
         {activeTab === 'home' && (
-          <section className="relative isolate flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)] px-5 pt-10 pb-24 sm:px-10 lg:px-20 lg:pb-12">
-            <div className="absolute -right-24 top-1/4 h-80 w-80 rounded-full border border-amber-400/20 bg-amber-400/5 blur-3xl" aria-hidden="true" />
-            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-              <div>
-                <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-400">
-                  61267 · Neu-Anspach
-                </p>
-                <h1 className="max-w-3xl text-5xl font-black tracking-tight text-white sm:text-7xl">
-                  Hessenpark
-                  <span className="block text-amber-400">Battle Royale</span>
-                </h1>
-                <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-                  Dein taktischer Einsatz beginnt hier. Erkunde die überarbeiteten 3D-Arenen am PC, levele deinen Skilltree & deine Waffen hoch und überliste die Wehrheimer in Neu-Anspach.
-                </p>
-                <div className="mt-9 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('battle');
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-amber-500/20 transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-950"
-                  >
-                    <Crosshair className="h-5 w-5" aria-hidden="true" />
-                    {effectiveMobileMode ? 'Taktik-Zentrale öffnen' : 'Einsatz starten'}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDailyMissionsModal(true)}
-                    className="flex items-center gap-1.5 rounded-2xl border border-white/15 bg-slate-900 hover:bg-slate-800 px-3.5 py-2 font-mono text-xs font-bold text-white cursor-pointer"
-                  >
-                    <Target className="h-4 w-4 text-amber-400" />
-                    <span>Tagesbefehle ({completedMissionsCount}/{dailyMissionsState.missions.length})</span>
-                  </button>
-                </div>
-                <p className="mt-4 font-mono text-[11px] uppercase tracking-wider text-slate-500">
-                  {effectiveMobileMode
-                    ? 'Handy-Modus (Hoch- & Querformat): Taktik-Hub, Skilltree & Waffenschmiede · 3D-Shooter nur am PC'
-                    : 'Maus: umsehen · WASD: bewegen · Linksklick: feuern'}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                {[
-                  { icon: Crosshair, title: '7 Überarbeitete Maps', text: 'Taktische Deckung, Lichtstimmungen & Map-Level 1–10' },
-                  { icon: Wrench, title: 'Waffen-Level & Skilltree', text: 'Waffen bis Lv. 30, Meisterschafts-Tarnungen & 12 Perks' },
-                  { icon: Trophy, title: 'Rangliste', text: 'Sichere dir deinen Platz in Neu-Anspach' },
-                ].map(({ icon: Icon, title, text }) => (
-                  <div key={title} className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 backdrop-blur-sm">
-                    <Icon className="mb-3 h-5 w-5 text-amber-400" aria-hidden="true" />
-                    <h2 className="font-bold text-white">{title}</h2>
-                    <p className="mt-1 text-sm leading-5 text-slate-400">{text}</p>
-                  </div>
-                ))}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {ACHIEVEMENTS_LIST.map((ach) => {
-                    const unlocked = ach.checkUnlocked(careerStats);
-                    const claimed = careerStats.claimedAchievements.includes(ach.id);
-                    const prog = ach.progressText(careerStats);
-
-                    return (
-                      <div
-                        key={ach.id}
-                        className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 ${
-                          claimed
-                            ? 'border-emerald-500/30 bg-emerald-950/15'
-                            : unlocked
-                            ? 'border-amber-400 bg-amber-500/15'
-                            : 'border-slate-800 bg-slate-900/70'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-white truncate">{ach.title}</span>
-                            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                              {prog}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-slate-400 leading-snug">{ach.description}</p>
-                          <div className="mt-1 font-mono text-[10px] font-bold text-emerald-400">
-                            Prämie: +{ach.rewardNAT} NAT · +{ach.rewardReputation} RUF
-                          </div>
-                        </div>
-
-                        <div className="shrink-0">
-                          {claimed ? (
-                            <span className="flex items-center gap-1 font-mono text-[10px] font-bold text-emerald-400">
-                              <CheckCircle2 className="h-4 w-4" />
-                            </span>
-                          ) : unlocked ? (
-                            <button
-                              type="button"
-                              onClick={() => handleClaimAchievement(ach.id)}
-                              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-3 py-1.5 font-mono text-[10px] font-black uppercase text-slate-950 shadow cursor-pointer"
-                            >
-                              Holen
-                            </button>
-                          ) : (
-                            <Lock className="h-4 w-4 text-slate-600" />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </section>
+          <HomeDashboard
+            playerName={playerName}
+            clanTag={clanTag}
+            playerCity={playerCity}
+            operatorLevel={operatorLevel}
+            reputation={reputation}
+            budget={budget}
+            totalWins={totalWins}
+            careerStats={careerStats}
+            skillPoints={skillPoints}
+            selectedGunsmithWeapon={selectedGunsmithWeapon}
+            weaponUpgrades={weaponUpgrades}
+            currentArena={currentArena}
+            unlockedMaps={effectiveUnlockedMaps}
+            mapLevels={mapLevels}
+            dailyMissionsState={dailyMissionsState}
+            effectiveMobileMode={effectiveMobileMode}
+            canClaimDailyLogin={canClaimDailyLogin}
+            onStartBattle={(arenaId) => {
+              if (arenaId) setCurrentArena(arenaId);
+              setActiveTab('battle');
+            }}
+            onSelectArena={(arenaId) => setCurrentArena(arenaId)}
+            onOpenTab={openTab}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+            onOpenDailyMissionsModal={() => setShowDailyMissionsModal(true)}
+            onClaimDailyMission={handleClaimMission}
+            onClaimDailyGrandBonus={handleClaimGrandBonus}
+            onClaimAchievement={handleClaimAchievement}
+            onClaimDailyLoginBonus={handleClaimDailyLoginBonus}
+            onUnlockMap={handleUnlockMap}
+          />
         )}
 
         {activeTab === 'battle' && (

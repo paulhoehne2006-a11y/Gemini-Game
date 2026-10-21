@@ -17,12 +17,22 @@ import {
   Zap,
   Lock,
   Home,
+  Coins,
+  Radio,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
-export type AppTab = 'home' | 'battle' | 'gunsmith' | 'skilltree' | 'tycoon' | 'multiplayer' | 'leaderboard' | 'clan';
+export type AppTab =
+  | 'home'
+  | 'battle'
+  | 'gunsmith'
+  | 'skilltree'
+  | 'tycoon'
+  | 'multiplayer'
+  | 'leaderboard'
+  | 'clan';
 
-interface TopBarProps {
+export interface TopBarProps {
   activeTab: AppTab;
   setActiveTab: (tab: AppTab) => void;
   budget: number;
@@ -30,8 +40,8 @@ interface TopBarProps {
   skillPoints?: number;
   isMuted: boolean;
   setIsMuted: (muted: boolean) => void;
-  onRequestCommander: () => void;
-  isCommanderThinking: boolean;
+  onRequestCommander?: () => void;
+  isCommanderThinking?: boolean;
   isMobileMode: boolean;
   setIsMobileMode: (mobile: boolean) => void;
   isMobileHardware?: boolean;
@@ -56,6 +66,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   skillPoints = 0,
   isMuted,
   setIsMuted,
+  onRequestCommander,
+  isCommanderThinking = false,
   isMobileMode,
   setIsMobileMode,
   isMobileHardware = false,
@@ -136,21 +148,49 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      {/* 3-Zone Top Bar Contract - Sticky at Top */}
-      <header className="sticky top-0 flex items-center justify-between gap-3 sm:gap-5 px-3 sm:px-6 py-2.5 sm:py-3 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 z-30 shrink-0">
-        {/* Zone 1: Wordmark */}
-        <button
-          type="button"
-          onClick={() => (onOpenHome ? onOpenHome() : setActiveTab('home'))}
-          aria-label="Hauptmenü öffnen"
-          className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+      {/* 3-Zone Battle Royale Header - Sticky at Top */}
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5 lg:px-6 py-2 sm:py-2.5 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800/80 shadow-[0_4px_30px_rgba(0,0,0,0.7)] shrink-0 relative select-none">
+        {/* Subtle Tactical Amber/Cyan Top Accent Line */}
+        <div className="tactical-top-accent" aria-hidden="true" />
+
+        {/* Zone 1: Wordmark & Military Badges */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playUiClick();
+              if (onOpenHome) onOpenHome();
+              else setActiveTab('home');
+            }}
+            aria-label="Hauptmenü öffnen - Neu-Anspach Royale"
+            className="group relative flex items-center gap-2.5 shrink-0 text-left cursor-pointer transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 rounded-lg p-0.5"
+          >
+            {/* Postal Code Chamfered Badge */}
+            <div className="hud-chamfer-sm border border-amber-500/60 bg-gradient-to-br from-amber-500/20 to-amber-950/40 px-2 py-0.5 font-mono text-xs font-black text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.35)] tracking-wider">
+              61267
+            </div>
+
+            {/* Metallic Font Title & Status */}
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-1.5 font-black tracking-wider uppercase text-sm sm:text-base leading-none">
+                <span className="metallic-text group-hover:text-white transition-colors">
+                  NEU-ANSPACH
+                </span>
+                <span className="text-amber-400 text-glow-amber">ROYALE</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 text-[9px] font-mono tracking-widest text-slate-400 uppercase mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-hud-beacon shadow-[0_0_6px_rgba(16,185,129,0.9)]" />
+                <span>ONLINE // V3.8</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* Zone 2: Desktop Navigation Links */}
+        <nav
+          aria-label="Hauptnavigation"
+          className="hidden lg:flex items-center gap-1 xl:gap-1.5 text-xs xl:text-sm font-medium"
         >
-          <span className="text-amber-400 font-mono">61267</span>
-          <span className="hidden sm:inline">NEU-ANSPACH</span>
-          <span>ROYALE</span>
-        </button>
-        {/* Zone 2: Desktop navigation links */}
-        <nav className="hidden lg:flex items-center gap-5 text-sm font-medium text-slate-400">
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
             return (
@@ -158,18 +198,26 @@ export const TopBar: React.FC<TopBarProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => {
+                  soundFx.playUiClick();
                   if (!navigationDisabled) setActiveTab(item.id);
                 }}
                 aria-disabled={navigationDisabled}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer py-1 border-b-2 flex items-center gap-1.5 ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative px-2.5 xl:px-3 py-1.5 rounded-md transition-all whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 font-mono tracking-tight ${
                   isActive
-                    ? 'text-white border-amber-400 font-semibold'
-                    : 'text-slate-400 border-transparent hover:text-white'
+                    ? 'text-amber-300 font-bold bg-amber-500/15 border border-amber-400/60 shadow-[0_0_14px_rgba(245,158,11,0.25)]'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60 hover:border-slate-700/60 border border-transparent'
                 }`}
               >
                 <span>{item.label}</span>
+                {isActive && (
+                  <span
+                    className="absolute -bottom-[9px] left-2 right-2 h-[2px] bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.9)] rounded-full"
+                    aria-hidden="true"
+                  />
+                )}
                 {item.badge !== undefined && item.badge > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[10px] font-black">
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 font-mono text-[10px] font-black animate-glow-pulse-amber shadow-[0_0_8px_rgba(245,158,11,0.7)]">
                     {item.badge} SP
                   </span>
                 )}
@@ -178,85 +226,136 @@ export const TopBar: React.FC<TopBarProps> = ({
           })}
         </nav>
 
-        {/* Zone 3: Primary Operator & Mode Action (Responsive layout) */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {/* Budget Pill */}
-          <span className="text-xs font-mono text-amber-400 font-bold tabular-nums whitespace-nowrap shrink-0 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
-            {budget.toLocaleString('de-DE')} <span className="text-[10px] text-amber-400/80">NAT</span>
-          </span>
+        {/* Zone 3: Currencies, Status Pills & Tactical Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* NAT Balance Pill */}
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/90 border border-amber-500/40 text-amber-400 font-mono text-xs font-bold shadow-[0_0_12px_rgba(245,158,11,0.18)] whitespace-nowrap shrink-0"
+            title="Aktuelles Guthaben in Neu-Anspach Talern (NAT)"
+          >
+            <Coins
+              className="w-3.5 h-3.5 text-amber-400 shrink-0 drop-shadow-[0_0_4px_rgba(245,158,11,0.7)]"
+              aria-hidden="true"
+            />
+            <span className="tabular-nums tracking-wide">{budget.toLocaleString('de-DE')}</span>
+            <span className="text-[10px] font-black text-amber-300 bg-amber-500/20 px-1 py-0.2 rounded border border-amber-500/30">
+              NAT
+            </span>
+          </div>
+
+          {/* Reputation Tag (Desktop only) */}
+          {onOpenDailyMissions && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playUiClick();
+                onOpenDailyMissions();
+              }}
+              aria-label={`Operator-Ansehen: ${reputation} Ruf-Punkte`}
+              className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/40 hover:border-purple-400/60 text-purple-300 hover:text-purple-100 text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+              title="Operator-Ansehen (Ruf-Punkte) - Klicke für Details"
+            >
+              <Award
+                className="w-3.5 h-3.5 text-purple-400 shrink-0 drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]"
+                aria-hidden="true"
+              />
+              <span className="tabular-nums">{reputation} Ruf</span>
+            </button>
+          )}
 
           {/* Daily Missions Trigger Button */}
           {onOpenDailyMissions && (
             <button
               type="button"
-              onClick={onOpenDailyMissions}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
+              onClick={() => {
+                soundFx.playUiClick();
+                onOpenDailyMissions();
+              }}
+              aria-label="Tagesbefehle und Operator-Ruf öffnen"
+              className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
                 unclaimedMissionsCount > 0
-                  ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md animate-pulse'
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-slate-700'
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-400 shadow-[0_0_14px_rgba(245,158,11,0.45)] animate-glow-pulse-amber'
+                  : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-slate-700'
               }`}
               title="Tagesbefehle & Operator-Ruf öffnen"
             >
               <Target
-                className={`w-3.5 h-3.5 ${
-                  unclaimedMissionsCount > 0 ? 'text-slate-950 stroke-[3]' : 'text-amber-400'
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  unclaimedMissionsCount > 0
+                    ? 'text-amber-400 stroke-[2.5] drop-shadow-[0_0_6px_rgba(245,158,11,0.8)]'
+                    : 'text-amber-400/80'
                 }`}
+                aria-hidden="true"
               />
               <span className="hidden sm:inline">Tagesbefehle</span>
-              <span
-                className={`px-1 sm:px-1.5 py-0.2 rounded text-[10px] font-black ${
-                  unclaimedMissionsCount > 0
-                    ? 'bg-slate-950 text-amber-400'
-                    : 'bg-slate-800 text-slate-300'
-                }`}
-              >
-                {unclaimedMissionsCount > 0
-                  ? `!${unclaimedMissionsCount}`
-                  : `${completedMissionsCount}/${totalMissionsCount}`}
-              </span>
+              {unclaimedMissionsCount > 0 ? (
+                <span className="relative flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[10px] font-black tracking-wide">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
+                  !{unclaimedMissionsCount}
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded text-[10px] font-black bg-slate-800 text-slate-300 border border-slate-700/60">
+                  {completedMissionsCount}/{totalMissionsCount}
+                </span>
+              )}
             </button>
           )}
 
-          {/* Reputation Tag (Desktop only) */}
-          {onOpenDailyMissions && (
-            <div
-              onClick={onOpenDailyMissions}
-              className="hidden xl:flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-950/40 border border-purple-500/30 text-purple-300 text-xs font-mono font-bold cursor-pointer hover:border-purple-400/50 transition-colors"
-              title="Operator-Ansehen (Ruf-Punkte)"
+          {/* Commander AI Quick Action (Optional high-tier desktop HUD) */}
+          {onRequestCommander && (
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playUiClick();
+                onRequestCommander();
+              }}
+              disabled={isCommanderThinking}
+              aria-label="Taktische KI-Befehle anfordern"
+              className="hidden 2xl:flex items-center gap-1.5 px-2 py-1 rounded-md bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 hover:border-cyan-400/60 text-cyan-300 text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.15)] disabled:opacity-50"
+              title="Taktische Gemini-Befehle für das Match anfordern"
             >
-              <Award className="w-3.5 h-3.5 text-purple-400" />
-              <span className="tabular-nums">{reputation} Ruf</span>
-            </div>
+              <Radio
+                className={`w-3.5 h-3.5 text-cyan-400 shrink-0 ${
+                  isCommanderThinking ? 'animate-spin' : ''
+                }`}
+                aria-hidden="true"
+              />
+              <span>{isCommanderThinking ? 'Commander denkt...' : 'HQ Funk'}</span>
+            </button>
           )}
 
-          {/* Mode Toggle: Strictly locked on mobile hardware (including landscape!) */}
+          {/* Mode Toggle: Strictly locked on mobile hardware */}
           {isMobileHardware ? (
             <div
               title="3D Battle Royale ist auf Mobilgeräten (auch im Querformat) deaktiviert"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap shrink-0 bg-red-950/40 text-red-300 border border-red-500/30"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold whitespace-nowrap shrink-0 bg-red-950/40 text-red-300 border border-red-500/40 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
             >
-              <Lock className="w-3.5 h-3.5 text-red-400" />
+              <Lock className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
               <span>Handy · Kein 3D-BR</span>
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => setIsMobileMode(!isMobileMode)}
+              onClick={() => {
+                soundFx.playUiClick();
+                setIsMobileMode(!isMobileMode);
+              }}
               title="Zwischen 3D-Battle-Royale (PC) und Taktischer Zentrale wechseln"
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
+              aria-label="Ansichtsmodus umschalten zwischen 3D-Battle-Royale und Taktischer Zentrale"
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer border ${
                 isMobileMode
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                  ? 'bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 border-cyan-500/40 hover:border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-800 hover:border-slate-700'
               }`}
             >
               {isMobileMode ? (
                 <>
-                  <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Zentrale-Ansicht</span>
+                  <Smartphone className="w-3.5 h-3.5 text-cyan-400 shrink-0" aria-hidden="true" />
+                  <span>Zentrale</span>
                 </>
               ) : (
                 <>
-                  <Monitor className="w-3.5 h-3.5 text-amber-400" />
+                  <Monitor className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
                   <span>PC-Modus (3D)</span>
                 </>
               )}
@@ -267,40 +366,65 @@ export const TopBar: React.FC<TopBarProps> = ({
           <button
             type="button"
             onClick={toggleMute}
-            className="hidden sm:flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer shrink-0"
+            aria-label={isMuted ? 'Ton aktivieren' : 'Ton stummschalten'}
+            className="hidden sm:flex items-center justify-center p-1.5 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 transition-all cursor-pointer shrink-0"
             title={isMuted ? 'Ton aktivieren' : 'Stummschalten'}
           >
-            {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted ? (
+              <VolumeX
+                className="w-4 h-4 text-red-400 drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]"
+                aria-hidden="true"
+              />
+            ) : (
+              <Volume2
+                className="w-4 h-4 text-amber-400/90 drop-shadow-[0_0_4px_rgba(245,158,11,0.5)]"
+                aria-hidden="true"
+              />
+            )}
           </button>
 
           {/* Legal / Disclaimer Button (Desktop) */}
           {onOpenLegalModal && (
             <button
               type="button"
-              onClick={onOpenLegalModal}
-              className="hidden sm:flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-amber-400 border border-slate-800 transition-colors cursor-pointer shrink-0"
+              onClick={() => {
+                soundFx.playUiClick();
+                onOpenLegalModal();
+              }}
+              aria-label="Rechtliches, Datenschutz und Disclaimer"
+              className="hidden sm:flex items-center justify-center p-1.5 rounded-md bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-amber-400 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer shrink-0"
               title="Rechtliches, Datenschutz & Disclaimer"
             >
-              <Scale className="w-4 h-4" />
+              <Scale className="w-4 h-4" aria-hidden="true" />
             </button>
           )}
 
-          {/* Profile / Callsign Button */}
+          {/* Profile / Callsign Button - Military Badge Styling */}
           <button
             type="button"
-            onClick={onOpenProfileModal}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs font-mono font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={() => {
+              soundFx.playUiClick();
+              onOpenProfileModal();
+            }}
+            aria-label="Operator-Profil und Clan-Tag öffnen"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono font-black text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:from-amber-300 hover:to-amber-400 rounded-md border border-amber-200/50 shadow-[0_0_12px_rgba(245,158,11,0.35)] transition-all whitespace-nowrap shrink-0 cursor-pointer"
             title="Benutzername & Clan-Tag ändern"
           >
-            <UserCheck className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate max-w-[85px] sm:max-w-[130px]">
+            <UserCheck className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" aria-hidden="true" />
+            <span className="truncate max-w-[80px] sm:max-w-[120px] md:max-w-[140px] tracking-tight">
               [{clanTag || '61267'}] {playerName}
             </span>
           </button>
+
+          {/* Logout Button */}
           <button
             type="button"
-            onClick={onLogout}
-            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer text-xs font-mono font-bold"
+            onClick={() => {
+              soundFx.playUiClick();
+              onLogout();
+            }}
+            aria-label="Vom Konto abmelden"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-md bg-slate-900/90 hover:bg-red-950/40 text-slate-300 hover:text-red-300 border border-slate-800 hover:border-red-500/40 transition-all cursor-pointer text-xs font-mono font-bold shrink-0"
             title="Vom Konto abmelden"
           >
             <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
@@ -309,8 +433,15 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </header>
 
-      {/* Mobile Bottom Tab Bar (for screens < lg) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around px-1 z-40">
+      {/* Mobile Bottom Tab Bar (for screens < lg) - Clean, Accessible, Glowing */}
+      <nav
+        aria-label="Mobile Hauptnavigation"
+        className="lg:hidden fixed bottom-0 left-0 right-0 h-14 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 shadow-[0_-4px_25px_rgba(0,0,0,0.7)] flex items-center justify-around px-1 z-40"
+      >
+        <div
+          className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-amber-500/50 to-transparent pointer-events-none"
+          aria-hidden="true"
+        />
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -319,17 +450,33 @@ export const TopBar: React.FC<TopBarProps> = ({
               key={item.id}
               type="button"
               onClick={() => {
+                soundFx.playUiClick();
                 if (!navigationDisabled) setActiveTab(item.id);
               }}
+              aria-label={item.label}
               aria-disabled={navigationDisabled}
-              className={`relative flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                isActive ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-white'
+              aria-current={isActive ? 'page' : undefined}
+              className={`relative flex flex-col items-center justify-center flex-1 h-full min-h-[44px] gap-0.5 text-[10px] font-mono transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                isActive
+                  ? 'text-amber-400 font-bold bg-amber-500/10'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span>{item.mobileLabel}</span>
+              {isActive && (
+                <span
+                  className="absolute top-0 w-8 h-[2px] bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.9)] rounded-full"
+                  aria-hidden="true"
+                />
+              )}
+              <Icon
+                className={`w-4 h-4 transition-transform ${
+                  isActive ? 'scale-110 drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]' : ''
+                }`}
+                aria-hidden="true"
+              />
+              <span className="tracking-tight">{item.mobileLabel}</span>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="absolute top-1.5 right-2 px-1 py-0.1 rounded-full bg-amber-500 text-slate-950 font-mono text-[8px] font-black">
+                <span className="absolute top-1 right-2 px-1 py-0.2 rounded-full bg-amber-500 text-slate-950 font-mono text-[8px] font-black animate-glow-pulse-amber shadow-[0_0_6px_rgba(245,158,11,0.8)]">
                   {item.badge}
                 </span>
               )}

@@ -18,6 +18,15 @@ import {
   Edit3,
   MapPin,
   Crosshair,
+  Award,
+  Crown,
+  Medal,
+  Radio,
+  Flame,
+  Shield,
+  Activity,
+  Terminal,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface LeaderboardViewProps {
@@ -158,33 +167,65 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
       return b.score - a.score;
     });
 
+  const top3 = displayedEntries.slice(0, 3);
+
   return (
-    <div className="w-full min-h-full bg-slate-950 text-slate-100 p-4 sm:p-6 pb-28 lg:pb-12">
+    <div className="w-full min-h-full bg-slate-950 text-slate-100 p-3 sm:p-6 pb-28 lg:pb-12">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Top Header & Friends Clan-Tag Invite Bar */}
-        <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 tracking-wider mb-1">
-                <span>
-                  {wsConnected
-                    ? `ECHTZEIT-MULTIPLAYER LEADERBOARD · ${onlineCount} OPERATOR ONLINE`
-                    : 'ECHTES SPIELER-LEADERBOARD · SERVER-SYNCHRONISIERT'}
+        {/* Top Header - Dark Obsidian Glassmorphism with Live Radar Insignia */}
+        <header className="relative overflow-hidden rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 p-5 sm:p-6 shadow-2xl">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-red-500/10 blur-3xl pointer-events-none" />
+
+          {/* Tactical Corner Brackets */}
+          <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-amber-500/40 pointer-events-none" />
+          <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-amber-500/40 pointer-events-none" />
+          <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-amber-500/40 pointer-events-none" />
+          <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-amber-500/40 pointer-events-none" />
+
+          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                    wsConnected
+                      ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                      : 'bg-slate-800 border border-slate-700 text-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full inline-block ${
+                      wsConnected
+                        ? 'bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(16,185,129,0.8)]'
+                        : 'bg-slate-500'
+                    }`}
+                  />
+                  <span>
+                    {wsConnected
+                      ? `[ECHTZEIT-RADAR: ${onlineCount} OPERATOR ONLINE]`
+                      : '[SERVER-SYNCHRONISIERT: OFFLINE]'}
+                  </span>
+                </span>
+                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/40 text-amber-300">
+                  OFFIZIELLE RANG-TABELLE
                 </span>
               </div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">
-                Offizielle Rangliste (Nur echte Spieler & Freunde)
+
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
+                <span>Taunus-Bestenliste & Derby</span>
               </h1>
-              <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                Keine Bots, keine gefälschten Einträge: Hier erscheinen ausschließlich echte Spieler, die sich mit ihrem Benutzernamen registriert haben. Alle Punkte, Kills, Siege und freigeschalteten Maps werden live synchronisiert.
+
+              <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
+                Verifizierte Live-Rangliste: Alle Punkte, Kills, Siege und Gebietsgewinne werden in Echtzeit zwischen registrierten Spielern synchronisiert.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start md:self-auto">
               <button
                 type="button"
                 onClick={onEditProfile}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/90 text-slate-200 text-xs font-mono font-bold border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-md"
               >
                 <Edit3 className="w-3.5 h-3.5 text-amber-400" />
                 <span>
@@ -195,17 +236,17 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <button
                 type="button"
                 onClick={handleCopyFriendInvite}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] hover:scale-105 active:scale-95 cursor-pointer"
               >
                 {copiedInvite ? (
                   <>
-                    <Check className="w-4 h-4" />
-                    <span>Einladung kopiert!</span>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Kopiert!</span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-4 h-4" />
-                    <span>Freunde einladen ([{clanTag || '61267'}])</span>
+                    <span>Freunde einladen</span>
                   </>
                 )}
               </button>
@@ -213,54 +254,70 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <button
                 type="button"
                 onClick={loadData}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer"
                 title="Bestenliste aktualisieren"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-amber-400' : ''}`} />
               </button>
             </div>
           </div>
 
-          {/* Real Derby Tug-of-War Bar */}
-          <div className="pt-4 border-t border-slate-800 space-y-2">
-            <div className="flex justify-between text-xs font-mono font-bold">
-              <span className="text-red-400 tabular-nums">
+          {/* Live Derby Tug-of-War Bar (Neu-Anspach vs Wehrheim) */}
+          <div className="mt-6 pt-5 border-t border-slate-800 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-mono font-bold">
+              <span className="text-red-400 tabular-nums flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] inline-block" />
                 61267 Neu-Anspach: {derby.neuAnspachPoints.toLocaleString('de-DE')} Pkt ({anspachPercent}%)
               </span>
-              <span className="text-amber-400 tabular-nums">
-                61273 Wehrheim: {derby.wehrheimPoints.toLocaleString('de-DE')} Pkt ({wehrheimPercent}%)
+              <span className="text-amber-400 tabular-nums flex items-center gap-1.5 sm:justify-end">
+                <span>
+                  61273 Wehrheim: {derby.wehrheimPoints.toLocaleString('de-DE')} Pkt ({wehrheimPercent}%)
+                </span>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] inline-block" />
               </span>
             </div>
 
-            <div className="w-full h-3 rounded-full bg-slate-950 overflow-hidden flex border border-slate-800">
+            {/* Glowing Tug-of-War Progress Bar */}
+            <div className="relative w-full h-4 rounded-full bg-slate-950 overflow-hidden flex border border-slate-700/80 p-0.5 shadow-inner">
               <div
-                className="bg-red-600 transition-all duration-500"
+                className="bg-gradient-to-r from-red-600 to-rose-500 h-full rounded-l-full transition-all duration-700 shadow-[0_0_12px_rgba(239,68,68,0.6)]"
                 style={{ width: `${anspachPercent}%` }}
               />
               <div
-                className="bg-amber-500 transition-all duration-500"
+                className="bg-gradient-to-r from-amber-400 to-yellow-500 h-full rounded-r-full transition-all duration-700 shadow-[0_0_12px_rgba(245,158,11,0.6)]"
                 style={{ width: `${wehrheimPercent}%` }}
+              />
+
+              {/* Center Battle Indicator */}
+              <div
+                className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_8px_rgba(255,255,255,1)] transform -translate-x-1/2 z-10"
+                style={{ left: `${anspachPercent}%` }}
               />
             </div>
 
-            <div className="flex justify-between text-[11px] text-slate-500 font-mono">
-              <span>Letztes Einsatzgebiet: {derby.currentContestedDistrict}</span>
-              <span className="tabular-nums">
-                Absolvierte echte Matches: {derby.totalBattles.toLocaleString('de-DE')}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-mono">
+              <span className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-red-400" />
+                Umkämpftes Gebiet: <strong className="text-slate-200">{derby.currentContestedDistrict}</strong>
+              </span>
+              <span className="tabular-nums flex items-center gap-1.5">
+                <Swords className="w-3.5 h-3.5 text-amber-400" />
+                Absolvierte Derby-Schlachten: <strong className="text-slate-200">{derby.totalBattles.toLocaleString('de-DE')}</strong>
               </span>
             </div>
           </div>
-        </div>
+        </header>
 
         {/* Manual Submit Banner if player has unsubmitted run points */}
         {currentScore > 0 && !submitted && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900 border border-amber-500/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900 to-amber-500/10 border border-amber-500/50 shadow-xl backdrop-blur-md">
             <div>
-              <div className="text-xs font-bold text-white">
-                Aktuelles Gefechtsergebnis bereit zur Übertragung
+              <div className="text-sm font-black text-white flex items-center gap-2">
+                <Award className="w-4 h-4 text-amber-400" />
+                <span>Gefechtsergebnis bereit zur Übertragung</span>
               </div>
-              <div className="text-[11px] text-slate-400 font-mono">
-                {currentScore.toLocaleString('de-DE')} Punkte · {currentKills} Kills als [{clanTag}]{' '}
+              <div className="text-xs text-slate-300 font-mono mt-0.5">
+                {currentScore.toLocaleString('de-DE')} Punkte · {currentKills} Kills als [{clanTag || '61267'}]{' '}
                 {playerName}
               </div>
             </div>
@@ -268,33 +325,175 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <button
               type="button"
               onClick={handleSubmitCurrentScore}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] hover:scale-105 active:scale-95 cursor-pointer shrink-0"
             >
-              Punkte jetzt in Bestenliste verbuchen
+              Punkte in Bestenliste verbuchen
             </button>
           </div>
         )}
 
-        {/* Main Grid: Left 2/3 Real Players Table, Right 1/3 Real-Time Live Activity Feed */}
+        {/* TOP 3 PODIUM GLORY CARDS (Gold, Silver, Bronze) */}
+        {top3.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
+              <Trophy className="w-4 h-4" />
+              <span>Taunus-Podium · Die 3 Spitzen-Operatoren</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* #2 Silver (Left) */}
+              {top3[1] && (
+                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-slate-400/15 via-slate-900/95 to-slate-950 border border-slate-300/70 shadow-[0_0_25px_rgba(203,213,225,0.15)] backdrop-blur-md flex flex-col justify-between order-2 md:order-1">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="px-2 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-slate-300/20 text-slate-200 border border-slate-300/40">
+                        [#2 · MEISTER]
+                      </span>
+                      <Medal className="w-6 h-6 text-slate-300 drop-shadow-[0_0_8px_rgba(203,213,225,0.6)]" />
+                    </div>
+
+                    <div className="text-lg font-black text-white truncate">
+                      {top3[1].clanTag && (
+                        <span className="text-slate-300 mr-1.5">[{top3[1].clanTag}]</span>
+                      )}
+                      <span>{top3[1].name}</span>
+                    </div>
+
+                    <div className="text-xs text-slate-400 font-mono mt-0.5">
+                      {top3[1].title || 'Taunus-Operator'} · {top3[1].city}
+                    </div>
+
+                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono space-y-1">
+                      <div className="text-slate-400 truncate">
+                        Waffe: <span className="text-slate-200">{top3[1].signatureWeapon || 'XM4 Bembel'}</span>
+                      </div>
+                      <div className="text-slate-400">
+                        Maps: <span className="text-slate-200">{top3[1].unlockedMapsCount || 1}/7 freigeschaltet</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between font-mono">
+                    <span className="text-xs text-slate-400">PUNKTE:</span>
+                    <span className="text-xl font-black text-slate-200 tabular-nums">
+                      {top3[1].score.toLocaleString('de-DE')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* #1 Gold Champion (Center - Raised / Heroic Aura) */}
+              {top3[0] && (
+                <div className="relative p-6 rounded-2xl bg-gradient-to-b from-amber-500/25 via-slate-900/95 to-slate-950 border-2 border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.35)] backdrop-blur-md flex flex-col justify-between order-1 md:order-2 md:-translate-y-2">
+                  {/* Radiant Gold Shimmer Accent Strip */}
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 rounded-t-2xl shadow-[0_0_12px_rgba(245,158,11,0.9)]" />
+
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="px-2.5 py-0.5 rounded font-mono text-[11px] font-black uppercase tracking-wider bg-amber-500/30 text-amber-200 border border-amber-400/80 shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+                        [#1 · APEX CHAMPION]
+                      </span>
+                      <Trophy className="w-8 h-8 text-amber-400 drop-shadow-[0_0_12px_rgba(245,158,11,0.8)]" />
+                    </div>
+
+                    <div className="text-xl font-black text-white truncate flex items-center gap-1.5">
+                      {top3[0].clanTag && (
+                        <span className="text-amber-400">[{top3[0].clanTag}]</span>
+                      )}
+                      <span>{top3[0].name}</span>
+                    </div>
+
+                    <div className="text-xs text-amber-300 font-mono mt-0.5">
+                      {top3[0].title || 'Ehrenbürger'} · {top3[0].city}
+                    </div>
+
+                    <div className="mt-4 p-3.5 rounded-xl bg-slate-950/90 border border-amber-500/40 text-xs font-mono space-y-1.5 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                      <div className="text-slate-300 truncate">
+                        Signatur: <span className="text-amber-300 font-bold">{top3[0].signatureWeapon || 'XM4 Bembel'}</span>
+                      </div>
+                      <div className="text-slate-300 flex justify-between">
+                        <span>Maps: {top3[0].unlockedMapsCount || 1}/7</span>
+                        <span className="text-emerald-400 font-bold">{top3[0].wins || 0} Siege</span>
+                        <span className="text-red-400 font-bold">{top3[0].kills || 0} Kills</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-amber-500/40 flex items-center justify-between font-mono">
+                    <span className="text-xs text-amber-400 font-bold uppercase tracking-wider">
+                      CHAMPION SCORE:
+                    </span>
+                    <span className="text-2xl font-black text-amber-300 tabular-nums shadow-sm">
+                      {top3[0].score.toLocaleString('de-DE')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* #3 Bronze (Right) */}
+              {top3[2] && (
+                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-amber-800/15 via-slate-900/95 to-slate-950 border border-amber-700/70 shadow-[0_0_25px_rgba(217,119,6,0.15)] backdrop-blur-md flex flex-col justify-between order-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="px-2 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-amber-800/25 text-amber-300 border border-amber-700/50">
+                        [#3 · ELITE]
+                      </span>
+                      <Award className="w-6 h-6 text-amber-600 drop-shadow-[0_0_8px_rgba(217,119,6,0.6)]" />
+                    </div>
+
+                    <div className="text-lg font-black text-white truncate">
+                      {top3[2].clanTag && (
+                        <span className="text-amber-500 mr-1.5">[{top3[2].clanTag}]</span>
+                      )}
+                      <span>{top3[2].name}</span>
+                    </div>
+
+                    <div className="text-xs text-slate-400 font-mono mt-0.5">
+                      {top3[2].title || 'Taunus-Operator'} · {top3[2].city}
+                    </div>
+
+                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono space-y-1">
+                      <div className="text-slate-400 truncate">
+                        Waffe: <span className="text-slate-200">{top3[2].signatureWeapon || 'XM4 Bembel'}</span>
+                      </div>
+                      <div className="text-slate-400">
+                        Maps: <span className="text-slate-200">{top3[2].unlockedMapsCount || 1}/7 freigeschaltet</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between font-mono">
+                    <span className="text-xs text-slate-400">PUNKTE:</span>
+                    <span className="text-xl font-black text-amber-500 tabular-nums">
+                      {top3[2].score.toLocaleString('de-DE')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Main Grid: Left 2/3 Tactical Table, Right 1/3 Live Activity Feed */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Real Players Leaderboard Table */}
-          <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+          <div className="lg:col-span-2 p-5 sm:p-6 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Trophy className="w-4 h-4 text-amber-400" />
-                <span className="text-sm font-bold text-white font-mono">
-                  ECHTE SPIELER-RANGLISTE ({displayedEntries.length})
+                <span className="text-sm font-black text-white font-mono tracking-wider">
+                  OPERATOR-RANGLISTE ({displayedEntries.length})
                 </span>
               </div>
 
-              {/* Interactive Filter Controls */}
+              {/* High-Tech Tactical Filter Controls */}
               <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800">
                 <button
                   type="button"
                   onClick={() => setFilterMode('all')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     filterMode === 'all'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -303,9 +502,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('clan')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     filterMode === 'clan'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -314,9 +513,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('wins')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     filterMode === 'wins'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -325,9 +524,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('kills')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                     filterMode === 'kills'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -340,19 +539,19 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <table className="w-full text-left text-xs font-mono">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
-                    <th className="py-2.5 px-3">RANG</th>
-                    <th className="py-2.5 px-3">SPIELER & CLAN</th>
-                    <th className="py-2.5 px-3">WAFFE & MAPS</th>
-                    <th className="py-2.5 px-3 text-right">SIEGE</th>
-                    <th className="py-2.5 px-3 text-right">KILLS</th>
-                    <th className="py-2.5 px-3 text-right">PUNKTE</th>
+                    <th className="py-3 px-3">RANG</th>
+                    <th className="py-3 px-3">OPERATOR & CLAN</th>
+                    <th className="py-3 px-3">SIGNATUR-WAFFE</th>
+                    <th className="py-3 px-3 text-right">SIEGE</th>
+                    <th className="py-3 px-3 text-right">KILLS</th>
+                    <th className="py-3 px-3 text-right">PUNKTE</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {displayedEntries.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400">
-                        Noch keine Spieler in diesem Filter. Spiele eine Runde oder lade Freunde mit dem Clan-Tag [{clanTag || '61267'}] ein!
+                      <td colSpan={6} className="py-10 text-center text-slate-400">
+                        Noch keine Einträge vorhanden. Absolviere ein Match oder lade Freunde mit Clan-Tag [{clanTag || '61267'}] ein!
                       </td>
                     </tr>
                   ) : (
@@ -364,30 +563,32 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                         <tr
                           key={entry.id}
                           className={`transition-colors ${
-                            isMe ? 'bg-amber-500/10 hover:bg-amber-500/15' : 'hover:bg-slate-800/30'
+                            isMe
+                              ? 'bg-amber-500/10 hover:bg-amber-500/15 border-l-2 border-l-amber-400'
+                              : 'hover:bg-slate-800/40'
                           }`}
                         >
-                          <td className="py-3 px-3 font-bold tabular-nums">
+                          <td className="py-3.5 px-3 font-black tabular-nums">
                             {displayRank === 1 ? (
-                              <span className="text-amber-400">#1</span>
+                              <span className="text-amber-400 font-black">#1</span>
                             ) : displayRank === 2 ? (
-                              <span className="text-slate-200">#2</span>
+                              <span className="text-slate-200 font-bold">#2</span>
                             ) : displayRank === 3 ? (
-                              <span className="text-amber-600">#3</span>
+                              <span className="text-amber-600 font-bold">#3</span>
                             ) : (
                               <span className="text-slate-500">#{displayRank}</span>
                             )}
                           </td>
 
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5 font-bold text-white">
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center gap-1.5 font-black text-white">
                               {entry.clanTag && (
-                                <span className="text-amber-400">[{entry.clanTag}]</span>
+                                <span className="text-amber-400 font-bold">[{entry.clanTag}]</span>
                               )}
                               <span>{entry.name}</span>
                               {isMe && (
-                                <span className="text-[10px] text-emerald-400 font-normal">
-                                  · Du
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
+                                  Du
                                 </span>
                               )}
                             </div>
@@ -398,14 +599,17 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                               {entry.isOnline && (
                                 <>
                                   <span>·</span>
-                                  <span className="text-emerald-400">Live Online</span>
+                                  <span className="text-emerald-400 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    Live
+                                  </span>
                                 </>
                               )}
                             </div>
                           </td>
 
-                          <td className="py-3 px-3">
-                            <div className="text-slate-200 truncate max-w-[180px]">
+                          <td className="py-3.5 px-3">
+                            <div className="text-slate-200 truncate max-w-[170px]">
                               {entry.signatureWeapon || 'XM4 Bembel-Sturmgewehr'}
                             </div>
                             <div className="text-[11px] text-slate-400">
@@ -413,15 +617,15 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                             </div>
                           </td>
 
-                          <td className="py-3 px-3 text-right text-emerald-400 font-bold tabular-nums">
+                          <td className="py-3.5 px-3 text-right text-emerald-400 font-bold tabular-nums">
                             {entry.wins || 0}
                           </td>
 
-                          <td className="py-3 px-3 text-right text-red-400 font-bold tabular-nums">
+                          <td className="py-3.5 px-3 text-right text-red-400 font-bold tabular-nums">
                             {entry.kills || 0}
                           </td>
 
-                          <td className="py-3 px-3 text-right text-amber-400 font-bold tabular-nums">
+                          <td className="py-3.5 px-3 text-right text-amber-400 font-black tabular-nums text-sm">
                             {(entry.score || 0).toLocaleString('de-DE')}
                           </td>
                         </tr>
@@ -433,31 +637,34 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </div>
           </div>
 
-          {/* Right Column: Live Activity Feed & Friend Squad Info */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
-                  LIVE-AKTIVITÄTS-TICKER
+          {/* Right Column: Live Comms Ticker & Squad Info */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl flex flex-col justify-between space-y-5">
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Terminal className="w-3.5 h-3.5" />
+                  LIVE-COMMS TICKER
                 </span>
-                <span className="text-[11px] font-mono text-slate-500">Echtzeit-Feed</span>
+                <span className="text-[10px] font-mono text-emerald-400 animate-pulse">● LIVE STREAM</span>
               </div>
 
               <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
                 {recentEvents.length === 0 ? (
-                  <div className="text-xs text-slate-500 font-mono py-6 text-center">
-                    Noch keine Live-Ereignisse aufgezeichnet. Starte eine Runde, um den Ticker zu füllen!
+                  <div className="text-xs text-slate-400 font-mono py-8 text-center">
+                    Noch keine Live-Ereignisse übertragen. Starte eine Runde, um das Log zu füllen!
                   </div>
                 ) : (
                   recentEvents.map((ev) => (
                     <div
                       key={ev.id}
-                      className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 text-xs space-y-1"
+                      className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-1 hover:border-slate-700 transition-colors"
                     >
                       <div className="flex items-center justify-between font-mono text-[11px]">
-                        <span className="font-bold text-white">
-                          {ev.clanTag ? `[${ev.clanTag}] ` : ''}
-                          {ev.playerName}
+                        <span className="font-bold text-white flex items-center gap-1">
+                          {ev.clanTag ? (
+                            <span className="text-amber-400">[{ev.clanTag}]</span>
+                          ) : null}
+                          <span>{ev.playerName}</span>
                         </span>
                         <span className="text-slate-500 tabular-nums">
                           {new Date(ev.timestamp).toLocaleTimeString('de-DE', {
@@ -466,20 +673,20 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                           })}
                         </span>
                       </div>
-                      <p className="text-slate-300 text-[11px] leading-relaxed">{ev.text}</p>
+                      <p className="text-slate-300 text-[11px] leading-relaxed font-sans">{ev.text}</p>
                     </div>
                   ))
                 )}
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5">
-              <div className="font-mono font-bold text-slate-200 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-amber-400" />
-                <span>Mit Freunden zusammenspielen:</span>
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-amber-500/30 text-xs space-y-2 shadow-sm">
+              <div className="font-mono font-bold text-amber-300 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-amber-400" />
+                <span>Squad-System & Freunde:</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Teile den App-Link mit deinen Freunden. Sobald sie ihren Benutzernamen und denselben Clan-Tag ([{clanTag || '61267'}]) eingeben, seht ihr eure Ergebnisse sofort hier im Live-Ranking!
+              <p className="text-[11px] text-slate-300 leading-relaxed font-sans">
+                Teile den Link mit deinem Clan. Sobald deine Freunde denselben Clan-Tag ([{clanTag || '61267'}]) nutzen, seht ihr euch in Echtzeit auf dieser Rangliste!
               </p>
             </div>
           </div>
