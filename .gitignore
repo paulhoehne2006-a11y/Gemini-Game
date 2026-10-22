@@ -7,3 +7,8 @@ coverage/
 .env*
 !.env.example
 data/
+.agents/
+.aistudio/
+patch_topbar_fix.py
+patch_topbar_merge.py
+verify_clan_v3.py
