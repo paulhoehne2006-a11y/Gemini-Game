@@ -79,7 +79,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden my-auto max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-2xl bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,255,255,0.08)] overflow-hidden my-auto max-h-[92vh] flex flex-col"
       >
         {/* Subtle Cyber Glow Backlights */}
         <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
@@ -92,7 +92,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
         <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-amber-500/50 pointer-events-none" />
 
         {/* Modal Header with Tactical Accents */}
-        <header className="relative px-6 py-5 bg-slate-950/95 border-b border-slate-800 shrink-0">
+        <header className="relative px-6 py-5 bg-slate-950/95 border-b border-white/10 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
@@ -103,7 +103,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                   <h2 className="text-lg font-black text-white tracking-tight uppercase">
                     Tagesbefehle & Operator-Ruf
                   </h2>
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-black border border-amber-400/50 shadow-sm">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 text-[10px] font-mono font-black border border-amber-400/40 shadow-sm">
                     {completedCount}/{totalCount} ABGESCHLOSSEN
                   </span>
                 </div>
@@ -116,7 +116,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 transition-all cursor-pointer shrink-0 hover:scale-105 active:scale-95"
+              className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900/80 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-150 cursor-pointer shrink-0 active:scale-95"
               title="Schließen"
             >
               <X className="w-4 h-4 stroke-[2.5]" />
@@ -124,7 +124,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           </div>
 
           {/* Reset countdown & alert status badge */}
-          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono bg-slate-900/90 px-3.5 py-2 rounded-xl border border-slate-800">
+          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono bg-slate-900/90 px-3.5 py-2 rounded-xl border border-white/10">
             <div className="flex items-center gap-2 text-slate-300">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
               <span>Nächster Tages-Reset in:</span>
@@ -142,7 +142,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
         {/* Scrollable Modal Content Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
           {/* Operator Reputation Progression Deck */}
-          <section className="p-5 rounded-2xl bg-gradient-to-br from-slate-950/90 via-slate-950/80 to-purple-950/30 border border-purple-500/40 shadow-xl space-y-3.5">
+          <section className="p-5 rounded-2xl bg-gradient-to-br from-slate-950/90 via-slate-950/80 to-purple-950/30 border border-purple-500/35 shadow-xl space-y-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Award className="w-5 h-5 text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
@@ -158,7 +158,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="text-base font-black text-white flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-md bg-purple-500/20 border border-purple-400/50 text-purple-200 text-xs font-mono font-bold">
+                  <span className="px-2 py-0.5 rounded-md bg-purple-500/20 border border-purple-400/40 text-purple-200 text-xs font-mono font-bold">
                     Rang {currentRank.rank}
                   </span>
                   <span>{currentRank.title}</span>
@@ -170,7 +170,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
               </div>
 
               {nextRank && (
-                <div className="text-left sm:text-right text-[11px] font-mono text-slate-400 shrink-0 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                <div className="text-left sm:text-right text-[11px] font-mono text-slate-400 shrink-0 bg-slate-950/60 p-2.5 rounded-xl border border-white/10">
                   <span className="block text-slate-500">Nächster Rang:</span>
                   <span className="text-white font-bold">{nextRank.title}</span>
                   <span className="text-purple-300 font-semibold block tabular-nums">
@@ -186,7 +186,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 <span>Fortschritt zu Rang {currentRank.rank + (nextRank ? 1 : 0)}</span>
                 <span className="text-purple-300 font-bold tabular-nums">{progressPercent}%</span>
               </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-950 border border-slate-800 p-0.5 overflow-hidden">
+              <div className="w-full h-2.5 rounded-full bg-slate-950 border border-white/10 p-0.5 overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-purple-500 to-amber-400 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(168,85,247,0.5)]"
                   style={{ width: `${progressPercent}%` }}
@@ -199,10 +199,10 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           <section
             className={`p-4 sm:p-5 rounded-2xl border transition-all duration-300 ${
               missionsState.grandBonusClaimed
-                ? 'bg-slate-950/60 border-emerald-500/40 shadow-md'
+                ? 'bg-slate-950/60 border-emerald-500/35 shadow-md'
                 : allCompleted
-                ? 'bg-gradient-to-r from-amber-500/25 via-purple-500/20 to-amber-500/25 border-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.3)] animate-pulse'
-                : 'bg-slate-950/50 border-slate-800'
+                ? 'bg-gradient-to-r from-amber-500/20 via-purple-500/15 to-amber-500/20 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.25)]'
+                : 'bg-slate-950/50 border-white/10'
             }`}
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -213,7 +213,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                       : allCompleted
                       ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.6)] animate-bounce'
-                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      : 'bg-slate-800 text-slate-400 border border-white/10'
                   }`}
                 >
                   <Gift className="w-5 h-5 stroke-[2.5]" />
@@ -250,13 +250,13 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                       soundFx.playLevelUp();
                       onClaimGrandBonus();
                     }}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 text-xs font-black uppercase tracking-wider shadow-[0_0_20px_rgba(245,158,11,0.4)] transition-all cursor-pointer hover:scale-105"
+                    className="btn-tactile flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 text-xs font-black uppercase tracking-wider shadow-[0_4px_20px_rgba(245,158,11,0.4)] transition-all duration-150 cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4 fill-slate-950" />
                     <span>Jackpot Einfordern (+500 NAT)</span>
                   </button>
                 ) : (
-                  <span className="text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                  <span className="text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-950/60 border border-white/10">
                     {completedCount} von {totalCount} erfüllt
                   </span>
                 )}
@@ -285,10 +285,10 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                     key={mission.id}
                     className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 ${
                       mission.claimed
-                        ? 'bg-slate-950/40 border-slate-800/80 opacity-75'
+                        ? 'bg-slate-950/40 border-white/5 opacity-70'
                         : mission.completed
-                        ? 'bg-slate-950/90 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.15)] ring-1 ring-amber-400/40'
-                        : 'bg-slate-950/70 border-slate-700/70 hover:border-slate-600'
+                        ? 'bg-slate-950/90 border-amber-400/80 shadow-[0_0_20px_rgba(245,158,11,0.15)] ring-1 ring-amber-400/40'
+                        : 'bg-slate-950/70 border-white/10 hover:border-white/20'
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -303,7 +303,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                                 ? 'bg-red-500/20 text-red-300 border border-red-500/40 shadow-[0_0_8px_rgba(239,68,68,0.2)]'
                                 : mission.difficulty === 'schwer'
                                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                                : 'bg-slate-800 text-slate-300 border border-slate-700'
+                                : 'bg-slate-800 text-slate-300 border border-white/10'
                             }`}
                           >
                             {mission.difficulty}
@@ -332,7 +332,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                     </div>
 
                     {/* Progress Bar & Actions */}
-                    <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
+                    <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-white/10">
                       <div className="flex-1 space-y-1.5">
                         <div className="flex justify-between text-[11px] font-mono">
                           <span className="text-slate-400">Fortschritt:</span>
@@ -340,7 +340,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                             {mission.currentProgress} / {mission.targetCount} ({percent}%)
                           </span>
                         </div>
-                        <div className="w-full h-2 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
+                        <div className="w-full h-2 rounded-full bg-slate-900 border border-white/10 overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-300 ${
                               mission.completed
@@ -366,7 +366,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                               soundFx.playCoin();
                               onClaimMission(mission.id);
                             }}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all cursor-pointer hover:scale-105"
+                            className="btn-tactile flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 font-black text-xs uppercase tracking-wider shadow-[0_4px_16px_rgba(245,158,11,0.35)] transition-all duration-150 cursor-pointer"
                           >
                             <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
                             <span>Einfordern</span>
@@ -378,13 +378,13 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                               onSelectArenaAndPlay(mission.arenaId as string);
                               onClose();
                             }}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
+                            className="btn-tactile flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-white/10 text-slate-200 hover:text-white text-xs font-mono font-bold transition-all duration-150 cursor-pointer border border-white/10 hover:border-white/20 active:scale-[0.98]"
                           >
                             <span>Zur Map</span>
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
                         ) : (
-                          <span className="text-xs font-mono text-slate-400 px-2.5 py-1 rounded bg-slate-900 border border-slate-800">
+                          <span className="text-xs font-mono text-slate-400 px-2.5 py-1 rounded-lg bg-slate-900 border border-white/10">
                             Noch {mission.targetCount - mission.currentProgress} nötig
                           </span>
                         )}
@@ -398,14 +398,14 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <footer className="px-6 py-4 bg-slate-950/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
+        <footer className="px-6 py-4 bg-slate-950/95 border-t border-white/10 flex items-center justify-between text-xs text-slate-400 shrink-0">
           <span className="font-mono text-[11px]">
             Tagesbefehle rotieren täglich um 00:00 Uhr Serverzeit.
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-mono font-bold text-xs cursor-pointer transition-all border border-slate-700 hover:border-slate-600 hover:scale-105 active:scale-95"
+            className="btn-tactile px-5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-white/10 text-white font-mono font-bold text-xs cursor-pointer transition-all duration-150 border border-white/10 hover:border-white/20 active:scale-[0.98]"
           >
             Fertig
           </button>
