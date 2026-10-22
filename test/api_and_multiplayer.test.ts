@@ -71,6 +71,11 @@ test('API, CSRF & Multiplayer Security Test Suite', async (t) => {
     assert.equal(joinRes.status, 401);
   });
 
+  await t.test('1b. Öffentliches Besucher-Analytics-Endpoint ist nicht verfügbar', async () => {
+    const analyticsRes = await fetch(`${baseUrl}/api/analytics/visitors`);
+    assert.equal(analyticsRes.status, 404);
+  });
+
   await t.test('2. Registrierung & Erhalt von HttpOnly-Cookie und CSRF-Token', async () => {
     const regRes = await fetch(`${baseUrl}/api/auth/register`, {
       method: 'POST',
