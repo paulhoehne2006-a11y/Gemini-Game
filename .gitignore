@@ -12,3 +12,6 @@ data/
 patch_topbar_fix.py
 patch_topbar_merge.py
 verify_clan_v3.py
+test-results/
+playwright-report/
+blob-report/

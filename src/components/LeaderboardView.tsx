@@ -173,7 +173,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     <div className="w-full min-h-full bg-slate-950 text-slate-100 p-3 sm:p-6 pb-28 lg:pb-12">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Top Header - Dark Obsidian Glassmorphism with Live Radar Insignia */}
-        <header className="relative overflow-hidden rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 p-5 sm:p-6 shadow-2xl">
+        <header className="relative overflow-hidden rounded-2xl bg-slate-900/85 backdrop-blur-xl border border-white/10 p-5 sm:p-7 shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.06)]">
           {/* Subtle Ambient Glow */}
           <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
           <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-red-500/10 blur-3xl pointer-events-none" />
@@ -188,10 +188,10 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span
-                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                  className={`px-2.5 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
                     wsConnected
                       ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
-                      : 'bg-slate-800 border border-slate-700 text-slate-400'
+                      : 'bg-slate-800/80 border border-white/10 text-slate-400'
                   }`}
                 >
                   <span
@@ -207,7 +207,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       : '[SERVER-SYNCHRONISIERT: OFFLINE]'}
                   </span>
                 </span>
-                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/40 text-amber-300">
+                <span className="px-2.5 py-0.5 rounded font-mono text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/40 text-amber-300">
                   OFFIZIELLE RANG-TABELLE
                 </span>
               </div>
@@ -225,7 +225,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <button
                 type="button"
                 onClick={onEditProfile}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/90 text-slate-200 text-xs font-mono font-bold border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-md"
+                className="btn-tactile flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800/90 hover:bg-white/10 text-slate-200 hover:text-white text-xs font-mono font-bold border border-white/10 hover:border-white/20 active:scale-[0.98] transition-all duration-150 cursor-pointer shadow-md"
               >
                 <Edit3 className="w-3.5 h-3.5 text-amber-400" />
                 <span>
@@ -236,7 +236,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <button
                 type="button"
                 onClick={handleCopyFriendInvite}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] hover:scale-105 active:scale-95 cursor-pointer"
+                className="btn-tactile flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 font-black text-xs tracking-wider uppercase transition-all duration-150 shadow-[0_4px_20px_rgba(245,158,11,0.35)] cursor-pointer"
               >
                 {copiedInvite ? (
                   <>
@@ -254,7 +254,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <button
                 type="button"
                 onClick={loadData}
-                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer"
+                className="p-2.5 rounded-xl bg-slate-800/90 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 hover:border-white/20 active:scale-95 transition-all duration-150 cursor-pointer"
                 title="Bestenliste aktualisieren"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-amber-400' : ''}`} />
@@ -263,7 +263,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           </div>
 
           {/* Live Derby Tug-of-War Bar (Neu-Anspach vs Wehrheim) */}
-          <div className="mt-6 pt-5 border-t border-slate-800 space-y-2.5">
+          <div className="mt-6 pt-5 border-t border-white/10 space-y-2.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-mono font-bold">
               <span className="text-red-400 tabular-nums flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] inline-block" />
@@ -278,7 +278,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </div>
 
             {/* Glowing Tug-of-War Progress Bar */}
-            <div className="relative w-full h-4 rounded-full bg-slate-950 overflow-hidden flex border border-slate-700/80 p-0.5 shadow-inner">
+            <div className="relative w-full h-4 rounded-full bg-slate-950 overflow-hidden flex border border-white/10 p-0.5 shadow-inner">
               <div
                 className="bg-gradient-to-r from-red-600 to-rose-500 h-full rounded-l-full transition-all duration-700 shadow-[0_0_12px_rgba(239,68,68,0.6)]"
                 style={{ width: `${anspachPercent}%` }}
@@ -310,7 +310,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
         {/* Manual Submit Banner if player has unsubmitted run points */}
         {currentScore > 0 && !submitted && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900 to-amber-500/10 border border-amber-500/50 shadow-xl backdrop-blur-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900/90 to-amber-500/10 border border-amber-500/40 shadow-xl backdrop-blur-md">
             <div>
               <div className="text-sm font-black text-white flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-400" />
@@ -325,7 +325,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <button
               type="button"
               onClick={handleSubmitCurrentScore}
-              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+              className="btn-tactile px-5 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all duration-150 shadow-[0_4px_16px_rgba(245,158,11,0.35)] cursor-pointer shrink-0"
             >
               Punkte in Bestenliste verbuchen
             </button>
@@ -343,10 +343,10 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* #2 Silver (Left) */}
               {top3[1] && (
-                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-slate-400/15 via-slate-900/95 to-slate-950 border border-slate-300/70 shadow-[0_0_25px_rgba(203,213,225,0.15)] backdrop-blur-md flex flex-col justify-between order-2 md:order-1">
+                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-slate-400/15 via-slate-900/95 to-slate-950 border border-slate-300/50 shadow-[0_12px_35px_rgba(0,0,0,0.6)] backdrop-blur-md flex flex-col justify-between order-2 md:order-1">
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="px-2 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-slate-300/20 text-slate-200 border border-slate-300/40">
+                      <span className="px-2.5 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-slate-300/20 text-slate-200 border border-slate-300/40">
                         [#2 · MEISTER]
                       </span>
                       <Medal className="w-6 h-6 text-slate-300 drop-shadow-[0_0_8px_rgba(203,213,225,0.6)]" />
@@ -363,7 +363,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       {top3[1].title || 'Taunus-Operator'} · {top3[1].city}
                     </div>
 
-                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono space-y-1">
+                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-white/10 text-xs font-mono space-y-1">
                       <div className="text-slate-400 truncate">
                         Waffe: <span className="text-slate-200">{top3[1].signatureWeapon || 'XM4 Bembel'}</span>
                       </div>
@@ -373,7 +373,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between font-mono">
+                  <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between font-mono">
                     <span className="text-xs text-slate-400">PUNKTE:</span>
                     <span className="text-xl font-black text-slate-200 tabular-nums">
                       {top3[1].score.toLocaleString('de-DE')}
@@ -384,7 +384,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
               {/* #1 Gold Champion (Center - Raised / Heroic Aura) */}
               {top3[0] && (
-                <div className="relative p-6 rounded-2xl bg-gradient-to-b from-amber-500/25 via-slate-900/95 to-slate-950 border-2 border-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.35)] backdrop-blur-md flex flex-col justify-between order-1 md:order-2 md:-translate-y-2">
+                <div className="relative p-6 rounded-2xl bg-gradient-to-b from-amber-500/25 via-slate-900/95 to-slate-950 border-2 border-amber-400 shadow-[0_20px_50px_rgba(245,158,11,0.3)] backdrop-blur-md flex flex-col justify-between order-1 md:order-2 md:-translate-y-2">
                   {/* Radiant Gold Shimmer Accent Strip */}
                   <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 rounded-t-2xl shadow-[0_0_12px_rgba(245,158,11,0.9)]" />
 
@@ -432,10 +432,10 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
               {/* #3 Bronze (Right) */}
               {top3[2] && (
-                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-amber-800/15 via-slate-900/95 to-slate-950 border border-amber-700/70 shadow-[0_0_25px_rgba(217,119,6,0.15)] backdrop-blur-md flex flex-col justify-between order-3">
+                <div className="relative p-5 rounded-2xl bg-gradient-to-b from-amber-800/15 via-slate-900/95 to-slate-950 border border-amber-700/60 shadow-[0_12px_35px_rgba(0,0,0,0.6)] backdrop-blur-md flex flex-col justify-between order-3">
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <span className="px-2 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-amber-800/25 text-amber-300 border border-amber-700/50">
+                      <span className="px-2.5 py-0.5 rounded font-mono text-[10px] font-black uppercase tracking-wider bg-amber-800/25 text-amber-300 border border-amber-700/50">
                         [#3 · ELITE]
                       </span>
                       <Award className="w-6 h-6 text-amber-600 drop-shadow-[0_0_8px_rgba(217,119,6,0.6)]" />
@@ -452,7 +452,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       {top3[2].title || 'Taunus-Operator'} · {top3[2].city}
                     </div>
 
-                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono space-y-1">
+                    <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-white/10 text-xs font-mono space-y-1">
                       <div className="text-slate-400 truncate">
                         Waffe: <span className="text-slate-200">{top3[2].signatureWeapon || 'XM4 Bembel'}</span>
                       </div>
@@ -462,7 +462,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between font-mono">
+                  <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between font-mono">
                     <span className="text-xs text-slate-400">PUNKTE:</span>
                     <span className="text-xl font-black text-amber-500 tabular-nums">
                       {top3[2].score.toLocaleString('de-DE')}
@@ -477,7 +477,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
         {/* Main Grid: Left 2/3 Tactical Table, Right 1/3 Live Activity Feed */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Real Players Leaderboard Table */}
-          <div className="lg:col-span-2 p-5 sm:p-6 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl space-y-4">
+          <div className="lg:col-span-2 p-5 sm:p-6 rounded-2xl bg-slate-900/85 backdrop-blur-md border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.06)] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Trophy className="w-4 h-4 text-amber-400" />
@@ -487,13 +487,13 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               </div>
 
               {/* High-Tech Tactical Filter Controls */}
-              <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-1 p-1 bg-slate-950/80 rounded-xl border border-white/10">
                 <button
                   type="button"
                   onClick={() => setFilterMode('all')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  className={`btn-tactile px-3.5 py-1.5 text-xs font-mono rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap active:scale-[0.98] ${
                     filterMode === 'all'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-[0_2px_12px_rgba(245,158,11,0.35)]'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -502,9 +502,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('clan')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  className={`btn-tactile px-3.5 py-1.5 text-xs font-mono rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap active:scale-[0.98] ${
                     filterMode === 'clan'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-[0_2px_12px_rgba(245,158,11,0.35)]'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -513,9 +513,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('wins')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  className={`btn-tactile px-3.5 py-1.5 text-xs font-mono rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap active:scale-[0.98] ${
                     filterMode === 'wins'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-[0_2px_12px_rgba(245,158,11,0.35)]'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -524,9 +524,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterMode('kills')}
-                  className={`px-3 py-1.5 text-xs font-mono rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  className={`btn-tactile px-3.5 py-1.5 text-xs font-mono rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap active:scale-[0.98] ${
                     filterMode === 'kills'
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-[0_2px_12px_rgba(245,158,11,0.35)]'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
@@ -538,7 +538,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
+                  <tr className="border-b border-white/10 text-slate-400 text-[11px]">
                     <th className="py-3 px-3">RANG</th>
                     <th className="py-3 px-3">OPERATOR & CLAN</th>
                     <th className="py-3 px-3">SIGNATUR-WAFFE</th>
@@ -547,7 +547,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                     <th className="py-3 px-3 text-right">PUNKTE</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-white/5">
                   {displayedEntries.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-10 text-center text-slate-400">
@@ -565,7 +565,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                           className={`transition-colors ${
                             isMe
                               ? 'bg-amber-500/10 hover:bg-amber-500/15 border-l-2 border-l-amber-400'
-                              : 'hover:bg-slate-800/40'
+                              : 'hover:bg-white/[0.04]'
                           }`}
                         >
                           <td className="py-3.5 px-3 font-black tabular-nums">
@@ -638,9 +638,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           </div>
 
           {/* Right Column: Live Comms Ticker & Squad Info */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl flex flex-col justify-between space-y-5">
+          <div className="p-5 sm:p-6 rounded-2xl bg-slate-900/85 backdrop-blur-md border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.06)] flex flex-col justify-between space-y-5">
             <div className="space-y-3.5">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
                 <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Terminal className="w-3.5 h-3.5" />
                   LIVE-COMMS TICKER
@@ -657,7 +657,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                   recentEvents.map((ev) => (
                     <div
                       key={ev.id}
-                      className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-1 hover:border-slate-700 transition-colors"
+                      className="p-3 rounded-xl bg-slate-950/80 border border-white/10 text-xs space-y-1 hover:border-white/20 transition-colors"
                     >
                       <div className="flex items-center justify-between font-mono text-[11px]">
                         <span className="font-bold text-white flex items-center gap-1">
