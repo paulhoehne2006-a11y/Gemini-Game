@@ -14,6 +14,11 @@ import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MobileTacticalHub } from './components/MobileTacticalHub';
 import { ClanHub } from './components/ClanHub';
 import { HomeDashboard } from './components/HomeDashboard';
+import { MobileAppShell } from './components/MobileAppShell';
+import { MobileHeader } from './components/MobileHeader';
+import { MobileDock } from './components/MobileDock';
+import { MobileHomeView } from './components/MobileHomeView';
+import { MobileHubDrawer } from './components/MobileHubDrawer';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -1136,9 +1141,9 @@ export default function App() {
   }
 
   return (
-    <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-      activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
-    }`}>
+    <MobileAppShell>
+
+
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
         <OperatorOnboardingModal
@@ -1211,41 +1216,30 @@ export default function App() {
         </div>
       )}
 
-      {(activeTab !== 'battle' || effectiveMobileMode) && (
-        <TopBar
-          activeTab={activeTab}
-          setActiveTab={openTab}
-          budget={budget}
-          reputation={reputation}
-          isMuted={isMuted}
-          setIsMuted={setIsMuted}
-          onRequestCommander={requestCommanderOrders}
-          isCommanderThinking={isCommanderThinking}
-          isMobileMode={effectiveMobileMode}
-          setIsMobileMode={handleSetMobileMode}
-          isMobileHardware={isMobileHardware}
-          skillPoints={skillPoints}
-          playerName={playerName}
-          clanTag={clanTag}
-          onOpenHome={() => openTab('home')}
-          onOpenProfileModal={() => setShowProfileModal(true)}
-          onOpenLegalModal={() => setShowLegalModal(true)}
-          onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-          onLogout={handleLogout}
-          unclaimedMissionsCount={unclaimedMissionsCount}
-          completedMissionsCount={completedMissionsCount}
-          totalMissionsCount={dailyMissionsState.missions.length}
-          navigationDisabled={false}
-        />
-      )}
+      {/* Sleek Native Mobile Header */}
+      <MobileHeader
+        playerName={playerName}
+        clanTag={clanTag}
+        operatorLevel={operatorLevel}
+        budget={budget}
+        reputation={reputation}
+        isMuted={isMuted}
+        setIsMuted={setIsMuted}
+        unclaimedMissionsCount={unclaimedMissionsCount}
+        completedMissionsCount={completedMissionsCount}
+        totalMissionsCount={dailyMissionsState.missions.length}
+        onRequestCommander={requestCommanderOrders}
+        isCommanderThinking={isCommanderThinking}
+        onOpenProfileModal={() => setShowProfileModal(true)}
+        onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+        onOpenLegalModal={() => setShowLegalModal(true)}
+        onLogout={handleLogout}
+      />
 
-      {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
-      <main className={`flex-1 w-full relative ${
-        activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
-      }`}>
-        {/* Integrated main menu (former start page) - reachable via TopBar, pause menu & end screen */}
+      {/* Main Scrollable View Router */}
+      <main className="flex-1 w-full relative overflow-y-auto overflow-x-hidden select-none">
         {activeTab === 'home' && (
-          <HomeDashboard
+          <MobileHomeView
             playerName={playerName}
             clanTag={clanTag}
             playerCity={playerCity}
@@ -1261,79 +1255,37 @@ export default function App() {
             unlockedMaps={effectiveUnlockedMaps}
             mapLevels={mapLevels}
             dailyMissionsState={dailyMissionsState}
-            effectiveMobileMode={effectiveMobileMode}
             canClaimDailyLogin={canClaimDailyLogin}
-            onStartBattle={(arenaId) => {
-              if (arenaId) setCurrentArena(arenaId);
-              setActiveTab('battle');
-            }}
-            onSelectArena={(arenaId) => setCurrentArena(arenaId)}
-            onOpenTab={openTab}
+            onNavigateTab={openTab}
             onOpenProfileModal={() => setShowProfileModal(true)}
             onOpenDailyMissionsModal={() => setShowDailyMissionsModal(true)}
             onClaimDailyMission={handleClaimMission}
             onClaimDailyGrandBonus={handleClaimGrandBonus}
-            onClaimAchievement={handleClaimAchievement}
             onClaimDailyLoginBonus={handleClaimDailyLoginBonus}
-            onUnlockMap={handleUnlockMap}
+            onStartBattle={(arenaId) => {
+              if (arenaId) setCurrentArena(arenaId);
+              openTab('battle');
+            }}
+            onSimulatePatrol={handleSimulatePatrol}
           />
         )}
 
         {activeTab === 'battle' && (
-          effectiveMobileMode ? (
-            <MobileTacticalHub
-              budget={budget}
-              reputation={reputation}
-              playerName={playerName}
-              clanTag={clanTag}
-              totalIncomePerSec={totalIncomePerSec}
-              totalWins={totalWins}
-              unlockedMaps={effectiveUnlockedMaps}
-              dailyMissionsState={dailyMissionsState}
-              onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-              onClaimDailyMission={handleClaimMission}
-              onNavigateTab={openTab}
-              onSwitchToPcMode={() => handleSetMobileMode(false)}
-              onSimulatePatrol={handleSimulatePatrol}
-              isMobileHardware={isMobileHardware}
-              isLandscape={isLandscape}
-              skillPoints={skillPoints}
-            />
-          ) : (
-            <ThreeCanvas
-              currentArena={currentArena}
-              onChangeArena={(arenaId) => setCurrentArena(arenaId)}
-              onMatchComplete={handleMatchComplete}
-              onMatchStateChange={setMatchState}
-              isMultiplayerMatch={activeRoom !== null}
-              matchReward={lastMatchReward}
-              unlockedFacilities={facilityLevels}
-              latestCommanderBark={latestCommanderBark}
-              commanderDirectives={commanderDirectives}
-              isMobileMode={isMobileMode}
-              onCollectTaler={handleCollectTaler}
-              onOpenTycoon={() => openTab('tycoon')}
-              onOpenLeaderboard={() => openTab('leaderboard')}
-              weaponUpgrades={weaponUpgrades}
-              onLootAttachmentUpdate={handleLootAttachmentUpdate}
-              totalWins={totalWins}
-              unlockedMaps={effectiveUnlockedMaps}
-              budget={budget}
-              onUnlockMap={handleUnlockMap}
-              playerName={playerName}
-              clanTag={clanTag}
-              dailyMissionsState={dailyMissionsState}
-              onEnemyEliminated={handleEnemyEliminated}
-              onStreakAchieved={handleStreakAchieved}
-              onWaveAdvanced={handleWaveAdvanced}
-              onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-              skillTree={skillTree}
-              mapLevels={mapLevels}
-              onWeaponXpGain={handleWeaponXpGain}
-              onOperatorLevelUp={handleOperatorLevelUp}
-              onExitToMenu={handleExitToMenu}
-            />
-          )
+          <MobileTacticalHub
+            budget={budget}
+            reputation={reputation}
+            playerName={playerName}
+            clanTag={clanTag}
+            totalIncomePerSec={totalIncomePerSec}
+            totalWins={totalWins}
+            unlockedMaps={effectiveUnlockedMaps}
+            dailyMissionsState={dailyMissionsState}
+            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+            onClaimDailyMission={handleClaimMission}
+            onNavigateTab={openTab}
+            onSimulatePatrol={handleSimulatePatrol}
+            skillPoints={skillPoints}
+          />
         )}
 
         {activeTab === 'gunsmith' && (
@@ -1364,64 +1316,132 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'tycoon' && (
-          <TycoonHub
+        {activeTab === 'hub' && (
+          <MobileHubDrawer
+            playerName={playerName}
+            clanTag={clanTag}
+            operatorLevel={operatorLevel}
             budget={budget}
-            onUpgradeFacility={handleUpgradeFacility}
-            facilities={facilities}
-            totalWins={totalWins}
-            unlockedMaps={effectiveUnlockedMaps}
-            onUnlockMap={handleUnlockMap}
+            reputation={reputation}
             totalIncomePerSec={totalIncomePerSec}
-            commanderCrisisEvent={crisisEvent}
-            onAcceptCrisisEvent={handleAcceptCrisis}
-            onStartArena={(arenaId) => {
-              setCurrentArena(arenaId);
-              setActiveTab('battle');
-              setShowMobileCommandOverlay(false);
-            }}
-            mapLevels={mapLevels}
-            onUpgradeMapLevel={handleUpgradeMapLevel}
-            isMobileHardware={isMobileHardware}
-          />
-        )}
-
-        {activeTab === 'multiplayer' && (
-          <MultiplayerLobby
-            onStartGameWithRoom={handleStartGameWithRoom}
-            playerName={playerName}
-            clanTag={clanTag}
-            onOpenProfileModal={() => setShowProfileModal(true)}
-            onOpenLeaderboard={() => setActiveTab('leaderboard')}
             totalWins={totalWins}
-            unlockedMaps={effectiveUnlockedMaps}
-          />
-        )}
-
-        {activeTab === 'leaderboard' && (
-          <LeaderboardView
-            currentScore={lastMatchScore}
-            currentKills={lastMatchKills}
-            playerName={playerName}
-            clanTag={clanTag}
-            playerCity={playerCity}
-            unlockedMapsCount={effectiveUnlockedMaps.length}
-            signatureWeapon={signatureWeaponName}
-            currentArenaName={ARENAS[currentArena]?.name || currentArena}
-            onEditProfile={() => setShowProfileModal(true)}
+            onNavigateTab={openTab}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+            onOpenLegalModal={() => setShowLegalModal(true)}
+            onLogout={handleLogout}
           />
         )}
 
         {activeTab === 'clan' && (
-          <ClanHub
-            playerName={playerName}
-            onClanTagChange={(tag) => {
-              setClanTag(tag);
-              localStorage.setItem('na_clan_tag', tag);
-            }}
-          />
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <ClanHub
+              playerName={playerName}
+              onClanTagChange={(tag) => {
+                setClanTag(tag);
+                localStorage.setItem('na_clan_tag', tag);
+              }}
+            />
+          </div>
+        )}
+
+        {activeTab === 'tycoon' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <TycoonHub
+              budget={budget}
+              onUpgradeFacility={handleUpgradeFacility}
+              facilities={facilities}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+              onUnlockMap={handleUnlockMap}
+              totalIncomePerSec={totalIncomePerSec}
+              commanderCrisisEvent={crisisEvent}
+              onAcceptCrisisEvent={handleAcceptCrisis}
+              onStartArena={(arenaId) => {
+                setCurrentArena(arenaId);
+                openTab('battle');
+              }}
+              mapLevels={mapLevels}
+              onUpgradeMapLevel={handleUpgradeMapLevel}
+              isMobileHardware={true}
+            />
+          </div>
+        )}
+
+        {activeTab === 'leaderboard' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <LeaderboardView
+              currentScore={lastMatchScore}
+              currentKills={lastMatchKills}
+              playerName={playerName}
+              clanTag={clanTag}
+              playerCity={playerCity}
+              unlockedMapsCount={effectiveUnlockedMaps.length}
+              signatureWeapon={signatureWeaponName}
+              currentArenaName={ARENAS[currentArena]?.name || currentArena}
+              onEditProfile={() => setShowProfileModal(true)}
+            />
+          </div>
+        )}
+
+        {activeTab === 'multiplayer' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <MultiplayerLobby
+              onStartGameWithRoom={handleStartGameWithRoom}
+              playerName={playerName}
+              clanTag={clanTag}
+              onOpenProfileModal={() => setShowProfileModal(true)}
+              onOpenLeaderboard={() => openTab('leaderboard')}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+            />
+          </div>
         )}
       </main>
-    </div>
+
+      {/* Sleek 5-Tab Mobile Dock Bar */}
+      <MobileDock
+        activeTab={activeTab}
+        onSelectTab={(tab) => openTab(tab)}
+        skillPoints={skillPoints}
+        unclaimedMissionsCount={unclaimedMissionsCount}
+      />
+    </MobileAppShell>
   );
 }

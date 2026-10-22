@@ -30,7 +30,8 @@ export type AppTab =
   | 'tycoon'
   | 'multiplayer'
   | 'leaderboard'
-  | 'clan';
+  | 'clan'
+  | 'hub';
 
 export interface TopBarProps {
   activeTab: AppTab;
