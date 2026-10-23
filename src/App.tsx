@@ -343,7 +343,14 @@ export default function App() {
       setDailyMissionsState(cloud.dailyMissions);
     }
     if (cloud.careerStats && typeof cloud.careerStats === 'object') {
-      setCareerStats(cloud.careerStats);
+      setCareerStats((prev) => {
+        const next = { ...prev, ...cloud.careerStats };
+        saveCareerStats(next);
+        return next;
+      });
+      if (cloud.careerStats.lastLoginDate) {
+        try { localStorage.setItem('na_last_daily_bonus_date', cloud.careerStats.lastLoginDate); } catch {}
+      }
     }
   };
 
@@ -526,6 +533,10 @@ export default function App() {
     localStorage.setItem('na_operator_level', operatorLevel.toString());
   }, [operatorLevel]);
 
+  useEffect(() => {
+    saveCareerStats(careerStats);
+  }, [careerStats]);
+
   // Auto-sync debounced cloud save to database when progress changes
   useEffect(() => {
     if (!authUser || !hasHydratedFromCloudRef.current) return;
@@ -594,23 +605,73 @@ export default function App() {
     }
   }, [isOperatorRegistered, legalConsent]);
 
-  const todayDateStr = new Date().toISOString().slice(0, 10);
-  const canClaimDailyLogin = careerStats.lastLoginDate !== todayDateStr;
+  const getTodayLocalDateStr = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayDateStr = getTodayLocalDateStr();
+  const todayUtcStr = new Date().toISOString().slice(0, 10);
+  const storedDailyBonusDate = typeof window !== 'undefined' ? localStorage.getItem('na_last_daily_bonus_date') : null;
+
+  const canClaimDailyLogin =
+    careerStats.lastLoginDate !== todayDateStr &&
+    careerStats.lastLoginDate !== todayUtcStr &&
+    careerStats.lastDailyBonusDate !== todayDateStr &&
+    careerStats.lastDailyBonusDate !== todayUtcStr &&
+    storedDailyBonusDate !== todayDateStr &&
+    storedDailyBonusDate !== todayUtcStr;
 
   const handleClaimDailyLoginBonus = () => {
     if (!canClaimDailyLogin) return;
-    const nextStreak = careerStats.loginStreakDays + 1;
+
+    const currentClaimDate = getTodayLocalDateStr();
+    if (
+      careerStats.lastLoginDate === currentClaimDate ||
+      careerStats.lastDailyBonusDate === currentClaimDate ||
+      (typeof window !== 'undefined' && localStorage.getItem('na_last_daily_bonus_date') === currentClaimDate)
+    ) {
+      return;
+    }
+
+    let nextStreak = 1;
+    if (careerStats.lastLoginDate) {
+      const last = new Date(careerStats.lastLoginDate);
+      const curr = new Date(currentClaimDate);
+      const diffDays = Math.round((curr.getTime() - last.getTime()) / (1000 * 3600 * 24));
+      if (diffDays === 1) {
+        nextStreak = (careerStats.loginStreakDays || 0) + 1;
+      } else if (diffDays === 0) {
+        return;
+      } else {
+        nextStreak = 1;
+      }
+    }
+
     const rewardNAT = 75 + Math.min(150, nextStreak * 25);
     const rewardRep = 40;
     soundFx.playRewardClaim();
+
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('na_last_daily_bonus_date', currentClaimDate); } catch {}
+    }
+
     setBudget((prev) => prev + rewardNAT);
     setReputation((prev) => prev + rewardRep);
-    setCareerStats((prev) => ({
-      ...prev,
-      loginStreakDays: nextStreak,
-      lastLoginDate: todayDateStr,
-      totalTalerEarned: prev.totalTalerEarned + rewardNAT,
-    }));
+    setCareerStats((prev) => {
+      const updated: CareerStats = {
+        ...prev,
+        loginStreakDays: nextStreak,
+        lastLoginDate: currentClaimDate,
+        lastDailyBonusDate: currentClaimDate,
+        totalTalerEarned: prev.totalTalerEarned + rewardNAT,
+      };
+      saveCareerStats(updated);
+      return updated;
+    });
   };
 
   const handleClaimBattlePassTier = (tier: number) => {
