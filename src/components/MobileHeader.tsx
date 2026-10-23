@@ -11,6 +11,7 @@ import {
   UserCheck,
   Shield,
   Sparkles,
+  Monitor,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
@@ -27,6 +28,8 @@ export interface MobileHeaderProps {
   totalMissionsCount?: number;
   onRequestCommander?: () => void;
   isCommanderThinking?: boolean;
+  isMobileHardware?: boolean;
+  onSwitchToPcMode?: () => void;
   onOpenProfileModal: () => void;
   onOpenDailyMissions?: () => void;
   onOpenLegalModal?: () => void;
@@ -46,6 +49,8 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   totalMissionsCount = 4,
   onRequestCommander,
   isCommanderThinking = false,
+  isMobileHardware = false,
+  onSwitchToPcMode,
   onOpenProfileModal,
   onOpenDailyMissions,
   onOpenLegalModal,
@@ -157,6 +162,22 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
             <Volume2 className="w-4 h-4 text-amber-400/90" aria-hidden="true" />
           )}
         </button>
+
+        {/* Switch back to PC / Desktop view if user is on PC */}
+        {!isMobileHardware && onSwitchToPcMode && (
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playUiClick();
+              onSwitchToPcMode();
+            }}
+            aria-label="Zum PC-Modus wechseln"
+            title="Desktop-Modus (PC) öffnen"
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-white/10 hover:border-amber-400/40 transition-all active:scale-[0.96] cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+          >
+            <Monitor className="w-4 h-4" aria-hidden="true" />
+          </button>
+        )}
 
         {/* Legal Disclaimer Modal */}
         {onOpenLegalModal && (

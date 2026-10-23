@@ -147,6 +147,8 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
   });
 
   test('3. Mobile Redesign: 5-Tab Dock, Tactical Patrol combat dispatch, and Mobile Hub navigation', async ({ page }) => {
+    // Set smartphone viewport (e.g. iPhone / Android portrait) to test mobile redesign layout
+    await page.setViewportSize({ width: 390, height: 844 });
     const mobileUsername = `Mob_${Date.now().toString().slice(-6)}`;
     await page.goto('/');
 
