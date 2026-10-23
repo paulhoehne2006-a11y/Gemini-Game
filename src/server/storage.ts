@@ -71,6 +71,23 @@ export interface StoredLiveFeedEvent {
   type: 'join' | 'victory' | 'wave' | 'unlock' | 'upgrade';
 }
 
+export interface StoredGameProgress {
+  accountId: string;
+  budget: number;
+  reputation: number;
+  operatorLevel: number;
+  skillPoints: number;
+  totalWins: number;
+  facilities: Record<string, any>;
+  unlockedMaps: string[];
+  mapLevels: Record<string, number>;
+  skillTree: Record<string, number>;
+  weaponUpgrades: Record<string, any>;
+  dailyMissions: any;
+  careerStats: any;
+  updatedAt: number;
+}
+
 export interface StoredRoomPlayer {
   id: string;
   accountId?: string;
@@ -133,6 +150,10 @@ export interface GameStorage {
   saveRoom(room: StoredRoom): Promise<void>;
   deleteRoom(code: string): Promise<void>;
   cleanupStaleRooms(maxAgeMs: number): Promise<void>;
+
+  // Game Progress / Cloud Save
+  getGameProgress(accountId: string): Promise<StoredGameProgress | null>;
+  saveGameProgress(progress: StoredGameProgress): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +266,24 @@ export class SqliteStorageAdapter implements GameStorage {
       CREATE INDEX IF NOT EXISTS idx_sessions_account_id ON sessions(account_id);
       CREATE INDEX IF NOT EXISTS idx_leaderboard_score ON leaderboard(score DESC);
       CREATE INDEX IF NOT EXISTS idx_live_events_timestamp ON live_events(timestamp DESC);
+
+      CREATE TABLE IF NOT EXISTS game_progress (
+        account_id TEXT PRIMARY KEY,
+        budget INTEGER NOT NULL DEFAULT 500,
+        reputation INTEGER NOT NULL DEFAULT 0,
+        operator_level INTEGER NOT NULL DEFAULT 1,
+        skill_points INTEGER NOT NULL DEFAULT 0,
+        total_wins INTEGER NOT NULL DEFAULT 0,
+        facilities_json TEXT NOT NULL,
+        unlocked_maps_json TEXT NOT NULL,
+        map_levels_json TEXT NOT NULL,
+        skill_tree_json TEXT NOT NULL,
+        weapon_upgrades_json TEXT NOT NULL,
+        daily_missions_json TEXT NOT NULL,
+        career_stats_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+      );
       CREATE INDEX IF NOT EXISTS idx_rooms_updated_at ON rooms(updated_at);
     `);
 
@@ -407,6 +446,7 @@ export class SqliteStorageAdapter implements GameStorage {
   async deleteAccount(id: string): Promise<void> {
     this.db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
     this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(id);
+    this.db.prepare('DELETE FROM game_progress WHERE account_id = ?').run(id);
   }
 
   async createSession(session: StoredSession): Promise<void> {
@@ -682,6 +722,68 @@ export class SqliteStorageAdapter implements GameStorage {
     const threshold = Date.now() - maxAgeMs;
     this.db.prepare('DELETE FROM rooms WHERE updated_at < ?').run(threshold);
   }
+
+  async getGameProgress(accountId: string): Promise<StoredGameProgress | null> {
+    const row = this.db.prepare('SELECT * FROM game_progress WHERE account_id = ?').get(accountId) as any;
+    if (!row) return null;
+    return {
+      accountId: row.account_id,
+      budget: Number(row.budget),
+      reputation: Number(row.reputation),
+      operatorLevel: Number(row.operator_level),
+      skillPoints: Number(row.skill_points),
+      totalWins: Number(row.total_wins),
+      facilities: JSON.parse(row.facilities_json || '{}'),
+      unlockedMaps: JSON.parse(row.unlocked_maps_json || '[]'),
+      mapLevels: JSON.parse(row.map_levels_json || '{}'),
+      skillTree: JSON.parse(row.skill_tree_json || '{}'),
+      weaponUpgrades: JSON.parse(row.weapon_upgrades_json || '{}'),
+      dailyMissions: JSON.parse(row.daily_missions_json || '{}'),
+      careerStats: JSON.parse(row.career_stats_json || '{}'),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async saveGameProgress(progress: StoredGameProgress): Promise<void> {
+    const stmt = this.db.prepare(`
+      INSERT INTO game_progress (
+        account_id, budget, reputation, operator_level, skill_points, total_wins,
+        facilities_json, unlocked_maps_json, map_levels_json, skill_tree_json,
+        weapon_upgrades_json, daily_missions_json, career_stats_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account_id) DO UPDATE SET
+        budget = excluded.budget,
+        reputation = excluded.reputation,
+        operator_level = excluded.operator_level,
+        skill_points = excluded.skill_points,
+        total_wins = excluded.total_wins,
+        facilities_json = excluded.facilities_json,
+        unlocked_maps_json = excluded.unlocked_maps_json,
+        map_levels_json = excluded.map_levels_json,
+        skill_tree_json = excluded.skill_tree_json,
+        weapon_upgrades_json = excluded.weapon_upgrades_json,
+        daily_missions_json = excluded.daily_missions_json,
+        career_stats_json = excluded.career_stats_json,
+        updated_at = excluded.updated_at
+    `);
+
+    stmt.run(
+      progress.accountId,
+      Math.max(0, Math.floor(progress.budget)),
+      Math.max(0, Math.floor(progress.reputation)),
+      Math.max(1, Math.floor(progress.operatorLevel)),
+      Math.max(0, Math.floor(progress.skillPoints)),
+      Math.max(0, Math.floor(progress.totalWins)),
+      JSON.stringify(progress.facilities || {}),
+      JSON.stringify(progress.unlockedMaps || []),
+      JSON.stringify(progress.mapLevels || {}),
+      JSON.stringify(progress.skillTree || {}),
+      JSON.stringify(progress.weaponUpgrades || {}),
+      JSON.stringify(progress.dailyMissions || {}),
+      JSON.stringify(progress.careerStats || {}),
+      progress.updatedAt || Date.now()
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -782,6 +884,23 @@ export class PostgresStorageAdapter implements GameStorage {
       CREATE INDEX IF NOT EXISTS idx_pg_sessions_account_id ON sessions(account_id);
       CREATE INDEX IF NOT EXISTS idx_pg_leaderboard_score ON leaderboard(score DESC);
       CREATE INDEX IF NOT EXISTS idx_pg_live_events_timestamp ON live_events(timestamp DESC);
+
+      CREATE TABLE IF NOT EXISTS game_progress (
+        account_id VARCHAR(64) PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        budget BIGINT NOT NULL DEFAULT 500,
+        reputation BIGINT NOT NULL DEFAULT 0,
+        operator_level INTEGER NOT NULL DEFAULT 1,
+        skill_points INTEGER NOT NULL DEFAULT 0,
+        total_wins INTEGER NOT NULL DEFAULT 0,
+        facilities_json JSONB NOT NULL,
+        unlocked_maps_json JSONB NOT NULL,
+        map_levels_json JSONB NOT NULL,
+        skill_tree_json JSONB NOT NULL,
+        weapon_upgrades_json JSONB NOT NULL,
+        daily_missions_json JSONB NOT NULL,
+        career_stats_json JSONB NOT NULL,
+        updated_at BIGINT NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS idx_pg_rooms_updated_at ON rooms(updated_at);
     `);
 
@@ -860,6 +979,7 @@ export class PostgresStorageAdapter implements GameStorage {
 
   async deleteAccount(id: string): Promise<void> {
     await this.pool!.query('DELETE FROM accounts WHERE id = $1', [id]);
+    await this.pool!.query('DELETE FROM game_progress WHERE account_id = $1', [id]);
     await this.pool!.query('DELETE FROM sessions WHERE account_id = $1', [id]);
   }
 
@@ -1138,6 +1258,67 @@ export class PostgresStorageAdapter implements GameStorage {
   async cleanupStaleRooms(maxAgeMs: number): Promise<void> {
     const threshold = Date.now() - maxAgeMs;
     await this.pool!.query('DELETE FROM rooms WHERE updated_at < $1', [threshold]);
+  }
+
+  async getGameProgress(accountId: string): Promise<StoredGameProgress | null> {
+    const res = await this.pool!.query('SELECT * FROM game_progress WHERE account_id = $1', [accountId]);
+    if (res.rows.length === 0) return null;
+    const row = res.rows[0];
+    return {
+      accountId: row.account_id,
+      budget: Number(row.budget),
+      reputation: Number(row.reputation),
+      operatorLevel: Number(row.operator_level),
+      skillPoints: Number(row.skill_points),
+      totalWins: Number(row.total_wins),
+      facilities: typeof row.facilities_json === 'string' ? JSON.parse(row.facilities_json) : row.facilities_json || {},
+      unlockedMaps: typeof row.unlocked_maps_json === 'string' ? JSON.parse(row.unlocked_maps_json) : row.unlocked_maps_json || [],
+      mapLevels: typeof row.map_levels_json === 'string' ? JSON.parse(row.map_levels_json) : row.map_levels_json || {},
+      skillTree: typeof row.skill_tree_json === 'string' ? JSON.parse(row.skill_tree_json) : row.skill_tree_json || {},
+      weaponUpgrades: typeof row.weapon_upgrades_json === 'string' ? JSON.parse(row.weapon_upgrades_json) : row.weapon_upgrades_json || {},
+      dailyMissions: typeof row.daily_missions_json === 'string' ? JSON.parse(row.daily_missions_json) : row.daily_missions_json || {},
+      careerStats: typeof row.career_stats_json === 'string' ? JSON.parse(row.career_stats_json) : row.career_stats_json || {},
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async saveGameProgress(progress: StoredGameProgress): Promise<void> {
+    await this.pool!.query(`
+      INSERT INTO game_progress (
+        account_id, budget, reputation, operator_level, skill_points, total_wins,
+        facilities_json, unlocked_maps_json, map_levels_json, skill_tree_json,
+        weapon_upgrades_json, daily_missions_json, career_stats_json, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT(account_id) DO UPDATE SET
+        budget = EXCLUDED.budget,
+        reputation = EXCLUDED.reputation,
+        operator_level = EXCLUDED.operator_level,
+        skill_points = EXCLUDED.skill_points,
+        total_wins = EXCLUDED.total_wins,
+        facilities_json = EXCLUDED.facilities_json,
+        unlocked_maps_json = EXCLUDED.unlocked_maps_json,
+        map_levels_json = EXCLUDED.map_levels_json,
+        skill_tree_json = EXCLUDED.skill_tree_json,
+        weapon_upgrades_json = EXCLUDED.weapon_upgrades_json,
+        daily_missions_json = EXCLUDED.daily_missions_json,
+        career_stats_json = EXCLUDED.career_stats_json,
+        updated_at = EXCLUDED.updated_at
+    `, [
+      progress.accountId,
+      Math.max(0, Math.floor(progress.budget)),
+      Math.max(0, Math.floor(progress.reputation)),
+      Math.max(1, Math.floor(progress.operatorLevel)),
+      Math.max(0, Math.floor(progress.skillPoints)),
+      Math.max(0, Math.floor(progress.totalWins)),
+      JSON.stringify(progress.facilities || {}),
+      JSON.stringify(progress.unlockedMaps || []),
+      JSON.stringify(progress.mapLevels || {}),
+      JSON.stringify(progress.skillTree || {}),
+      JSON.stringify(progress.weaponUpgrades || {}),
+      JSON.stringify(progress.dailyMissions || {}),
+      JSON.stringify(progress.careerStats || {}),
+      progress.updatedAt || Date.now()
+    ]);
   }
 }
 

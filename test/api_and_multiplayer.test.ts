@@ -396,6 +396,114 @@ test('API, CSRF & Multiplayer Security Test Suite', async (t) => {
     assert.equal(unlockedCount, 5); // all except 75 kills (ach_centurion)
   });
 
+  await t.test('13. Cloud Save & Anti-Cheat: Spielstand synchronisieren & Cheat-Werte abweisen', async () => {
+    // 1. Unauthenticated GET returns 401
+    const unauthGet = await fetch(`${baseUrl}/api/game/progress`);
+    assert.equal(unauthGet.status, 401);
+
+    // 2. Unauthenticated POST returns 401
+    const unauthPost = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ budget: 500 }),
+    });
+    assert.equal(unauthPost.status, 401);
+
+    // 3. Authenticated POST without CSRF returns 403
+    const noCsrfPost = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: userCookie,
+      },
+      body: JSON.stringify({ budget: 500 }),
+    });
+    assert.equal(noCsrfPost.status, 403);
+
+    // 4. Anti-Cheat: Negative budget rejected
+    const negBudget = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: userCookie,
+        'X-CSRF-Token': userCsrf,
+      },
+      body: JSON.stringify({ budget: -100 }),
+    });
+    assert.equal(negBudget.status, 400);
+
+    // 5. Anti-Cheat: Cheated budget (> 50,000,000) rejected
+    const cheatBudget = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: userCookie,
+        'X-CSRF-Token': userCsrf,
+      },
+      body: JSON.stringify({ budget: 999999999 }),
+    });
+    assert.equal(cheatBudget.status, 400);
+
+    // 6. Anti-Cheat: Impossible operator level (> 250) rejected
+    const cheatLevel = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: userCookie,
+        'X-CSRF-Token': userCsrf,
+      },
+      body: JSON.stringify({ budget: 1500, operatorLevel: 999 }),
+    });
+    assert.equal(cheatLevel.status, 400);
+
+    // 7. Legitimate cloud save persists successfully
+    const validSave = await fetch(`${baseUrl}/api/game/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: userCookie,
+        'X-CSRF-Token': userCsrf,
+      },
+      body: JSON.stringify({
+        budget: 12500,
+        reputation: 850,
+        operatorLevel: 12,
+        skillPoints: 4,
+        totalWins: 5,
+        facilities: { kelterei: { level: 2 } },
+        unlockedMaps: ['hessenpark', 'marktplatz'],
+        mapLevels: { hessenpark: 3 },
+        skillTree: { dmg_1: 2 },
+        weaponUpgrades: { bembel: { rarityTier: 3, papLevel: 1 } },
+        dailyMissions: { missions: [] },
+        careerStats: { totalKills: 45 },
+      }),
+    });
+    assert.equal(validSave.status, 200);
+    const savePayload = await validSave.json();
+    assert.equal(savePayload.success, true);
+    assert.equal(savePayload.progress.budget, 12500);
+    assert.equal(savePayload.progress.operatorLevel, 12);
+
+    // 8. Legitimate cloud fetch returns saved progress
+    const fetchSave = await fetch(`${baseUrl}/api/game/progress`, {
+      headers: {
+        Cookie: userCookie,
+      },
+    });
+    assert.equal(fetchSave.status, 200);
+    const fetchPayload = await fetchSave.json();
+    assert.equal(fetchPayload.success, true);
+    assert.ok(fetchPayload.progress);
+    assert.equal(fetchPayload.progress.budget, 12500);
+    assert.equal(fetchPayload.progress.reputation, 850);
+    assert.equal(fetchPayload.progress.operatorLevel, 12);
+    assert.equal(fetchPayload.progress.skillPoints, 4);
+    assert.equal(fetchPayload.progress.totalWins, 5);
+    assert.deepEqual(fetchPayload.progress.unlockedMaps, ['hessenpark', 'marktplatz']);
+    assert.equal(fetchPayload.progress.weaponUpgrades.bembel.papLevel, 1);
+  });
+
   // Teardown
   await stopServer();
   cleanDb(TEST_DB);

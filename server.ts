@@ -23,6 +23,7 @@ import {
   StoredLiveFeedEvent,
   StoredRoom,
   StoredRoomPlayer,
+  StoredGameProgress,
 } from './src/server/storage.ts';
 
 dotenv.config({ override: true });
@@ -704,6 +705,97 @@ app.post('/api/auth/delete', requireAccount, requireCsrf, async (req, res) => {
   clearSessionCookie(req, res);
 
   res.json({ success: true, message: 'Konto und alle zugehörigen Daten wurden gelöscht.' });
+});
+
+// ---------------------------------------------------------------------------
+// Cloud Save / Game Progress API (Cheat-Safe & Cross-Device Synchronized)
+// ---------------------------------------------------------------------------
+
+app.get('/api/game/progress', requireAccount, async (_req, res) => {
+  const account = res.locals.account as PublicAccount;
+  try {
+    const progress = await storage.getGameProgress(account.id);
+    res.json({ success: true, progress });
+  } catch (err: any) {
+    console.error('Error fetching game progress:', err);
+    res.status(500).json({ error: 'Spielstand konnte nicht geladen werden.' });
+  }
+});
+
+app.post('/api/game/progress', requireAccount, requireCsrf, async (req, res) => {
+  const account = res.locals.account as PublicAccount;
+
+  // Rate limit: Max 60 saves per minute per account
+  if (isRateLimited(`save_prog_${account.id}`, 60, 60 * 1000)) {
+    return res.status(429).json({ error: 'Zu viele Speicheranfragen. Bitte kurz warten.' });
+  }
+
+  const raw = req.body;
+  if (!raw || typeof raw !== 'object') {
+    return res.status(400).json({ error: 'Ungültige Spielstand-Daten übermittelt.' });
+  }
+
+  // Anti-Cheat & Strict Bounds Validation
+  const budget = Number(raw.budget);
+  if (!Number.isFinite(budget) || budget < 0 || budget > 50_000_000) {
+    return res.status(400).json({ error: 'Ungültiger oder unplausibler Budget-Wert (erlaubt: 0 - 50.000.000).' });
+  }
+
+  const reputation = Number(raw.reputation);
+  if (!Number.isFinite(reputation) || reputation < 0 || reputation > 10_000_000) {
+    return res.status(400).json({ error: 'Ungültiger oder unplausibler Ruf-Wert (erlaubt: 0 - 10.000.000).' });
+  }
+
+  const operatorLevel = Number(raw.operatorLevel);
+  if (!Number.isFinite(operatorLevel) || operatorLevel < 1 || operatorLevel > 250) {
+    return res.status(400).json({ error: 'Ungültiges Operator-Level (erlaubt: 1 - 250).' });
+  }
+
+  const skillPoints = Number(raw.skillPoints);
+  if (!Number.isFinite(skillPoints) || skillPoints < 0 || skillPoints > 1000) {
+    return res.status(400).json({ error: 'Ungültige Skillpunkte (erlaubt: 0 - 1.000).' });
+  }
+
+  const totalWins = Number(raw.totalWins);
+  if (!Number.isFinite(totalWins) || totalWins < 0 || totalWins > 100_000) {
+    return res.status(400).json({ error: 'Ungültige Siegesanzahl (erlaubt: 0 - 100.000).' });
+  }
+
+  // Sanitize objects
+  const facilities = raw.facilities && typeof raw.facilities === 'object' ? raw.facilities : {};
+  const unlockedMaps = Array.isArray(raw.unlockedMaps)
+    ? raw.unlockedMaps.filter((id: any) => typeof id === 'string' && id.length < 64)
+    : ['hessenpark'];
+  const mapLevels = raw.mapLevels && typeof raw.mapLevels === 'object' ? raw.mapLevels : {};
+  const skillTree = raw.skillTree && typeof raw.skillTree === 'object' ? raw.skillTree : {};
+  const weaponUpgrades = raw.weaponUpgrades && typeof raw.weaponUpgrades === 'object' ? raw.weaponUpgrades : {};
+  const dailyMissions = raw.dailyMissions && typeof raw.dailyMissions === 'object' ? raw.dailyMissions : {};
+  const careerStats = raw.careerStats && typeof raw.careerStats === 'object' ? raw.careerStats : {};
+
+  const cleanProgress: StoredGameProgress = {
+    accountId: account.id,
+    budget: Math.floor(budget),
+    reputation: Math.floor(reputation),
+    operatorLevel: Math.floor(operatorLevel),
+    skillPoints: Math.floor(skillPoints),
+    totalWins: Math.floor(totalWins),
+    facilities,
+    unlockedMaps,
+    mapLevels,
+    skillTree,
+    weaponUpgrades,
+    dailyMissions,
+    careerStats,
+    updatedAt: Date.now(),
+  };
+
+  try {
+    await storage.saveGameProgress(cleanProgress);
+    res.json({ success: true, progress: cleanProgress });
+  } catch (err: any) {
+    console.error('Error saving game progress:', err);
+    res.status(500).json({ error: 'Spielstand konnte nicht in der Cloud gespeichert werden.' });
+  }
 });
 
 // ---------------------------------------------------------------------------

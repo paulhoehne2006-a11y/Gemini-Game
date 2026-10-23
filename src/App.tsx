@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { AuthUser, AuthRequestError, getCurrentUser, logout } from './auth';
 import { TopBar, AppTab } from './components/TopBar';
@@ -19,6 +19,7 @@ import { MobileHeader } from './components/MobileHeader';
 import { MobileDock } from './components/MobileDock';
 import { MobileHomeView } from './components/MobileHomeView';
 import { MobileHubDrawer } from './components/MobileHubDrawer';
+import { CloudGameProgress, fetchCloudGameProgress, saveCloudGameProgress } from './game/cloudSave';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -313,6 +314,67 @@ export default function App() {
   const [activeRoom, setActiveRoom] = useState<MultiplayerRoom | null>(null);
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
 
+  // Server-Authoritative Cloud Save State Refs
+  const hasHydratedFromCloudRef = useRef<boolean>(false);
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadCloudSaveIntoState = (cloud: CloudGameProgress) => {
+    if (typeof cloud.budget === 'number') setBudget(cloud.budget);
+    if (typeof cloud.reputation === 'number') setReputation(cloud.reputation);
+    if (typeof cloud.operatorLevel === 'number') setOperatorLevel(cloud.operatorLevel);
+    if (typeof cloud.skillPoints === 'number') setSkillPoints(cloud.skillPoints);
+    if (typeof cloud.totalWins === 'number') setTotalWins(cloud.totalWins);
+    if (cloud.facilities && typeof cloud.facilities === 'object') {
+      setFacilities((prev) => ({ ...prev, ...cloud.facilities }));
+    }
+    if (Array.isArray(cloud.unlockedMaps) && cloud.unlockedMaps.length > 0) {
+      setUnlockedMaps(cloud.unlockedMaps);
+    }
+    if (cloud.mapLevels && typeof cloud.mapLevels === 'object') {
+      setMapLevels(cloud.mapLevels);
+    }
+    if (cloud.skillTree && typeof cloud.skillTree === 'object') {
+      setSkillTree(cloud.skillTree);
+    }
+    if (cloud.weaponUpgrades && typeof cloud.weaponUpgrades === 'object') {
+      setWeaponUpgrades(cloud.weaponUpgrades);
+    }
+    if (cloud.dailyMissions && typeof cloud.dailyMissions === 'object' && Array.isArray(cloud.dailyMissions.missions)) {
+      setDailyMissionsState(cloud.dailyMissions);
+    }
+    if (cloud.careerStats && typeof cloud.careerStats === 'object') {
+      setCareerStats(cloud.careerStats);
+    }
+  };
+
+  const syncAccountProgress = async () => {
+    try {
+      const cloud = await fetchCloudGameProgress();
+      if (cloud) {
+        loadCloudSaveIntoState(cloud);
+      } else {
+        await saveCloudGameProgress({
+          budget,
+          reputation,
+          operatorLevel,
+          skillPoints,
+          totalWins,
+          facilities,
+          unlockedMaps,
+          mapLevels,
+          skillTree,
+          weaponUpgrades,
+          dailyMissions: dailyMissionsState,
+          careerStats,
+        });
+      }
+    } catch (err) {
+      console.warn('[CloudSave] Error syncing on auth:', err);
+    } finally {
+      hasHydratedFromCloudRef.current = true;
+    }
+  };
+
   useEffect(() => {
     let active = true;
     getCurrentUser()
@@ -329,6 +391,7 @@ export default function App() {
             localStorage.setItem('na_clan_tag', profileClanTag);
             localStorage.setItem('na_player_city', profileCity);
             localStorage.setItem('na_operator_registered', 'true');
+            syncAccountProgress();
           }
         }
       })
@@ -366,6 +429,7 @@ export default function App() {
         clanTag: profileClanTag,
         city: profileCity,
       }).catch(() => {});
+      syncAccountProgress();
     }
   };
 
@@ -385,6 +449,7 @@ export default function App() {
     localStorage.removeItem('na_player_name');
     localStorage.removeItem('na_clan_tag');
     localStorage.removeItem('na_player_city');
+    hasHydratedFromCloudRef.current = false;
   };
 
   // Compute current signature weapon display name for Real Leaderboard
@@ -460,6 +525,50 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('na_operator_level', operatorLevel.toString());
   }, [operatorLevel]);
+
+  // Auto-sync debounced cloud save to database when progress changes
+  useEffect(() => {
+    if (!authUser || !hasHydratedFromCloudRef.current) return;
+    if (cloudSaveTimerRef.current) {
+      clearTimeout(cloudSaveTimerRef.current);
+    }
+    cloudSaveTimerRef.current = setTimeout(() => {
+      saveCloudGameProgress({
+        budget,
+        reputation,
+        operatorLevel,
+        skillPoints,
+        totalWins,
+        facilities,
+        unlockedMaps,
+        mapLevels,
+        skillTree,
+        weaponUpgrades,
+        dailyMissions: dailyMissionsState,
+        careerStats,
+      }).catch(() => {});
+    }, 1500);
+
+    return () => {
+      if (cloudSaveTimerRef.current) {
+        clearTimeout(cloudSaveTimerRef.current);
+      }
+    };
+  }, [
+    authUser,
+    budget,
+    reputation,
+    operatorLevel,
+    skillPoints,
+    totalWins,
+    facilities,
+    unlockedMaps,
+    mapLevels,
+    skillTree,
+    weaponUpgrades,
+    dailyMissionsState,
+    careerStats,
+  ]);
 
   // Toast auto-dismiss timer
   useEffect(() => {
