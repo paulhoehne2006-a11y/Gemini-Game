@@ -23,9 +23,10 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     await expect(loginTab).toBeVisible();
     await expect(registerTab).toBeVisible();
 
-    // Switch to Register tab
+    // Switch to Register tab — verify Clan selection is removed at registration and Clan-Börse hint is shown
     await registerTab.click();
-    await expect(page.locator('#auth-clan-tag')).toBeVisible();
+    await expect(page.locator('#auth-clan-tag')).toHaveCount(0);
+    await expect(page.getByTestId('auth-clan-boerse-hint')).toBeVisible();
     await expect(page.locator('#auth-confirm-password')).toBeVisible();
 
     // Verify empty submission triggers validation error
@@ -56,9 +57,8 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     // Switch to Register
     await page.getByRole('tab', { name: /Registrieren/i }).click();
 
-    // Fill form
+    // Fill form (no clan tag at registration)
     await page.fill('#auth-username', testUsername);
-    await page.fill('#auth-clan-tag', testClanTag);
     await page.fill('#auth-password', testPassword);
     await page.fill('#auth-confirm-password', testPassword);
 
@@ -100,11 +100,13 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
       await expect(page.getByText(/Angriff|Kampf|Verteidigung|Taktik/i).first()).toBeVisible();
     }
 
-    // --- TAB 4: Mein Clan (Clan Hub) ---
+    // --- TAB 4: Mein Clan (Clan Hub & Clan-Börse) ---
     const clanNav = page.locator('header').getByRole('button', { name: /Mein Clan/i });
     if (await clanNav.isVisible()) {
       await clanNav.click();
       await expect(page.getByText(/Squad|Clan-Verwaltung|Clanzentrale|Clan gründen/i).first()).toBeVisible({ timeout: 5000 });
+      // Verify Clan-Börse shows seeded clans (e.g. HESSEN)
+      await expect(page.getByText(/Hessenpark Wächter|Clan-Börse/i).first()).toBeVisible({ timeout: 5000 });
     }
 
     // --- TAB 5: Maps & Tycoon ---
@@ -188,10 +190,9 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     const mobileUsername = `Mob_${Date.now().toString().slice(-6)}`;
     await page.goto('/');
 
-    // Register user
+    // Register user (no clan tag at registration)
     await page.getByRole('tab', { name: /Registrieren/i }).click();
     await page.fill('#auth-username', mobileUsername);
-    await page.fill('#auth-clan-tag', 'MOB1');
     await page.fill('#auth-password', 'MobilePass123!');
     await page.fill('#auth-confirm-password', 'MobilePass123!');
     await page.locator('input[type="checkbox"]').check();

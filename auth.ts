@@ -28,8 +28,39 @@ const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
 const DUMMY_SALT = crypto.randomBytes(16);
 const DUMMY_HASH = crypto.scryptSync('dummy_password_for_timing_safety_123', DUMMY_SALT, 64, SCRYPT_OPTIONS);
 
-export class AuthValidationError extends Error {}
-export class AuthConflictError extends Error {}
+export class AuthError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+  }
+}
+
+export class AuthValidationError extends AuthError {
+  constructor(message: string, status = 400) {
+    super(message, status);
+    this.name = 'AuthValidationError';
+  }
+}
+
+export class AuthConflictError extends AuthError {
+  constructor(message: string) {
+    super(message, 409);
+    this.name = 'AuthConflictError';
+  }
+}
+
+export function normalizeClanTag(clanTag?: string): string {
+  const cleaned = (clanTag || '').trim().toUpperCase();
+  if (!cleaned) return '';
+  if (!CLAN_TAG_PATTERN.test(cleaned)) {
+    throw new AuthValidationError(
+      'Das Clantag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.'
+    );
+  }
+  return cleaned;
+}
 
 export function hashPassword(password: string, salt: Buffer): Buffer {
   return crypto.scryptSync(password, salt, 64, SCRYPT_OPTIONS);
@@ -72,15 +103,19 @@ export class AuthStore {
   async register(
     usernameInput: string,
     password: string,
-    clanTagInput: string,
-    factionInput: string,
-    legalConsent: LegalConsentRecord
+    clanTagInput?: string,
+    factionInput: string = 'neu-anspach',
+    legalConsent?: LegalConsentRecord
   ): Promise<PublicAccount> {
     const username = (usernameInput || '').trim();
     const clanTag = (clanTagInput || '').trim().toUpperCase();
     this.validateCredentials(username, password);
     this.validateProfile(clanTag, factionInput);
-    this.validateLegalConsent(legalConsent);
+    if (legalConsent) {
+      this.validateLegalConsent(legalConsent);
+    } else {
+      throw new AuthValidationError('Bitte bestätige die rechtlichen Hinweise und Datenschutzinformationen.');
+    }
 
     const existing = await this.storage.getAccountByUsername(username);
     if (existing) {
@@ -137,8 +172,8 @@ export class AuthStore {
     }
 
     // New Google Account creation
-    const rawClanTag = (input.clanTag || '61267').trim().toUpperCase();
-    const clanTag = CLAN_TAG_PATTERN.test(rawClanTag) ? rawClanTag : '61267';
+    const rawClanTag = (input.clanTag || '').trim().toUpperCase();
+    const clanTag = rawClanTag && CLAN_TAG_PATTERN.test(rawClanTag) ? rawClanTag : '';
     const faction: Faction = FACTIONS.includes(input.faction as Faction)
       ? (input.faction as Faction)
       : 'neu-anspach';
@@ -227,10 +262,113 @@ export class AuthStore {
     return null;
   }
 
+  async login(usernameInput: string, password: string): Promise<PublicAccount | null> {
+    return this.verifyCredentials(usernameInput, password);
+  }
+
   async updateClanTag(accountId: string, clanTag: string): Promise<PublicAccount | null> {
     const account = await this.storage.getAccountById(accountId);
     if (!account) return null;
-    account.clanTag = clanTag;
+    account.clanTag = (clanTag || '').trim().toUpperCase();
+    await this.storage.saveAccount(account);
+    return toPublicAccount(account);
+  }
+
+  async updateUsername(accountId: string, newUsername: string, faction?: string): Promise<PublicAccount> {
+    const account = await this.storage.getAccountById(accountId);
+    if (!account) {
+      throw new AuthValidationError('Konto nicht gefunden.', 404);
+    }
+
+    const cleanUsername = (newUsername || '').trim();
+    if (!USERNAME_PATTERN.test(cleanUsername)) {
+      throw new AuthValidationError(
+        'Der Benutzername muss 3 bis 24 Zeichen lang sein (Buchstaben, Zahlen, _ oder -).',
+        400
+      );
+    }
+
+    const existing = await this.storage.getAccountByUsername(cleanUsername);
+    if (existing && existing.id !== accountId) {
+      throw new AuthConflictError('Dieser Benutzername ist bereits vergeben.');
+    }
+
+    account.username = cleanUsername;
+    if (faction && FACTIONS.includes(faction as Faction)) {
+      account.faction = faction as Faction;
+    }
+
+    await this.storage.saveAccount(account);
+    return toPublicAccount(account);
+  }
+
+  async linkLegacyAccount(
+    currentAccountId: string,
+    legacyUsername: string,
+    legacyPassword: string
+  ): Promise<PublicAccount> {
+    const currentAccount = await this.storage.getAccountById(currentAccountId);
+    const verifiedLegacy = await this.verifyCredentials(legacyUsername, legacyPassword);
+    if (!verifiedLegacy) {
+      throw new AuthValidationError('Ungültiger Benutzername oder falsches Passwort des alten Accounts.', 401);
+    }
+
+    const legacyAccount = await this.storage.getAccountById(verifiedLegacy.id);
+    if (!legacyAccount) {
+      throw new AuthValidationError('Das alte Konto konnte nicht geladen werden.');
+    }
+
+    if (legacyAccount.id === currentAccountId) {
+      return toPublicAccount(legacyAccount);
+    }
+
+    if (currentAccount) {
+      const transferredGoogleSub = currentAccount.googleSub || legacyAccount.googleSub || null;
+      const transferredEmail = currentAccount.email || legacyAccount.email || null;
+      const transferredAvatar = currentAccount.avatarUrl || legacyAccount.avatarUrl || null;
+
+      await this.storage.deleteAccount(currentAccount.id);
+
+      legacyAccount.googleSub = transferredGoogleSub;
+      legacyAccount.email = transferredEmail;
+      legacyAccount.avatarUrl = transferredAvatar;
+      await this.storage.saveAccount(legacyAccount);
+    }
+
+    return toPublicAccount(legacyAccount);
+  }
+
+  async linkGoogleIdentity(
+    accountId: string,
+    googleData: { googleSub: string; email?: string; avatarUrl?: string }
+  ): Promise<PublicAccount> {
+    const account = await this.storage.getAccountById(accountId);
+    if (!account) {
+      throw new AuthValidationError('Konto nicht gefunden.');
+    }
+
+    const googleSub = (googleData.googleSub || '').trim();
+    if (!googleSub) {
+      throw new AuthValidationError('Ungültige Google-Konto-Kennung (sub).');
+    }
+
+    const existingBySub = await this.storage.getAccountByGoogleSub(googleSub);
+    if (existingBySub && existingBySub.id !== accountId) {
+      if (existingBySub.authProvider === 'google' && !existingBySub.passwordHash) {
+        await this.storage.deleteAccount(existingBySub.id);
+      } else {
+        throw new AuthConflictError('Dieses Google-Konto ist bereits mit einem anderen Operator-Konto verknüpft.');
+      }
+    }
+
+    account.googleSub = googleSub;
+    if (googleData.email) {
+      account.email = googleData.email.trim().slice(0, 254);
+    }
+    if (googleData.avatarUrl) {
+      account.avatarUrl = googleData.avatarUrl.trim().slice(0, 1024);
+    }
+
     await this.storage.saveAccount(account);
     return toPublicAccount(account);
   }
@@ -396,7 +534,7 @@ export class AuthStore {
   }
 
   private validateProfile(clanTag: string, faction: string): void {
-    if (!CLAN_TAG_PATTERN.test(clanTag)) {
+    if (clanTag && !CLAN_TAG_PATTERN.test(clanTag)) {
       throw new AuthValidationError(
         'Das Clantag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.'
       );

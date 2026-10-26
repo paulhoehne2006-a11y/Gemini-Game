@@ -395,12 +395,20 @@ export default function App() {
               setPlayerName(cleanName);
               localStorage.setItem('na_player_name', cleanName);
             }
-            const profileClanTag = user.clanTag || '61267';
+            const profileClanTag = user.clanTag || '';
             const profileCity = user.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
             setClanTag(profileClanTag);
             setPlayerCity(profileCity);
             setIsOperatorRegistered(true);
-            setShowProfileModal(false);
+            const hasGoogleOnboardingFlag =
+              typeof window !== 'undefined' &&
+              new URLSearchParams(window.location.search).get('google_onboarding') === '1';
+            if (hasGoogleOnboardingFlag) {
+              window.history.replaceState({}, '', window.location.pathname);
+              setShowProfileModal(true);
+            } else {
+              setShowProfileModal(false);
+            }
             localStorage.setItem('na_clan_tag', profileClanTag);
             localStorage.setItem('na_player_city', profileCity);
             localStorage.setItem('na_operator_registered', 'true');
@@ -426,7 +434,7 @@ export default function App() {
     const identity = user.displayName || user.username || user.email;
     if (identity) {
       const cleanName = identity.slice(0, 20);
-      const profileClanTag = user.clanTag || clanTag || '61267';
+      const profileClanTag = user.clanTag || '';
       const profileCity = user.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
       setPlayerName(cleanName);
       setClanTag(profileClanTag);
@@ -436,7 +444,11 @@ export default function App() {
       localStorage.setItem('na_player_city', profileCity);
       localStorage.setItem('na_operator_registered', 'true');
       setIsOperatorRegistered(true);
-      setShowProfileModal(false);
+      if (user.isNewAccount && user.authProvider === 'google') {
+        setShowProfileModal(true);
+      } else {
+        setShowProfileModal(false);
+      }
       registerOperatorProfile({
         name: cleanName,
         clanTag: profileClanTag,
@@ -1340,7 +1352,15 @@ export default function App() {
           initialCity={playerCity}
           isFirstTime={!isOperatorRegistered}
           authProvider={authUser.authProvider}
+          userEmail={authUser.email}
           onComplete={handleCompleteOnboarding}
+          onAccountLinked={(linkedUser) => {
+            handleAuthenticated(linkedUser);
+          }}
+          onOpenClanHub={() => {
+            setShowProfileModal(false);
+            openTab('clan');
+          }}
           onOpenLegal={() => setShowLegalModal(true)}
           onClose={isOperatorRegistered ? () => setShowProfileModal(false) : undefined}
           onLogout={handleLogout}
@@ -1546,9 +1566,22 @@ export default function App() {
             </div>
             <ClanHub
               playerName={playerName}
+              operatorLevel={operatorLevel}
+              budget={budget}
+              reputation={reputation}
+              highestWave={careerStats.highestWave || 1}
+              playerScore={lastMatchScore}
               onClanTagChange={(tag) => {
                 setClanTag(tag);
                 localStorage.setItem('na_clan_tag', tag);
+              }}
+              onSpendNAT={(amount) => {
+                setBudget((prev) => Math.max(0, prev - amount));
+              }}
+              onEarnRewards={(rewards) => {
+                if (rewards.nat) setBudget((prev) => prev + rewards.nat!);
+                if (rewards.reputation) setReputation((prev) => prev + rewards.reputation!);
+                if (rewards.skillPoints) setSkillPoints((prev) => prev + rewards.skillPoints!);
               }}
             />
           </div>
@@ -1835,9 +1868,22 @@ export default function App() {
         {activeTab === 'clan' && (
           <ClanHub
             playerName={playerName}
+            operatorLevel={operatorLevel}
+            budget={budget}
+            reputation={reputation}
+            highestWave={careerStats.highestWave || 1}
+            playerScore={lastMatchScore}
             onClanTagChange={(tag) => {
               setClanTag(tag);
               localStorage.setItem('na_clan_tag', tag);
+            }}
+            onSpendNAT={(amount) => {
+              setBudget((prev) => Math.max(0, prev - amount));
+            }}
+            onEarnRewards={(rewards) => {
+              if (rewards.nat) setBudget((prev) => prev + rewards.nat!);
+              if (rewards.reputation) setReputation((prev) => prev + rewards.reputation!);
+              if (rewards.skillPoints) setSkillPoints((prev) => prev + rewards.skillPoints!);
             }}
           />
         )}

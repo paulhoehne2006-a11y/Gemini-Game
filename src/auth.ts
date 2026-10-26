@@ -8,6 +8,7 @@ export interface AuthUser {
   authProvider?: 'password' | 'google';
   avatarUrl?: string;
   createdAt?: string;
+  isNewAccount?: boolean;
 }
 
 export interface LegalConsentRecord {
@@ -74,7 +75,12 @@ export function removeStoredToken(): void {
 }
 
 function normalizeUser(response: AuthResponse): AuthUser | null {
-  return response.user || response.account || null;
+  const user = response.user || response.account || null;
+  if (!user) return null;
+  if (response.isNewAccount !== undefined) {
+    return { ...user, isNewAccount: response.isNewAccount };
+  }
+  return user;
 }
 
 export async function requestAuth(path: string, init?: RequestInit): Promise<AuthResponse> {
@@ -137,9 +143,9 @@ export async function login(username: string, password: string): Promise<AuthUse
 export async function register(
   username: string,
   password: string,
-  clanTag: string,
-  faction: 'neu-anspach' | 'wehrheim',
-  legalConsent: LegalConsentRecord
+  clanTag = '',
+  faction: 'neu-anspach' | 'wehrheim' = 'neu-anspach',
+  legalConsent?: LegalConsentRecord
 ): Promise<AuthUser> {
   const res = await requestAuth('/api/auth/register', {
     method: 'POST',
@@ -147,6 +153,45 @@ export async function register(
   });
   const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);
+  return user;
+}
+
+export async function updateOperatorUsername(
+  username: string,
+  faction?: 'neu-anspach' | 'wehrheim'
+): Promise<AuthUser> {
+  const res = await requestAuth('/api/auth/username', {
+    method: 'POST',
+    body: JSON.stringify({ username, faction }),
+  });
+  const user = normalizeUser(res);
+  if (!user) throw new AuthRequestError('Der Benutzername konnte nicht aktualisiert werden.', 502);
+  return user;
+}
+
+export async function linkLegacyPasswordAccount(
+  username: string,
+  password: string
+): Promise<AuthUser> {
+  const res = await requestAuth('/api/auth/link-legacy', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  const user = normalizeUser(res);
+  if (!user) throw new AuthRequestError('Das bestehende Konto konnte nicht verknüpft werden.', 502);
+  return user;
+}
+
+export async function linkGoogleToCurrentAccount(payload: {
+  credential?: string;
+  devProfile?: { email: string; displayName?: string; googleSub?: string };
+}): Promise<AuthUser> {
+  const res = await requestAuth('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, linkToCurrentAccount: true }),
+  });
+  const user = normalizeUser(res);
+  if (!user) throw new AuthRequestError('Das Google-Konto konnte nicht verknüpft werden.', 502);
   return user;
 }
 
@@ -168,7 +213,7 @@ export async function fetchGoogleAuthConfig(): Promise<GoogleAuthConfig> {
 
 export async function loginWithGoogle(params: {
   credential?: string;
-  devProfile?: { email: string; displayName?: string };
+  devProfile?: { email: string; displayName?: string; googleSub?: string };
   clanTag?: string;
   faction?: 'neu-anspach' | 'wehrheim';
   legalConsent?: LegalConsentRecord;
@@ -185,10 +230,12 @@ export async function loginWithGoogle(params: {
 export function startGoogleOAuthRedirect(params?: {
   clanTag?: string;
   faction?: 'neu-anspach' | 'wehrheim';
+  mode?: 'login' | 'link';
 }): void {
   const query = new URLSearchParams();
   if (params?.clanTag) query.set('clanTag', params.clanTag);
   if (params?.faction) query.set('faction', params.faction);
+  if (params?.mode) query.set('mode', params.mode);
   const qs = query.toString();
   window.location.assign(`/api/auth/google${qs ? `?${qs}` : ''}`);
 }

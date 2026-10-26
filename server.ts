@@ -247,6 +247,37 @@ interface ClientMeta {
 const connectedClients = new Map<WebSocket, ClientMeta>();
 export const wss = new WebSocketServer({ server, path: '/ws' });
 
+type ClanJoinType = 'open' | 'invite_only' | 'closed';
+type ClanBadgeIcon = 'shield' | 'swords' | 'crown' | 'flame' | 'eagle' | 'skull';
+type ClanMemberRole = 'leader' | 'co_leader' | 'elder' | 'member';
+type ClanWarStage = 'collection' | 'battle_day' | 'boss_siege';
+
+interface ClanQuestRecord {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'hard' | 'extreme' | 'nightmare';
+  category: 'kills' | 'waves' | 'bosses' | 'funding' | 'wins';
+  progress: number;
+  target: number;
+  rewardNAT: number;
+  rewardReputation: number;
+  rewardSkillPoints: number;
+  rewardWarFame: number;
+  completed: boolean;
+  claimedAccountIds: string[];
+}
+
+interface ClanJoinRequestRecord {
+  id: string;
+  accountId: string;
+  username: string;
+  operatorLevel: number;
+  score: number;
+  highestWave: number;
+  createdAt: string;
+}
+
 interface ClanRecord {
   id: string;
   tag: string;
@@ -254,6 +285,22 @@ interface ClanRecord {
   description: string;
   leaderAccountId: string;
   createdAt: string;
+  badge: ClanBadgeIcon;
+  joinType: ClanJoinType;
+  minLevel: number;
+  minScore: number;
+  minWave: number;
+  maxMembers: number;
+  warTrophies: number;
+  warFame: number;
+  warStage: ClanWarStage;
+  warTargetFame: number;
+  memberRoles: Record<string, ClanMemberRole>;
+  memberWarFame: Record<string, number>;
+  memberQuestContrib: Record<string, number>;
+  warDecksUsedByDate: Record<string, number>;
+  quests: ClanQuestRecord[];
+  joinRequests: ClanJoinRequestRecord[];
 }
 
 interface ClanInvitationRecord {
@@ -272,50 +319,265 @@ interface ClanMessageRecord {
   authorName: string;
   text: string;
   createdAt: string;
+  type?: 'chat' | 'war' | 'quest' | 'system';
+}
+
+const VALID_CLAN_BADGES: readonly ClanBadgeIcon[] = ['shield', 'swords', 'crown', 'flame', 'eagle', 'skull'];
+const VALID_JOIN_TYPES: readonly ClanJoinType[] = ['open', 'invite_only', 'closed'];
+const VALID_MEMBER_ROLES: readonly ClanMemberRole[] = ['leader', 'co_leader', 'elder', 'member'];
+
+function createDefaultClanQuests(): ClanQuestRecord[] {
+  return [
+    {
+      id: 'quest_feldberg_purge',
+      title: 'Operation Feldberg-Säuberung',
+      description: 'Eliminiert gemeinsam 750 feindliche Einheiten in beliebigen Einsätzen oder liefert Gefechtsdaten.',
+      difficulty: 'hard',
+      category: 'kills',
+      progress: 120,
+      target: 750,
+      rewardNAT: 1800,
+      rewardReputation: 450,
+      rewardSkillPoints: 2,
+      rewardWarFame: 350,
+      completed: false,
+      claimedAccountIds: [],
+    },
+    {
+      id: 'quest_taunusbahn_ironwall',
+      title: 'Eiserne Linie Taunusbahn',
+      description: 'Übersteht als Clan insgesamt 150 Einsatzwellen im Hochtaunus.',
+      difficulty: 'hard',
+      category: 'waves',
+      progress: 25,
+      target: 150,
+      rewardNAT: 2200,
+      rewardReputation: 600,
+      rewardSkillPoints: 2,
+      rewardWarFame: 450,
+      completed: false,
+      claimedAccountIds: [],
+    },
+    {
+      id: 'quest_bembel_behemoth',
+      title: 'Sturz der Wehrheimer Kolosse',
+      description: 'Bezwingt 25 schwer gepanzerte Kommandanten oder Clan-Krieg-Bosse.',
+      difficulty: 'extreme',
+      category: 'bosses',
+      progress: 4,
+      target: 25,
+      rewardNAT: 3500,
+      rewardReputation: 900,
+      rewardSkillPoints: 3,
+      rewardWarFame: 700,
+      completed: false,
+      claimedAccountIds: [],
+    },
+    {
+      id: 'quest_kriegskasse_stiftung',
+      title: 'Hochtaunus-Kriegsanleihe',
+      description: 'Investiert gemeinsam 15.000 NAT in die befestigte Clan-Garnison & Geschütztürme.',
+      difficulty: 'extreme',
+      category: 'funding',
+      progress: 2500,
+      target: 15000,
+      rewardNAT: 4000,
+      rewardReputation: 1200,
+      rewardSkillPoints: 4,
+      rewardWarFame: 850,
+      completed: false,
+      claimedAccountIds: [],
+    },
+    {
+      id: 'quest_total_dominance',
+      title: 'Totale Lufthoheit über dem Usinger Becken',
+      description: 'Erringt 40 vollständige Einsatzsiege oder siegreiche Clan-Krieg-Offensiven.',
+      difficulty: 'nightmare',
+      category: 'wins',
+      progress: 6,
+      target: 40,
+      rewardNAT: 6000,
+      rewardReputation: 2000,
+      rewardSkillPoints: 5,
+      rewardWarFame: 1200,
+      completed: false,
+      claimedAccountIds: [],
+    },
+  ];
 }
 
 const clans = new Map<string, ClanRecord>();
 const clanInvitations = new Map<string, ClanInvitationRecord>();
 const clanMessages = new Map<string, ClanMessageRecord[]>();
 
-async function getClanPayload(account: PublicAccount) {
-  const tag = account.clanTag || '61267';
-  let record = clans.get(tag);
-  if (!record) {
-    record = {
-      id: `clan_${tag.toLowerCase()}`,
-      tag,
-      name: `Einsatzgruppe ${tag}`,
-      description: 'Gemeinsam für Neu-Anspach.',
-      leaderAccountId: account.id,
-      createdAt: account.createdAt || new Date().toISOString(),
-    };
-    clans.set(tag, record);
+function seedDefaultClans() {
+  const defaults: Array<Omit<ClanRecord, 'memberRoles' | 'memberWarFame' | 'memberQuestContrib' | 'warDecksUsedByDate' | 'quests' | 'joinRequests'>> = [
+    {
+      id: 'clan_hessen',
+      tag: 'HESSEN',
+      name: 'Hessenpark Wächter',
+      description: 'Offene Verteidigungsallianz rund um das Freilichtmuseum. Einsteiger und Veteranen willkommen!',
+      leaderAccountId: 'system_hessen',
+      createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
+      badge: 'shield',
+      joinType: 'open',
+      minLevel: 1,
+      minScore: 0,
+      minWave: 1,
+      maxMembers: 50,
+      warTrophies: 1420,
+      warFame: 850,
+      warStage: 'collection',
+      warTargetFame: 3000,
+    },
+    {
+      id: 'clan_feld',
+      tag: 'FELD',
+      name: 'Feldberg Sturmtrupp',
+      description: 'Taktische Speerspitze vom Großen Feldberg. Aktive Teilnahme an Clan-Kriegen und Quests Pflicht!',
+      leaderAccountId: 'system_feld',
+      createdAt: new Date(Date.now() - 21 * 86400000).toISOString(),
+      badge: 'eagle',
+      joinType: 'open',
+      minLevel: 3,
+      minScore: 1000,
+      minWave: 5,
+      maxMembers: 50,
+      warTrophies: 2890,
+      warFame: 2400,
+      warStage: 'battle_day',
+      warTargetFame: 5000,
+    },
+    {
+      id: 'clan_bemb',
+      tag: 'BEMB',
+      name: 'Bembel-Elite 61267',
+      description: 'Nur auf Anfrage! Die härtesten Operatoren aus Neu-Anspach. Tägliche Boss-Belagerungen.',
+      leaderAccountId: 'system_bemb',
+      createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+      badge: 'crown',
+      joinType: 'invite_only',
+      minLevel: 5,
+      minScore: 3500,
+      minWave: 10,
+      maxMembers: 50,
+      warTrophies: 4150,
+      warFame: 5200,
+      warStage: 'boss_siege',
+      warTargetFame: 8000,
+    },
+    {
+      id: 'clan_61273',
+      tag: '61273',
+      name: 'Wehrheimer Apfel-Garde',
+      description: 'Verteidiger des Apfelblütenfests und der Lochmühle. Gemeinsam für Wehrheim!',
+      leaderAccountId: 'system_61273',
+      createdAt: new Date(Date.now() - 18 * 86400000).toISOString(),
+      badge: 'swords',
+      joinType: 'open',
+      minLevel: 2,
+      minScore: 500,
+      minWave: 3,
+      maxMembers: 50,
+      warTrophies: 1980,
+      warFame: 1200,
+      warStage: 'collection',
+      warTargetFame: 3500,
+    },
+  ];
+
+  for (const def of defaults) {
+    if (!clans.has(def.tag)) {
+      clans.set(def.tag, {
+        ...def,
+        memberRoles: { [def.leaderAccountId]: 'leader' },
+        memberWarFame: {},
+        memberQuestContrib: {},
+        warDecksUsedByDate: {},
+        quests: createDefaultClanQuests(),
+        joinRequests: [],
+      });
+    }
   }
+}
 
+seedDefaultClans();
+
+function getTodayKey(accountId: string): string {
+  const day = new Date().toISOString().slice(0, 10);
+  return `${accountId}_${day}`;
+}
+
+async function buildClanSummary(record: ClanRecord, viewerAccount?: PublicAccount) {
+  const tag = record.tag.toUpperCase();
   const leaderboard = await storage.getLeaderboard();
-  const members = leaderboard
-    .filter((entry) => entry.clanTag.toUpperCase() === tag.toUpperCase())
-    .map((entry) => ({
-      accountId: entry.accountId || `leaderboard_${entry.id}`,
-      username: entry.name,
-      role: entry.accountId === record!.leaderAccountId ? 'leader' : 'member',
-      joinedAt: new Date(entry.lastSeen || Date.now()).toISOString(),
-      score: entry.score,
-      wins: entry.wins,
-      kills: entry.kills,
-      isOnline: Date.now() - entry.lastSeen < 90000,
-    }));
+  const members: Array<{
+    accountId: string;
+    username: string;
+    role: ClanMemberRole;
+    joinedAt: string;
+    score: number;
+    wins: number;
+    kills: number;
+    warFame: number;
+    questContribution: number;
+    isOnline: boolean;
+  }> = leaderboard
+    .filter((entry) => entry.clanTag && entry.clanTag.toUpperCase() === tag)
+    .map((entry) => {
+      const accId = entry.accountId || `leaderboard_${entry.id}`;
+      const explicitRole = record.memberRoles[accId];
+      const role: ClanMemberRole =
+        accId === record.leaderAccountId
+          ? 'leader'
+          : explicitRole || 'member';
+      return {
+        accountId: accId,
+        username: entry.name,
+        role,
+        joinedAt: new Date(entry.lastSeen || Date.now()).toISOString(),
+        score: entry.score,
+        wins: entry.wins,
+        kills: entry.kills,
+        warFame: record.memberWarFame[accId] || 0,
+        questContribution: record.memberQuestContrib[accId] || 0,
+        isOnline: Date.now() - entry.lastSeen < 90000,
+      };
+    });
 
-  if (!members.some((member) => member.accountId === account.id)) {
+  if (
+    viewerAccount &&
+    viewerAccount.clanTag &&
+    viewerAccount.clanTag.toUpperCase() === tag &&
+    !members.some((m) => m.accountId === viewerAccount.id)
+  ) {
+    const explicitRole = record.memberRoles[viewerAccount.id];
     members.push({
-      accountId: account.id,
-      username: account.username,
-      role: account.id === record.leaderAccountId ? 'leader' : 'member',
-      joinedAt: account.createdAt || new Date().toISOString(),
+      accountId: viewerAccount.id,
+      username: viewerAccount.username,
+      role: viewerAccount.id === record.leaderAccountId ? 'leader' : explicitRole || 'member',
+      joinedAt: viewerAccount.createdAt || new Date().toISOString(),
       score: 0,
       wins: 0,
       kills: 0,
+      warFame: record.memberWarFame[viewerAccount.id] || 0,
+      questContribution: record.memberQuestContrib[viewerAccount.id] || 0,
+      isOnline: true,
+    });
+  }
+
+  // Ensure seeded clans show realistic garrison strength even if no live players are in them yet
+  if (members.length === 0 && record.leaderAccountId.startsWith('system_')) {
+    members.push({
+      accountId: record.leaderAccountId,
+      username: `Kommandant_${record.tag}`,
+      role: 'leader',
+      joinedAt: record.createdAt,
+      score: record.warTrophies * 2,
+      wins: Math.max(3, Math.floor(record.warTrophies / 400)),
+      kills: Math.max(45, Math.floor(record.warTrophies / 15)),
+      warFame: Math.floor(record.warFame * 0.6),
+      questContribution: 450,
       isOnline: true,
     });
   }
@@ -324,19 +586,108 @@ async function getClanPayload(account: PublicAccount) {
   const totalWins = members.reduce((sum, member) => sum + member.wins, 0);
   const totalKills = members.reduce((sum, member) => sum + member.kills, 0);
   const allTags = new Map<string, number>();
-  leaderboard.forEach((entry) => allTags.set(entry.clanTag.toUpperCase(), (allTags.get(entry.clanTag.toUpperCase()) || 0) + entry.score));
-  allTags.set(tag.toUpperCase(), totalScore);
+  leaderboard.forEach((entry) => {
+    if (entry.clanTag) {
+      const t = entry.clanTag.toUpperCase();
+      allTags.set(t, (allTags.get(t) || 0) + entry.score);
+    }
+  });
+  for (const [cTag, cRec] of clans.entries()) {
+    if (!allTags.has(cTag.toUpperCase())) {
+      allTags.set(cTag.toUpperCase(), cRec.warTrophies * 2);
+    }
+  }
+  allTags.set(tag, totalScore);
   const rank = [...allTags.values()].filter((score) => score > totalScore).length + 1;
 
+  const warStage: ClanWarStage =
+    record.warFame >= record.warTargetFame * 0.75
+      ? 'boss_siege'
+      : record.warFame >= record.warTargetFame * 0.3
+      ? 'battle_day'
+      : record.warStage;
+
+  const usedToday = viewerAccount ? record.warDecksUsedByDate[getTodayKey(viewerAccount.id)] || 0 : 0;
+
   return {
-    ...record,
+    id: record.id,
+    tag: record.tag,
+    name: record.name,
+    description: record.description,
+    leaderAccountId: record.leaderAccountId,
+    createdAt: record.createdAt,
     rank,
     totalScore,
     totalWins,
     totalKills,
     memberCount: members.length,
+    maxMembers: record.maxMembers || 50,
+    badge: record.badge || 'shield',
+    joinType: record.joinType || 'open',
+    minLevel: record.minLevel ?? 1,
+    minScore: record.minScore ?? 0,
+    minWave: record.minWave ?? 1,
+    warTrophies: record.warTrophies ?? 1000,
+    warFame: record.warFame ?? 0,
+    warStage,
+    warTargetFame: record.warTargetFame || 3000,
+    warDecksRemainingToday: Math.max(0, 4 - usedToday),
+    warDecksMaxPerDay: 4,
+    quests: record.quests.map((q) => ({
+      id: q.id,
+      title: q.title,
+      description: q.description,
+      difficulty: q.difficulty,
+      category: q.category,
+      progress: q.progress,
+      target: q.target,
+      rewardNAT: q.rewardNAT,
+      rewardReputation: q.rewardReputation,
+      rewardSkillPoints: q.rewardSkillPoints,
+      rewardWarFame: q.rewardWarFame,
+      completed: q.completed,
+      claimedByMe: viewerAccount ? q.claimedAccountIds.includes(viewerAccount.id) : false,
+    })),
+    joinRequests: record.joinRequests || [],
     members,
   };
+}
+
+async function getClanPayload(account: PublicAccount) {
+  const tag = (account.clanTag || '').trim().toUpperCase();
+  if (!tag) {
+    return null;
+  }
+  let record = clans.get(tag);
+  if (!record) {
+    record = {
+      id: `clan_${tag.toLowerCase()}`,
+      tag,
+      name: `Einsatzgruppe ${tag}`,
+      description: 'Gemeinsam für den Hochtaunus.',
+      leaderAccountId: account.id,
+      createdAt: account.createdAt || new Date().toISOString(),
+      badge: 'shield',
+      joinType: 'open',
+      minLevel: 1,
+      minScore: 0,
+      minWave: 1,
+      maxMembers: 50,
+      warTrophies: 1000,
+      warFame: 0,
+      warStage: 'collection',
+      warTargetFame: 3000,
+      memberRoles: { [account.id]: 'leader' },
+      memberWarFame: {},
+      memberQuestContrib: {},
+      warDecksUsedByDate: {},
+      quests: createDefaultClanQuests(),
+      joinRequests: [],
+    };
+    clans.set(tag, record);
+  }
+
+  return buildClanSummary(record, account);
 }
 
 async function broadcastClanMessage(message: ClanMessageRecord) {
@@ -756,10 +1107,11 @@ app.get('/api/auth/google', (req, res) => {
   }
 
   const stateNonce = crypto.randomBytes(24).toString('base64url');
-  const clanTag = String(req.query.clanTag || '61267').trim().toUpperCase().slice(0, 6);
+  const clanTag = String(req.query.clanTag || '').trim().toUpperCase().slice(0, 6);
   const faction = req.query.faction === 'wehrheim' ? 'wehrheim' : 'neu-anspach';
+  const mode = req.query.mode === 'link' ? 'link' : 'login';
   const statePayload = Buffer.from(
-    JSON.stringify({ nonce: stateNonce, clanTag, faction, ts: Date.now() }),
+    JSON.stringify({ nonce: stateNonce, clanTag, faction, mode, ts: Date.now() }),
     'utf8'
   ).toString('base64url');
 
@@ -805,7 +1157,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       return res.redirect('/?auth_error=' + encodeURIComponent('Ungültiger OAuth-Status (State-Prüfung fehlgeschlagen).'));
     }
 
-    let parsedState: { nonce: string; clanTag?: string; faction?: string } | null = null;
+    let parsedState: { nonce: string; clanTag?: string; faction?: string; mode?: string } | null = null;
     try {
       parsedState = JSON.parse(Buffer.from(rawStateCookie, 'base64url').toString('utf8'));
     } catch {
@@ -860,7 +1212,19 @@ app.get('/api/auth/google/callback', async (req, res) => {
       return res.redirect('/?auth_error=' + encodeURIComponent('Ungültige Google-Nutzerkennung.'));
     }
 
-    await completeGoogleAuthentication(req, res, {
+    if (parsedState.mode === 'link') {
+      const existingSession = await currentSessionData(req);
+      if (existingSession) {
+        await authStore.linkGoogleIdentity(existingSession.account.id, {
+          googleSub: profile.sub,
+          email: profile.email,
+          avatarUrl: profile.picture,
+        });
+        return res.redirect('/');
+      }
+    }
+
+    const result = await completeGoogleAuthentication(req, res, {
       googleSub: profile.sub,
       email: profile.email,
       displayName: profile.name || profile.given_name,
@@ -873,7 +1237,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       console.log('🌐 [Google OAuth] Anmeldung über Redirect erfolgreich');
     }
 
-    res.redirect('/');
+    res.redirect(result.isNewAccount ? '/?google_onboarding=1' : '/');
   } catch (error) {
     console.error('[Google OAuth] Callback error:', error);
     res.redirect('/?auth_error=' + encodeURIComponent('Anmeldung mit Google fehlgeschlagen.'));
@@ -889,9 +1253,10 @@ app.post('/api/auth/google', async (req, res) => {
 
   try {
     const credential = String(req.body?.credential || req.body?.idToken || '').trim();
-    const clanTag = String(req.body?.clanTag || '61267').trim().toUpperCase();
+    const clanTag = String(req.body?.clanTag || '').trim().toUpperCase();
     const faction = req.body?.faction === 'wehrheim' ? 'wehrheim' : 'neu-anspach';
     const legalConsent = req.body?.legalConsent;
+    const linkToCurrentAccount = req.body?.linkToCurrentAccount === true;
 
     // 1. Real Google ID Token Verification (Google Identity Services)
     if (credential) {
@@ -916,6 +1281,23 @@ app.post('/api/auth/google', async (req, res) => {
       }
       if (!tokenInfo.sub) {
         return res.status(401).json({ error: 'Google-Token enthält keine gültige Konto-ID (sub).' });
+      }
+
+      if (linkToCurrentAccount) {
+        const existingSession = await currentSessionData(req);
+        if (!existingSession) {
+          return res.status(401).json({ error: 'Anmeldung erforderlich, um ein Google-Konto zu verknüpfen.' });
+        }
+        const linkedAccount = await authStore.linkGoogleIdentity(existingSession.account.id, {
+          googleSub: tokenInfo.sub,
+          email: tokenInfo.email,
+          avatarUrl: tokenInfo.picture,
+        });
+        return res.json({
+          success: true,
+          account: linkedAccount,
+          csrfToken: existingSession.csrfToken,
+        });
       }
 
       const result = await completeGoogleAuthentication(req, res, {
@@ -950,6 +1332,22 @@ app.post('/api/auth/google', async (req, res) => {
         devProfile.googleSub || `google_dev_${crypto.createHash('sha256').update(email).digest('hex').slice(0, 24)}`
       );
 
+      if (linkToCurrentAccount) {
+        const existingSession = await currentSessionData(req);
+        if (!existingSession) {
+          return res.status(401).json({ error: 'Anmeldung erforderlich, um ein Google-Konto zu verknüpfen.' });
+        }
+        const linkedAccount = await authStore.linkGoogleIdentity(existingSession.account.id, {
+          googleSub,
+          email,
+        });
+        return res.json({
+          success: true,
+          account: linkedAccount,
+          csrfToken: existingSession.csrfToken,
+        });
+      }
+
       const result = await completeGoogleAuthentication(req, res, {
         googleSub,
         email,
@@ -973,10 +1371,77 @@ app.post('/api/auth/google', async (req, res) => {
     });
   } catch (error) {
     if (error instanceof AuthValidationError || error instanceof AuthConflictError) {
-      return res.status(400).json({ error: error.message });
+      return res.status(error instanceof AuthConflictError ? 409 : 400).json({ error: error.message });
     }
     console.error('[Auth] Google auth error:', error);
     res.status(500).json({ error: 'Google-Anmeldung fehlgeschlagen.' });
+  }
+});
+
+// Auth: Update Operator Username & Faction (e.g. after Google Onboarding)
+app.post('/api/auth/username', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const oldUsername = account.username;
+    const newUsername = String(req.body?.username || '').trim();
+    const faction = req.body?.faction ? String(req.body.faction).trim() : undefined;
+
+    const updatedAccount = await authStore.updateUsername(account.id, newUsername, faction);
+
+    const entries = await storage.getLeaderboard();
+    const existing = entries.find(
+      (e) => e.accountId === account.id || e.name.toLowerCase() === oldUsername.toLowerCase()
+    );
+    if (existing) {
+      if (oldUsername.toLowerCase() !== updatedAccount.username.toLowerCase()) {
+        await storage.deleteLeaderboardEntryByName(oldUsername);
+      }
+      existing.accountId = updatedAccount.id;
+      existing.name = updatedAccount.username;
+      existing.city = updatedAccount.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
+      await storage.saveLeaderboardEntry(existing);
+      await broadcastLeaderboardSync();
+    }
+
+    res.json({ success: true, account: updatedAccount });
+  } catch (error) {
+    if (error instanceof AuthConflictError || error instanceof AuthValidationError) {
+      return res.status(error instanceof AuthConflictError ? 409 : (error as any).status || 400).json({ error: error.message });
+    }
+    console.error('[Auth] Username update error:', error);
+    res.status(500).json({ error: 'Benutzername konnte nicht aktualisiert werden.' });
+  }
+});
+
+// Auth: Link Legacy Password Account to Current Google Session
+app.post('/api/auth/link-legacy', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const currentAccount = res.locals.account as PublicAccount;
+    const legacyUsername = String(req.body?.username || '').trim();
+    const legacyPassword = String(req.body?.password || '');
+
+    const linkedAccount = await authStore.linkLegacyAccount(currentAccount.id, legacyUsername, legacyPassword);
+
+    if (currentAccount.id !== linkedAccount.id && currentAccount.username !== linkedAccount.username) {
+      await storage.deleteLeaderboardEntryByName(currentAccount.username);
+    }
+
+    const session = await authStore.createSession(linkedAccount.id, authConfig.sessionTtlMs);
+    setSessionCookie(req, res, session.token, session.expiresAt);
+    notifySessionSuperseded(linkedAccount.id, session.token);
+    await broadcastLeaderboardSync();
+
+    res.json({
+      success: true,
+      account: linkedAccount,
+      csrfToken: session.csrfToken,
+    });
+  } catch (error) {
+    if (error instanceof AuthConflictError || error instanceof AuthValidationError) {
+      return res.status(error instanceof AuthConflictError ? 409 : (error as any).status || 401).json({ error: error.message });
+    }
+    console.error('[Auth] Link legacy account error:', error);
+    res.status(500).json({ error: 'Konto konnte nicht verknüpft werden.' });
   }
 });
 
@@ -1296,6 +1761,33 @@ app.post('/api/leaderboard/submit', requireAccount, requireCsrf, async (req, res
 // Clan API
 // ---------------------------------------------------------------------------
 
+async function syncAccountClanTagInLeaderboard(accountId: string, username: string, newClanTag: string) {
+  const entries = await storage.getLeaderboard();
+  const entry = entries.find(
+    (e) => e.accountId === accountId || (username && e.name.toLowerCase() === username.toLowerCase())
+  );
+  if (entry) {
+    entry.clanTag = newClanTag;
+    await storage.saveLeaderboardEntry(entry);
+  }
+}
+
+function appendClanSystemMessage(clanTag: string, authorName: string, text: string, type: 'war' | 'quest' | 'system' = 'system') {
+  const message: ClanMessageRecord = {
+    id: `msg_${crypto.randomUUID()}`,
+    clanTag,
+    authorName,
+    text,
+    createdAt: new Date().toISOString(),
+    type,
+  };
+  const messages = clanMessages.get(clanTag) || [];
+  messages.push(message);
+  clanMessages.set(clanTag, messages.slice(-100));
+  broadcastClanMessage(message).catch(() => {});
+  return message;
+}
+
 app.get('/api/clans/me', requireAccount, async (_req, res) => {
   try {
     const account = res.locals.account as PublicAccount;
@@ -1303,10 +1795,53 @@ app.get('/api/clans/me', requireAccount, async (_req, res) => {
     const invitations = [...clanInvitations.values()]
       .filter((invite) => invite.recipientAccountId === account.id && invite.status === 'pending')
       .map(({ id, clanTag, clanName, inviterName, createdAt }) => ({ id, clanTag, clanName, inviterName, createdAt }));
-    res.json({ clan, invitations });
+    const myJoinRequests: string[] = [];
+    for (const [cTag, cRec] of clans.entries()) {
+      if (cRec.joinRequests.some((r) => r.accountId === account.id)) {
+        myJoinRequests.push(cTag);
+      }
+    }
+    res.json({ clan, invitations, myJoinRequests });
   } catch (error) {
     console.error('[Clan] Could not load clan:', error);
     res.status(500).json({ error: 'Clan konnte nicht geladen werden.' });
+  }
+});
+
+app.get('/api/clans/directory', requireAccount, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    seedDefaultClans();
+    const search = String(req.query.search || '').trim().toLowerCase();
+    const joinTypeFilter = String(req.query.joinType || '').trim();
+    const maxMinLevel = req.query.maxMinLevel !== undefined ? Number(req.query.maxMinLevel) : undefined;
+
+    const summaries = await Promise.all(
+      [...clans.values()].map((record) => buildClanSummary(record, account))
+    );
+
+    const filtered = summaries
+      .filter((c) => {
+        if (search) {
+          const matchesTag = c.tag.toLowerCase().includes(search);
+          const matchesName = c.name.toLowerCase().includes(search);
+          const matchesDesc = c.description.toLowerCase().includes(search);
+          if (!matchesTag && !matchesName && !matchesDesc) return false;
+        }
+        if (joinTypeFilter && joinTypeFilter !== 'all' && c.joinType !== joinTypeFilter) {
+          return false;
+        }
+        if (maxMinLevel !== undefined && Number.isFinite(maxMinLevel) && c.minLevel > maxMinLevel) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.warTrophies - a.warTrophies || b.totalScore - a.totalScore);
+
+    res.json({ clans: filtered });
+  } catch (error) {
+    console.error('[Clan] Directory error:', error);
+    res.status(500).json({ error: 'Clan-Börse konnte nicht geladen werden.' });
   }
 });
 
@@ -1320,32 +1855,499 @@ app.post('/api/clans', requireAccount, requireCsrf, async (req, res) => {
       return res.status(400).json({ error: 'Clan-Tag oder Clanname ist ungültig.' });
     }
     if (clans.has(tag)) return res.status(409).json({ error: 'Dieser Clan-Tag ist bereits vergeben.' });
-    const existingMembers = (await storage.getLeaderboard()).some((entry) => entry.clanTag.toUpperCase() === tag);
+    const existingMembers = (await storage.getLeaderboard()).some(
+      (entry) => entry.clanTag && entry.clanTag.toUpperCase() === tag && entry.accountId !== account.id
+    );
     if (existingMembers) return res.status(409).json({ error: 'Dieser Clan-Tag wird bereits verwendet.' });
+
+    const savedProgress = await storage.getGameProgress(account.id);
+    const hasLevelOrBudgetCheck =
+      req.body?.operatorLevel !== undefined ||
+      req.body?.budget !== undefined ||
+      savedProgress !== null;
+
+    let effectiveLevel = 99;
+    let effectiveBudget = 99999;
+
+    if (hasLevelOrBudgetCheck) {
+      effectiveLevel = Number(req.body?.operatorLevel ?? savedProgress?.operatorLevel ?? 99);
+      effectiveBudget = Number(req.body?.budget ?? savedProgress?.budget ?? 99999);
+
+      if (effectiveLevel < 3) {
+        return res.status(403).json({ error: 'Clan-Gründung erst ab Operator-Level 3 möglich!' });
+      }
+      if (effectiveBudget < 1000) {
+        return res.status(400).json({ error: 'Nicht genügend NAT! Die Gründung eines Clans kostet 1.000 NAT.' });
+      }
+
+      if (savedProgress) {
+        savedProgress.budget = Math.max(0, savedProgress.budget - 1000);
+        savedProgress.updatedAt = Date.now();
+        await storage.saveGameProgress(savedProgress);
+      }
+    }
+
+    const badge: ClanBadgeIcon = VALID_CLAN_BADGES.includes(req.body?.badge) ? req.body.badge : 'shield';
+    const joinType: ClanJoinType = VALID_JOIN_TYPES.includes(req.body?.joinType) ? req.body.joinType : 'open';
+    const minLevel = Math.max(1, Math.min(100, Math.floor(Number(req.body?.minLevel) || 1)));
+    const minScore = Math.max(0, Math.min(1000000, Math.floor(Number(req.body?.minScore) || 0)));
+    const minWave = Math.max(1, Math.min(100, Math.floor(Number(req.body?.minWave) || 1)));
+
     await authStore.updateClanTag(account.id, tag);
+    await syncAccountClanTagInLeaderboard(account.id, account.username, tag);
+
     clans.set(tag, {
       id: `clan_${crypto.randomUUID()}`,
       tag,
       name,
-      description,
+      description: description || 'Gemeinsam für den Taunus.',
       leaderAccountId: account.id,
       createdAt: new Date().toISOString(),
+      badge,
+      joinType,
+      minLevel,
+      minScore,
+      minWave,
+      maxMembers: 50,
+      warTrophies: 1000,
+      warFame: 0,
+      warStage: 'collection',
+      warTargetFame: 3000,
+      memberRoles: { [account.id]: 'leader' },
+      memberWarFame: {},
+      memberQuestContrib: {},
+      warDecksUsedByDate: {},
+      quests: createDefaultClanQuests(),
+      joinRequests: [],
     });
+
+    appendClanSystemMessage(tag, account.username, `Clan [${tag}] ${name} wurde feierlich gegründet!`, 'system');
+
     const clan = await getClanPayload({ ...account, clanTag: tag });
-    res.status(201).json({ success: true, clan });
+    res.status(201).json({
+      success: true,
+      clan,
+      costDeducted: 1000,
+      newBudget: Math.max(0, effectiveBudget - 1000),
+    });
   } catch (error) {
     console.error('[Clan] Create error:', error);
     res.status(500).json({ error: 'Clan konnte nicht gegründet werden.' });
   }
 });
 
+app.patch('/api/clans/settings', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const myRole = account.id === record.leaderAccountId ? 'leader' : record.memberRoles[account.id] || 'member';
+    if (myRole !== 'leader' && myRole !== 'co_leader') {
+      return res.status(403).json({ error: 'Nur Anführer und Vize-Anführer können die Clan-Einstellungen ändern.' });
+    }
+
+    if (req.body?.description !== undefined) {
+      record.description = String(req.body.description).trim().slice(0, 160);
+    }
+    if (req.body?.badge && VALID_CLAN_BADGES.includes(req.body.badge)) {
+      record.badge = req.body.badge;
+    }
+    if (req.body?.joinType && VALID_JOIN_TYPES.includes(req.body.joinType)) {
+      record.joinType = req.body.joinType;
+    }
+    if (req.body?.minLevel !== undefined) {
+      record.minLevel = Math.max(1, Math.min(100, Math.floor(Number(req.body.minLevel) || 1)));
+    }
+    if (req.body?.minScore !== undefined) {
+      record.minScore = Math.max(0, Math.min(1000000, Math.floor(Number(req.body.minScore) || 0)));
+    }
+    if (req.body?.minWave !== undefined) {
+      record.minWave = Math.max(1, Math.min(100, Math.floor(Number(req.body.minWave) || 1)));
+    }
+
+    const clan = await buildClanSummary(record, account);
+    res.json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Settings update error:', error);
+    res.status(500).json({ error: 'Clan-Einstellungen konnten nicht gespeichert werden.' });
+  }
+});
+
+app.post('/api/clans/:tag/join', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const targetTag = String(req.params.tag || '').trim().toUpperCase();
+    const record = clans.get(targetTag);
+    if (!record) return res.status(404).json({ error: 'Clan nicht gefunden.' });
+
+    if (record.joinType === 'closed') {
+      return res.status(403).json({ error: 'Dieser Clan ist geschlossen und nimmt derzeit keine neuen Mitglieder auf.' });
+    }
+
+    const savedProgress = await storage.getGameProgress(account.id);
+    const leaderboard = await storage.getLeaderboard();
+    const lbEntry = leaderboard.find(
+      (e) => e.accountId === account.id || e.name.toLowerCase() === account.username.toLowerCase()
+    );
+
+    const playerLevel = Number(req.body?.operatorLevel ?? savedProgress?.operatorLevel ?? 1);
+    const playerScore = Number(req.body?.score ?? lbEntry?.score ?? 0);
+    const playerWave = Number(req.body?.highestWave ?? lbEntry?.highestWave ?? 1);
+
+    if (playerLevel < record.minLevel) {
+      return res.status(403).json({
+        error: `Mindestvoraussetzung nicht erfüllt: Operator-Level ${record.minLevel} erforderlich (aktuell Level ${playerLevel}).`,
+      });
+    }
+    if (playerScore < record.minScore) {
+      return res.status(403).json({
+        error: `Mindestvoraussetzung nicht erfüllt: ${record.minScore} Punkte erforderlich (aktuell ${playerScore}).`,
+      });
+    }
+    if (playerWave < record.minWave) {
+      return res.status(403).json({
+        error: `Mindestvoraussetzung nicht erfüllt: Welle ${record.minWave} erforderlich (aktuell Welle ${playerWave}).`,
+      });
+    }
+
+    if (record.joinType === 'invite_only') {
+      const existingReq = record.joinRequests.find((r) => r.accountId === account.id);
+      if (!existingReq) {
+        record.joinRequests.push({
+          id: `jreq_${crypto.randomUUID()}`,
+          accountId: account.id,
+          username: account.username,
+          operatorLevel: playerLevel,
+          score: playerScore,
+          highestWave: playerWave,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return res.json({
+        success: true,
+        status: 'requested',
+        message: `Beitrittsanfrage an [${record.tag}] ${record.name} wurde gesendet!`,
+      });
+    }
+
+    await authStore.updateClanTag(account.id, record.tag);
+    await syncAccountClanTagInLeaderboard(account.id, account.username, record.tag);
+    if (!record.memberRoles[account.id]) {
+      record.memberRoles[account.id] = 'member';
+    }
+    record.joinRequests = record.joinRequests.filter((r) => r.accountId !== account.id);
+
+    appendClanSystemMessage(record.tag, account.username, `${account.username} ist dem Clan beigetreten!`, 'system');
+
+    const clan = await getClanPayload({ ...account, clanTag: record.tag });
+    res.json({ success: true, status: 'joined', clan });
+  } catch (error) {
+    console.error('[Clan] Join error:', error);
+    res.status(500).json({ error: 'Beitritt zum Clan fehlgeschlagen.' });
+  }
+});
+
+app.post('/api/clans/requests/:id/:action', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const myRole = account.id === record.leaderAccountId ? 'leader' : record.memberRoles[account.id] || 'member';
+    if (myRole !== 'leader' && myRole !== 'co_leader' && myRole !== 'elder') {
+      return res.status(403).json({ error: 'Keine Berechtigung zur Bearbeitung von Beitrittsanfragen.' });
+    }
+
+    const reqId = String(req.params.id || '');
+    const action = String(req.params.action || '');
+    const joinReq = record.joinRequests.find((r) => r.id === reqId);
+    if (!joinReq) return res.status(404).json({ error: 'Beitrittsanfrage nicht gefunden.' });
+
+    record.joinRequests = record.joinRequests.filter((r) => r.id !== reqId);
+
+    if (action === 'accept') {
+      await authStore.updateClanTag(joinReq.accountId, record.tag);
+      await syncAccountClanTagInLeaderboard(joinReq.accountId, joinReq.username, record.tag);
+      record.memberRoles[joinReq.accountId] = 'member';
+      appendClanSystemMessage(
+        record.tag,
+        account.username,
+        `Beitrittsanfrage von ${joinReq.username} wurde angenommen!`,
+        'system'
+      );
+    }
+
+    const clan = await buildClanSummary(record, account);
+    res.json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Join request action error:', error);
+    res.status(500).json({ error: 'Beitrittsanfrage konnte nicht verarbeitet werden.' });
+  }
+});
+
+app.post('/api/clans/members/:accountId/role', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const myRole = account.id === record.leaderAccountId ? 'leader' : record.memberRoles[account.id] || 'member';
+    if (myRole !== 'leader' && myRole !== 'co_leader') {
+      return res.status(403).json({ error: 'Nur Anführer und Vize-Anführer können Ränge vergeben.' });
+    }
+
+    const targetAccountId = String(req.params.accountId || '');
+    const newRole = req.body?.role as ClanMemberRole;
+    if (!VALID_MEMBER_ROLES.includes(newRole)) {
+      return res.status(400).json({ error: 'Ungültige Clan-Rolle.' });
+    }
+
+    if (newRole === 'leader') {
+      if (myRole !== 'leader') {
+        return res.status(403).json({ error: 'Nur der aktuelle Anführer kann die Führung übertragen.' });
+      }
+      record.memberRoles[record.leaderAccountId] = 'co_leader';
+      record.leaderAccountId = targetAccountId;
+      record.memberRoles[targetAccountId] = 'leader';
+    } else {
+      record.memberRoles[targetAccountId] = newRole;
+    }
+
+    const clan = await buildClanSummary(record, account);
+    res.json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Role update error:', error);
+    res.status(500).json({ error: 'Rolle konnte nicht aktualisiert werden.' });
+  }
+});
+
+app.post('/api/clans/members/:accountId/kick', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const myRole = account.id === record.leaderAccountId ? 'leader' : record.memberRoles[account.id] || 'member';
+    if (myRole !== 'leader' && myRole !== 'co_leader') {
+      return res.status(403).json({ error: 'Nur Anführer und Vize-Anführer können Mitglieder entlassen.' });
+    }
+
+    const targetAccountId = String(req.params.accountId || '');
+    if (targetAccountId === record.leaderAccountId) {
+      return res.status(400).json({ error: 'Der Clan-Anführer kann nicht entlassen werden.' });
+    }
+
+    await authStore.updateClanTag(targetAccountId, '');
+    const targetAcc = await storage.getAccountById(targetAccountId);
+    await syncAccountClanTagInLeaderboard(targetAccountId, targetAcc?.username || '', '');
+    delete record.memberRoles[targetAccountId];
+
+    const clan = await buildClanSummary(record, account);
+    res.json({ success: true, clan });
+  } catch (error) {
+    console.error('[Clan] Kick member error:', error);
+    res.status(500).json({ error: 'Mitglied konnte nicht entlassen werden.' });
+  }
+});
+
+app.post('/api/clans/war/battle', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du musst in einem Clan sein, um am Clan-Krieg teilzunehmen.' });
+
+    const todayKey = getTodayKey(account.id);
+    const usedToday = record.warDecksUsedByDate[todayKey] || 0;
+    if (usedToday >= 4) {
+      return res.status(400).json({
+        error: 'Alle 4 Kriegs-Decks für heute wurden bereits eingesetzt! Morgen stehen neue Decks bereit.',
+      });
+    }
+
+    const mode = req.body?.mode === 'boss' ? 'boss' : req.body?.mode === 'siege' ? 'siege' : 'raid';
+    const savedProgress = await storage.getGameProgress(account.id);
+    const operatorLevel = Math.max(1, Number(req.body?.operatorLevel ?? savedProgress?.operatorLevel ?? 3));
+    const weaponLevel = Math.max(1, Number(req.body?.weaponLevel ?? 2));
+    const skillPointsSpent = Math.max(0, Number(req.body?.skillPointsSpent ?? 2));
+
+    record.warDecksUsedByDate[todayKey] = usedToday + 1;
+
+    const powerScore = operatorLevel * 18 + weaponLevel * 22 + skillPointsSpent * 12;
+    const modeDifficulty = mode === 'boss' ? 95 : mode === 'siege' ? 65 : 40;
+    const victory = powerScore + 35 >= modeDifficulty;
+
+    const baseFame = mode === 'boss' ? 320 : mode === 'siege' ? 220 : 150;
+    const fameEarned = victory ? baseFame + Math.min(180, operatorLevel * 12) : Math.floor(baseFame * 0.45);
+    const rewardNAT = victory ? (mode === 'boss' ? 650 : mode === 'siege' ? 420 : 280) : 110;
+    const rewardReputation = victory ? (mode === 'boss' ? 240 : mode === 'siege' ? 160 : 100) : 40;
+    const rewardSkillPoints = victory && mode === 'boss' ? 1 : 0;
+
+    record.warFame += fameEarned;
+    record.warTrophies += victory ? (mode === 'boss' ? 35 : mode === 'siege' ? 22 : 14) : 4;
+    record.memberWarFame[account.id] = (record.memberWarFame[account.id] || 0) + fameEarned;
+
+    // Progress relevant clan quests automatically during war battles!
+    for (const q of record.quests) {
+      if (!q.completed) {
+        if (q.category === 'kills') q.progress = Math.min(q.target, q.progress + (victory ? 35 : 15));
+        if (q.category === 'waves') q.progress = Math.min(q.target, q.progress + (victory ? 6 : 2));
+        if (q.category === 'bosses' && mode === 'boss' && victory) q.progress = Math.min(q.target, q.progress + 1);
+        if (q.category === 'wins' && victory) q.progress = Math.min(q.target, q.progress + 1);
+        if (q.progress >= q.target) q.completed = true;
+      }
+    }
+
+    if (savedProgress) {
+      savedProgress.budget += rewardNAT;
+      savedProgress.reputation += rewardReputation;
+      savedProgress.skillPoints += rewardSkillPoints;
+      savedProgress.updatedAt = Date.now();
+      await storage.saveGameProgress(savedProgress);
+    }
+
+    const modeTitle =
+      mode === 'boss'
+        ? 'Boss-Belagerung (Feldberg-Koloss)'
+        : mode === 'siege'
+        ? 'Festungs-Durchbruch (Saalburg-Wall)'
+        : 'Sturm-Überfall (Taunusbahn-Depot)';
+
+    const combatReport = victory
+      ? `SIEG in ${modeTitle}! +${fameEarned} Kriegsruhm & +${rewardNAT} NAT erbeutet!`
+      : `Vorstoß in ${modeTitle} abgewehrt – dennoch +${fameEarned} Kriegsruhm für den Widerstand gesichert!`;
+
+    appendClanSystemMessage(record.tag, account.username, `⚔️ ${combatReport}`, 'war');
+
+    const clan = await buildClanSummary(record, account);
+    res.json({
+      success: true,
+      victory,
+      fameEarned,
+      rewardNAT,
+      rewardReputation,
+      rewardSkillPoints,
+      combatReport,
+      clan,
+    });
+  } catch (error) {
+    console.error('[Clan] War battle error:', error);
+    res.status(500).json({ error: 'Clan-Krieg-Gefecht konnte nicht ausgeführt werden.' });
+  }
+});
+
+app.post('/api/clans/quests/:questId/contribute', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const quest = record.quests.find((q) => q.id === String(req.params.questId));
+    if (!quest) return res.status(404).json({ error: 'Clan-Quest nicht gefunden.' });
+    if (quest.completed) return res.status(400).json({ error: 'Diese Clan-Quest ist bereits abgeschlossen.' });
+
+    const defaultStep =
+      quest.category === 'funding'
+        ? 500
+        : quest.category === 'kills'
+        ? 50
+        : quest.category === 'waves'
+        ? 10
+        : quest.category === 'wins'
+        ? 3
+        : 2;
+
+    const amount = Math.max(1, Math.min(quest.target, Math.floor(Number(req.body?.amount) || defaultStep)));
+    const costNAT = quest.category === 'funding' ? amount : 0;
+
+    const savedProgress = await storage.getGameProgress(account.id);
+    if (costNAT > 0 && savedProgress) {
+      if (savedProgress.budget < costNAT) {
+        return res.status(400).json({ error: `Nicht genügend NAT für die Kriegsanleihe (${costNAT} NAT benötigt).` });
+      }
+      savedProgress.budget -= costNAT;
+      savedProgress.updatedAt = Date.now();
+      await storage.saveGameProgress(savedProgress);
+    }
+
+    quest.progress = Math.min(quest.target, quest.progress + amount);
+    record.memberQuestContrib[account.id] = (record.memberQuestContrib[account.id] || 0) + amount;
+
+    if (quest.progress >= quest.target) {
+      quest.completed = true;
+      record.warFame += quest.rewardWarFame;
+      record.warTrophies += 40;
+      appendClanSystemMessage(
+        record.tag,
+        account.username,
+        `🏆 Clan-Quest "${quest.title}" wurde gemeinsam abgeschlossen! (+${quest.rewardWarFame} Kriegsruhm)`,
+        'quest'
+      );
+    }
+
+    const clan = await buildClanSummary(record, account);
+    res.json({ success: true, clan, costNAT });
+  } catch (error) {
+    console.error('[Clan] Quest contribute error:', error);
+    res.status(500).json({ error: 'Quest-Beitrag fehlgeschlagen.' });
+  }
+});
+
+app.post('/api/clans/quests/:questId/claim', requireAccount, requireCsrf, async (req, res) => {
+  try {
+    const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    const record = clans.get(tag);
+    if (!record) return res.status(404).json({ error: 'Du bist in keinem Clan.' });
+
+    const quest = record.quests.find((q) => q.id === String(req.params.questId));
+    if (!quest) return res.status(404).json({ error: 'Clan-Quest nicht gefunden.' });
+    if (!quest.completed) return res.status(400).json({ error: 'Diese Clan-Quest ist noch nicht abgeschlossen.' });
+    if (quest.claimedAccountIds.includes(account.id)) {
+      return res.status(409).json({ error: 'Du hast die Belohnung für diese Clan-Quest bereits abgeholt.' });
+    }
+
+    quest.claimedAccountIds.push(account.id);
+
+    const savedProgress = await storage.getGameProgress(account.id);
+    if (savedProgress) {
+      savedProgress.budget += quest.rewardNAT;
+      savedProgress.reputation += quest.rewardReputation;
+      savedProgress.skillPoints += quest.rewardSkillPoints;
+      savedProgress.updatedAt = Date.now();
+      await storage.saveGameProgress(savedProgress);
+    }
+
+    const clan = await buildClanSummary(record, account);
+    res.json({
+      success: true,
+      rewardNAT: quest.rewardNAT,
+      rewardReputation: quest.rewardReputation,
+      rewardSkillPoints: quest.rewardSkillPoints,
+      clan,
+    });
+  } catch (error) {
+    console.error('[Clan] Quest claim error:', error);
+    res.status(500).json({ error: 'Belohnung konnte nicht abgeholt werden.' });
+  }
+});
+
 app.post('/api/clans/leave', requireAccount, requireCsrf, async (_req, res) => {
   try {
     const account = res.locals.account as PublicAccount;
-    const fallbackTag = '61267';
-    await authStore.updateClanTag(account.id, fallbackTag);
-    const clan = await getClanPayload({ ...account, clanTag: fallbackTag });
-    res.json({ success: true, clan });
+    const oldTag = (account.clanTag || '').trim().toUpperCase();
+    if (oldTag) {
+      appendClanSystemMessage(oldTag, account.username, `${account.username} hat den Clan verlassen.`, 'system');
+    }
+    await authStore.updateClanTag(account.id, '');
+    await syncAccountClanTagInLeaderboard(account.id, account.username, '');
+    res.json({ success: true, clan: null });
   } catch (error) {
     console.error('[Clan] Leave error:', error);
     res.status(500).json({ error: 'Clan konnte nicht verlassen werden.' });
@@ -1356,12 +2358,17 @@ app.post('/api/clans/invitations', requireAccount, requireCsrf, async (req, res)
   try {
     const account = res.locals.account as PublicAccount;
     const clan = await getClanPayload(account);
+    if (!clan) return res.status(400).json({ error: 'Du bist in keinem Clan.' });
     const username = String(req.body?.username || '').trim();
     const recipient = await authStore.getPublicAccountByUsername(username);
     if (!recipient) return res.status(404).json({ error: 'Operator nicht gefunden.' });
     if (recipient.id === account.id) return res.status(400).json({ error: 'Du kannst dich nicht selbst einladen.' });
-    if (recipient.clanTag.toUpperCase() === clan.tag.toUpperCase()) return res.status(409).json({ error: 'Der Operator ist bereits in deinem Clan.' });
-    const duplicate = [...clanInvitations.values()].find((invite) => invite.recipientAccountId === recipient.id && invite.clanTag === clan.tag && invite.status === 'pending');
+    if (recipient.clanTag && recipient.clanTag.toUpperCase() === clan.tag.toUpperCase()) {
+      return res.status(409).json({ error: 'Der Operator ist bereits in deinem Clan.' });
+    }
+    const duplicate = [...clanInvitations.values()].find(
+      (invite) => invite.recipientAccountId === recipient.id && invite.clanTag === clan.tag && invite.status === 'pending'
+    );
     if (duplicate) return res.status(409).json({ error: 'Es gibt bereits eine offene Einladung.' });
     const invitation: ClanInvitationRecord = {
       id: `invite_${crypto.randomUUID()}`,
@@ -1394,6 +2401,10 @@ app.post('/api/clans/invitations/:id/:action', requireAccount, requireCsrf, asyn
       const clan = clans.get(invitation.clanTag);
       if (!clan) return res.status(404).json({ error: 'Der Clan existiert nicht mehr.' });
       await authStore.updateClanTag(account.id, clan.tag);
+      await syncAccountClanTagInLeaderboard(account.id, account.username, clan.tag);
+      if (!clan.memberRoles[account.id]) {
+        clan.memberRoles[account.id] = 'member';
+      }
       res.json({ success: true, clan: await getClanPayload({ ...account, clanTag: clan.tag }) });
     } else {
       res.json({ success: true, clan: await getClanPayload(account) });
@@ -1406,21 +2417,27 @@ app.post('/api/clans/invitations/:id/:action', requireAccount, requireCsrf, asyn
 
 app.get('/api/clans/messages', requireAccount, async (_req, res) => {
   const account = res.locals.account as PublicAccount;
-  const tag = account.clanTag || '61267';
+  const tag = (account.clanTag || '').trim().toUpperCase();
+  if (!tag) {
+    return res.json({ messages: [] });
+  }
   res.json({ messages: (clanMessages.get(tag) || []).slice(-50) });
 });
 
 app.post('/api/clans/messages', requireAccount, requireCsrf, async (req, res) => {
   try {
     const account = res.locals.account as PublicAccount;
+    const tag = (account.clanTag || '').trim().toUpperCase();
+    if (!tag) return res.status(400).json({ error: 'Du musst in einem Clan sein, um im Clan-Chat zu schreiben.' });
     const text = String(req.body?.text || '').trim().slice(0, 240);
     if (!text) return res.status(400).json({ error: 'Nachricht darf nicht leer sein.' });
     const message: ClanMessageRecord = {
       id: `msg_${crypto.randomUUID()}`,
-      clanTag: account.clanTag || '61267',
+      clanTag: tag,
       authorName: account.username,
       text,
       createdAt: new Date().toISOString(),
+      type: 'chat',
     };
     const messages = clanMessages.get(message.clanTag) || [];
     messages.push(message);

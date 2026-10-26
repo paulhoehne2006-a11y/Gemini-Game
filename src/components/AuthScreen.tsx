@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, LogIn, Scale, ShieldCheck, Sparkles, UserPlus } from 'lucide-react';
+import { AlertCircle, CheckCircle2, LogIn, Scale, ShieldCheck, Sparkles, UserPlus, Users } from 'lucide-react';
 import {
   AuthRequestError,
   AuthUser,
@@ -25,7 +25,6 @@ const usernamePattern = /^[a-zA-Z0-9_-]{3,24}$/;
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenLegal }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
-  const [clanTag, setClanTag] = useState('');
   const [faction, setFaction] = useState<'neu-anspach' | 'wehrheim'>('neu-anspach');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -73,13 +72,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
     setSuccessMessage(null);
     setIsSubmitting(true);
     try {
-      const effectiveClanTag = clanTag.trim().toUpperCase() || '61267';
       const user = await loginWithGoogle({
         devProfile: {
           email: emailToUse,
           displayName: nameToUse,
         },
-        clanTag: effectiveClanTag,
+        clanTag: '',
         faction,
         legalConsent: createLegalConsentRecord(),
       });
@@ -110,8 +108,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
       setGoogleConfig(cfg);
     }
 
-    const effectiveClanTag = clanTag.trim().toUpperCase() || '61267';
-
     if (cfg.devFallbackEnabled) {
       setShowGoogleDevPanel((prev) => !prev);
       return;
@@ -120,7 +116,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
     if (cfg.oauthRedirectEnabled) {
       setIsSubmitting(true);
       startGoogleOAuthRedirect({
-        clanTag: effectiveClanTag,
+        clanTag: '',
         faction,
       });
       return;
@@ -141,7 +137,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
             try {
               const user = await loginWithGoogle({
                 credential: response.credential,
-                clanTag: effectiveClanTag,
+                clanTag: '',
                 faction,
                 legalConsent: createLegalConsentRecord(),
               });
@@ -180,9 +176,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
   const validate = (): string | null => {
     if (!usernamePattern.test(username.trim())) {
       return 'Der Benutzername muss 3-24 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.';
-    }
-    if (mode === 'register' && !/^[a-zA-Z0-9_-]{2,6}$/.test(clanTag.trim())) {
-      return 'Der Clan-Tag muss 2-6 Zeichen lang sein und darf nur Buchstaben, Zahlen, _ oder - enthalten.';
     }
     if (
       password.length < 10 ||
@@ -223,7 +216,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
         const user = await register(
           username.trim(),
           password,
-          clanTag.trim().toUpperCase(),
+          '',
           faction,
           createLegalConsentRecord()
         );
@@ -356,6 +349,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
               <span>Mit Google anmelden</span>
             </button>
 
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 px-3.5 py-2 text-center">
+              <p className="text-[11px] leading-relaxed text-slate-300">
+                Nach der Google-Anmeldung kannst du deinen Wunsch-Nutzernamen frei wählen oder deinen bestehenden alten Account verknüpfen.
+              </p>
+            </div>
+
             <p className="text-[11px] leading-relaxed text-slate-400 text-center">
               Mit der Anmeldung über Google akzeptierst du die{' '}
               {onOpenLegal ? (
@@ -444,7 +443,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
                     onClick={() => {
                       setIsSubmitting(true);
                       startGoogleOAuthRedirect({
-                        clanTag: clanTag.trim().toUpperCase() || '61267',
+                        clanTag: '',
                         faction,
                       });
                     }}
@@ -487,27 +486,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
 
           {mode === 'register' && (
             <>
-              {/* Clan-Tag Field */}
-              <div className="space-y-1.5">
-                <label htmlFor="auth-clan-tag" className="block font-mono text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Clan-Tag
-                </label>
-                <input
-                  id="auth-clan-tag"
-                  name="clanTag"
-                  type="text"
-                  autoComplete="organization"
-                  required
-                  minLength={2}
-                  maxLength={6}
-                  pattern="[a-zA-Z0-9_-]{2,6}"
-                  value={clanTag}
-                  onChange={(event) => setClanTag(event.target.value.toUpperCase())}
-                  aria-describedby="auth-clan-tag-help"
-                  placeholder="z. B. 61267"
-                  className="w-full rounded-xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm uppercase tracking-wider font-mono text-white placeholder:text-slate-600 outline-none transition-all duration-150 focus:border-amber-400 focus:ring-4 focus:ring-amber-500/15 focus:bg-slate-950 shadow-inner"
-                />
-                <p id="auth-clan-tag-help" className="text-xs text-slate-500">2-6 Zeichen: Buchstaben, Zahlen, _ oder -.</p>
+              {/* Clan-Börse Info Badge instead of Clan-Tag Input */}
+              <div
+                data-testid="auth-clan-boerse-hint"
+                className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200/90 shadow-inner"
+              >
+                <Users className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />
+                <p>
+                  <span className="font-bold text-amber-300">Hinweis:</span> Clans & Clan-Tags werden im Spiel über die neue Clan-Börse vergeben. Du kannst dort einem offenen Clan beitreten oder ab Level 3 deinen eigenen Clan gründen.
+                </p>
               </div>
 
               {/* Faction Selector */}
