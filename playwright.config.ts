@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: 'cmd /c npx tsx server.ts',
     url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 60000,
   },
   projects: [

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { AuthUser, AuthRequestError, getCurrentUser, logout } from './auth';
 import { TopBar, AppTab } from './components/TopBar';
@@ -14,6 +14,12 @@ import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MobileTacticalHub } from './components/MobileTacticalHub';
 import { ClanHub } from './components/ClanHub';
 import { HomeDashboard } from './components/HomeDashboard';
+import { MobileAppShell } from './components/MobileAppShell';
+import { MobileHeader } from './components/MobileHeader';
+import { MobileDock } from './components/MobileDock';
+import { MobileHomeView } from './components/MobileHomeView';
+import { MobileHubDrawer } from './components/MobileHubDrawer';
+import { CloudGameProgress, fetchCloudGameProgress, saveCloudGameProgress } from './game/cloudSave';
 import {
   DailyMissionsState,
   loadSavedDailyMissions,
@@ -130,8 +136,13 @@ export default function App() {
       setIsMobileHardware(mobileHw);
       setIsLandscape(landscape);
       if (mobileHw) {
-        // Never allow switching out of mobile mode on mobile hardware (even in landscape / Handy Querformat!)
         setIsMobileMode(true);
+      } else {
+        const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+        const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+        if (!isMobileUA) {
+          setIsMobileMode(false);
+        }
       }
     };
     window.addEventListener('resize', syncViewportAndOrientation);
@@ -143,7 +154,9 @@ export default function App() {
   }, []);
 
   const handleSetMobileMode = (nextMobile: boolean) => {
-    if (isMobileHardware || detectMobileHardware()) {
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    if (isMobileUA && !nextMobile) {
       setIsMobileMode(true);
       return;
     }
@@ -301,6 +314,74 @@ export default function App() {
   const [activeRoom, setActiveRoom] = useState<MultiplayerRoom | null>(null);
   const [localPlayerId, setLocalPlayerId] = useState<string | null>(null);
 
+  // Server-Authoritative Cloud Save State Refs
+  const hasHydratedFromCloudRef = useRef<boolean>(false);
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadCloudSaveIntoState = (cloud: CloudGameProgress) => {
+    if (typeof cloud.budget === 'number') setBudget(cloud.budget);
+    if (typeof cloud.reputation === 'number') setReputation(cloud.reputation);
+    if (typeof cloud.operatorLevel === 'number') setOperatorLevel(cloud.operatorLevel);
+    if (typeof cloud.skillPoints === 'number') setSkillPoints(cloud.skillPoints);
+    if (typeof cloud.totalWins === 'number') setTotalWins(cloud.totalWins);
+    if (cloud.facilities && typeof cloud.facilities === 'object') {
+      setFacilities((prev) => ({ ...prev, ...cloud.facilities }));
+    }
+    if (Array.isArray(cloud.unlockedMaps) && cloud.unlockedMaps.length > 0) {
+      setUnlockedMaps(cloud.unlockedMaps);
+    }
+    if (cloud.mapLevels && typeof cloud.mapLevels === 'object') {
+      setMapLevels(cloud.mapLevels);
+    }
+    if (cloud.skillTree && typeof cloud.skillTree === 'object') {
+      setSkillTree(cloud.skillTree);
+    }
+    if (cloud.weaponUpgrades && typeof cloud.weaponUpgrades === 'object') {
+      setWeaponUpgrades(cloud.weaponUpgrades);
+    }
+    if (cloud.dailyMissions && typeof cloud.dailyMissions === 'object' && Array.isArray(cloud.dailyMissions.missions)) {
+      setDailyMissionsState(cloud.dailyMissions);
+    }
+    if (cloud.careerStats && typeof cloud.careerStats === 'object') {
+      setCareerStats((prev) => {
+        const next = { ...prev, ...cloud.careerStats };
+        saveCareerStats(next);
+        return next;
+      });
+      if (cloud.careerStats.lastLoginDate) {
+        try { localStorage.setItem('na_last_daily_bonus_date', cloud.careerStats.lastLoginDate); } catch {}
+      }
+    }
+  };
+
+  const syncAccountProgress = async () => {
+    try {
+      const cloud = await fetchCloudGameProgress();
+      if (cloud) {
+        loadCloudSaveIntoState(cloud);
+      } else {
+        await saveCloudGameProgress({
+          budget,
+          reputation,
+          operatorLevel,
+          skillPoints,
+          totalWins,
+          facilities,
+          unlockedMaps,
+          mapLevels,
+          skillTree,
+          weaponUpgrades,
+          dailyMissions: dailyMissionsState,
+          careerStats,
+        });
+      }
+    } catch (err) {
+      console.warn('[CloudSave] Error syncing on auth:', err);
+    } finally {
+      hasHydratedFromCloudRef.current = true;
+    }
+  };
+
   useEffect(() => {
     let active = true;
     getCurrentUser()
@@ -323,6 +404,7 @@ export default function App() {
             localStorage.setItem('na_clan_tag', profileClanTag);
             localStorage.setItem('na_player_city', profileCity);
             localStorage.setItem('na_operator_registered', 'true');
+            syncAccountProgress();
           }
         }
       })
@@ -360,6 +442,7 @@ export default function App() {
         clanTag: profileClanTag,
         city: profileCity,
       }).catch(() => {});
+      syncAccountProgress();
     }
   };
 
@@ -379,6 +462,7 @@ export default function App() {
     localStorage.removeItem('na_player_name');
     localStorage.removeItem('na_clan_tag');
     localStorage.removeItem('na_player_city');
+    hasHydratedFromCloudRef.current = false;
   };
 
   // Compute current signature weapon display name for Real Leaderboard
@@ -455,6 +539,54 @@ export default function App() {
     localStorage.setItem('na_operator_level', operatorLevel.toString());
   }, [operatorLevel]);
 
+  useEffect(() => {
+    saveCareerStats(careerStats);
+  }, [careerStats]);
+
+  // Auto-sync debounced cloud save to database when progress changes
+  useEffect(() => {
+    if (!authUser || !hasHydratedFromCloudRef.current) return;
+    if (cloudSaveTimerRef.current) {
+      clearTimeout(cloudSaveTimerRef.current);
+    }
+    cloudSaveTimerRef.current = setTimeout(() => {
+      saveCloudGameProgress({
+        budget,
+        reputation,
+        operatorLevel,
+        skillPoints,
+        totalWins,
+        facilities,
+        unlockedMaps,
+        mapLevels,
+        skillTree,
+        weaponUpgrades,
+        dailyMissions: dailyMissionsState,
+        careerStats,
+      }).catch(() => {});
+    }, 1500);
+
+    return () => {
+      if (cloudSaveTimerRef.current) {
+        clearTimeout(cloudSaveTimerRef.current);
+      }
+    };
+  }, [
+    authUser,
+    budget,
+    reputation,
+    operatorLevel,
+    skillPoints,
+    totalWins,
+    facilities,
+    unlockedMaps,
+    mapLevels,
+    skillTree,
+    weaponUpgrades,
+    dailyMissionsState,
+    careerStats,
+  ]);
+
   // Toast auto-dismiss timer
   useEffect(() => {
     if (!completedMissionToast) return;
@@ -479,23 +611,73 @@ export default function App() {
     }
   }, [isOperatorRegistered, legalConsent]);
 
-  const todayDateStr = new Date().toISOString().slice(0, 10);
-  const canClaimDailyLogin = careerStats.lastLoginDate !== todayDateStr;
+  const getTodayLocalDateStr = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayDateStr = getTodayLocalDateStr();
+  const todayUtcStr = new Date().toISOString().slice(0, 10);
+  const storedDailyBonusDate = typeof window !== 'undefined' ? localStorage.getItem('na_last_daily_bonus_date') : null;
+
+  const canClaimDailyLogin =
+    careerStats.lastLoginDate !== todayDateStr &&
+    careerStats.lastLoginDate !== todayUtcStr &&
+    careerStats.lastDailyBonusDate !== todayDateStr &&
+    careerStats.lastDailyBonusDate !== todayUtcStr &&
+    storedDailyBonusDate !== todayDateStr &&
+    storedDailyBonusDate !== todayUtcStr;
 
   const handleClaimDailyLoginBonus = () => {
     if (!canClaimDailyLogin) return;
-    const nextStreak = careerStats.loginStreakDays + 1;
+
+    const currentClaimDate = getTodayLocalDateStr();
+    if (
+      careerStats.lastLoginDate === currentClaimDate ||
+      careerStats.lastDailyBonusDate === currentClaimDate ||
+      (typeof window !== 'undefined' && localStorage.getItem('na_last_daily_bonus_date') === currentClaimDate)
+    ) {
+      return;
+    }
+
+    let nextStreak = 1;
+    if (careerStats.lastLoginDate) {
+      const last = new Date(careerStats.lastLoginDate);
+      const curr = new Date(currentClaimDate);
+      const diffDays = Math.round((curr.getTime() - last.getTime()) / (1000 * 3600 * 24));
+      if (diffDays === 1) {
+        nextStreak = (careerStats.loginStreakDays || 0) + 1;
+      } else if (diffDays === 0) {
+        return;
+      } else {
+        nextStreak = 1;
+      }
+    }
+
     const rewardNAT = 75 + Math.min(150, nextStreak * 25);
     const rewardRep = 40;
     soundFx.playRewardClaim();
+
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('na_last_daily_bonus_date', currentClaimDate); } catch {}
+    }
+
     setBudget((prev) => prev + rewardNAT);
     setReputation((prev) => prev + rewardRep);
-    setCareerStats((prev) => ({
-      ...prev,
-      loginStreakDays: nextStreak,
-      lastLoginDate: todayDateStr,
-      totalTalerEarned: prev.totalTalerEarned + rewardNAT,
-    }));
+    setCareerStats((prev) => {
+      const updated: CareerStats = {
+        ...prev,
+        loginStreakDays: nextStreak,
+        lastLoginDate: currentClaimDate,
+        lastDailyBonusDate: currentClaimDate,
+        totalTalerEarned: prev.totalTalerEarned + rewardNAT,
+      };
+      saveCareerStats(updated);
+      return updated;
+    });
   };
 
   const handleClaimBattlePassTier = (tier: number) => {
@@ -1148,10 +1330,8 @@ export default function App() {
     );
   }
 
-  return (
-    <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
-      activeTab === 'battle' && !effectiveMobileMode ? 'h-screen overflow-hidden' : 'min-h-screen'
-    }`}>
+  const renderSharedModals = () => (
+    <>
       {/* Operator Username / Callsign Onboarding Modal on First Launch or Profile Edit */}
       {showProfileModal && (
         <OperatorOnboardingModal
@@ -1224,10 +1404,257 @@ export default function App() {
           </button>
         </div>
       )}
+    </>
+  );
 
-      {(activeTab !== 'battle' || effectiveMobileMode) && (
+  // --- 1. SMARTPHONE / MOBILE DEVICE EXPERIENCE (PR #18 Redesign) ---
+  if (effectiveMobileMode) {
+    return (
+      <MobileAppShell>
+        {renderSharedModals()}
+      {/* Sleek Native Mobile Header */}
+      <MobileHeader
+        playerName={playerName}
+        clanTag={clanTag}
+        operatorLevel={operatorLevel}
+        budget={budget}
+        reputation={reputation}
+        isMuted={isMuted}
+        setIsMuted={setIsMuted}
+        unclaimedMissionsCount={unclaimedMissionsCount}
+        completedMissionsCount={completedMissionsCount}
+        totalMissionsCount={dailyMissionsState.missions.length}
+        onRequestCommander={requestCommanderOrders}
+        isCommanderThinking={isCommanderThinking}
+        isMobileHardware={isMobileHardware}
+        onSwitchToPcMode={() => handleSetMobileMode(false)}
+        onOpenProfileModal={() => setShowProfileModal(true)}
+        onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+        onOpenLegalModal={() => setShowLegalModal(true)}
+        onLogout={handleLogout}
+      />
+
+      {/* Main Scrollable View Router */}
+      <main className="flex-1 w-full relative overflow-y-auto overflow-x-hidden select-none">
+        {activeTab === 'home' && (
+          <MobileHomeView
+            playerName={playerName}
+            clanTag={clanTag}
+            playerCity={playerCity}
+            operatorLevel={operatorLevel}
+            reputation={reputation}
+            budget={budget}
+            totalWins={totalWins}
+            careerStats={careerStats}
+            skillPoints={skillPoints}
+            selectedGunsmithWeapon={selectedGunsmithWeapon}
+            weaponUpgrades={weaponUpgrades}
+            currentArena={currentArena}
+            unlockedMaps={effectiveUnlockedMaps}
+            mapLevels={mapLevels}
+            dailyMissionsState={dailyMissionsState}
+            canClaimDailyLogin={canClaimDailyLogin}
+            onNavigateTab={openTab}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+            onOpenDailyMissionsModal={() => setShowDailyMissionsModal(true)}
+            onClaimDailyMission={handleClaimMission}
+            onClaimDailyGrandBonus={handleClaimGrandBonus}
+            onClaimDailyLoginBonus={handleClaimDailyLoginBonus}
+            onStartBattle={(arenaId) => {
+              if (arenaId) setCurrentArena(arenaId);
+              openTab('battle');
+            }}
+            onSimulatePatrol={handleSimulatePatrol}
+          />
+        )}
+
+        {activeTab === 'battle' && (
+          <MobileTacticalHub
+            budget={budget}
+            reputation={reputation}
+            playerName={playerName}
+            clanTag={clanTag}
+            totalIncomePerSec={totalIncomePerSec}
+            totalWins={totalWins}
+            unlockedMaps={effectiveUnlockedMaps}
+            dailyMissionsState={dailyMissionsState}
+            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+            onClaimDailyMission={handleClaimMission}
+            onNavigateTab={openTab}
+            onSimulatePatrol={handleSimulatePatrol}
+            skillPoints={skillPoints}
+            isMobileHardware={isMobileHardware}
+            onSwitchToPcMode={() => handleSetMobileMode(false)}
+          />
+        )}
+
+        {activeTab === 'gunsmith' && (
+          <GunsmithView
+            budget={budget}
+            weaponUpgrades={weaponUpgrades}
+            activeWeaponId={selectedGunsmithWeapon}
+            onSelectWeapon={(wId) => setSelectedGunsmithWeapon(wId)}
+            onUpgradeAttachment={handleUpgradeAttachment}
+            onUpgradeRarity={handleUpgradeRarity}
+            onUpgradePackAPunch={handleUpgradePackAPunch}
+            onTrainWeaponLevel={handleTrainWeaponLevel}
+            onSelectWeaponMastery={handleSelectWeaponMastery}
+            onClose={() => openTab('home')}
+          />
+        )}
+
+        {activeTab === 'skilltree' && (
+          <SkillTreeView
+            budget={budget}
+            skillPoints={skillPoints}
+            skillTree={skillTree}
+            operatorLevel={operatorLevel}
+            onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
+            onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
+            onResetSkillTree={handleResetSkillTree}
+            onClose={() => openTab('home')}
+          />
+        )}
+
+        {activeTab === 'hub' && (
+          <MobileHubDrawer
+            playerName={playerName}
+            clanTag={clanTag}
+            operatorLevel={operatorLevel}
+            budget={budget}
+            reputation={reputation}
+            totalIncomePerSec={totalIncomePerSec}
+            totalWins={totalWins}
+            onNavigateTab={openTab}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+            onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
+            onOpenLegalModal={() => setShowLegalModal(true)}
+            onLogout={handleLogout}
+          />
+        )}
+
+        {activeTab === 'clan' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <ClanHub
+              playerName={playerName}
+              onClanTagChange={(tag) => {
+                setClanTag(tag);
+                localStorage.setItem('na_clan_tag', tag);
+              }}
+            />
+          </div>
+        )}
+
+        {activeTab === 'tycoon' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <TycoonHub
+              budget={budget}
+              onUpgradeFacility={handleUpgradeFacility}
+              facilities={facilities}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+              onUnlockMap={handleUnlockMap}
+              totalIncomePerSec={totalIncomePerSec}
+              commanderCrisisEvent={crisisEvent}
+              onAcceptCrisisEvent={handleAcceptCrisis}
+              onStartArena={(arenaId) => {
+                setCurrentArena(arenaId);
+                openTab('battle');
+              }}
+              mapLevels={mapLevels}
+              onUpgradeMapLevel={handleUpgradeMapLevel}
+              isMobileHardware={true}
+            />
+          </div>
+        )}
+
+        {activeTab === 'leaderboard' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <LeaderboardView
+              currentScore={lastMatchScore}
+              currentKills={lastMatchKills}
+              playerName={playerName}
+              clanTag={clanTag}
+              playerCity={playerCity}
+              unlockedMapsCount={effectiveUnlockedMaps.length}
+              signatureWeapon={signatureWeaponName}
+              currentArenaName={ARENAS[currentArena]?.name || currentArena}
+              onEditProfile={() => setShowProfileModal(true)}
+            />
+          </div>
+        )}
+
+        {activeTab === 'multiplayer' && (
+          <div className="p-2 pb-24 space-y-3">
+            <div className="flex items-center justify-between px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => openTab('hub')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono text-slate-300 hover:text-white transition-all cursor-pointer"
+              >
+                ← Zurück zum Hub
+              </button>
+            </div>
+            <MultiplayerLobby
+              onStartGameWithRoom={handleStartGameWithRoom}
+              playerName={playerName}
+              clanTag={clanTag}
+              onOpenProfileModal={() => setShowProfileModal(true)}
+              onOpenLeaderboard={() => openTab('leaderboard')}
+              totalWins={totalWins}
+              unlockedMaps={effectiveUnlockedMaps}
+            />
+          </div>
+        )}
+      </main>
+
+      {/* Sleek 5-Tab Mobile Dock Bar */}
+      <MobileDock
+        activeTab={activeTab}
+        onSelectTab={(tab) => openTab(tab)}
+        skillPoints={skillPoints}
+        unclaimedMissionsCount={unclaimedMissionsCount}
+      />
+    </MobileAppShell>
+    );
+  }
+
+  // --- 2. PC / DESKTOP EXPERIENCE (Full Width HUD, 3D Battle Royale, Rich Menus) ---
+  return (
+    <div className={`flex flex-col w-full bg-slate-950 font-sans text-slate-100 overflow-x-hidden ${
+      activeTab === 'battle' ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`}>
+      {renderSharedModals()}
+      {activeTab !== 'battle' && (
         <TopBar
-          activeTab={activeTab}
+          activeTab={activeTab === 'hub' ? 'home' : activeTab}
           setActiveTab={openTab}
           budget={budget}
           reputation={reputation}
@@ -1255,10 +1682,10 @@ export default function App() {
 
       {/* Main View Router - the match is viewport-locked; menu surfaces retain scrolling. */}
       <main className={`flex-1 w-full relative ${
-        activeTab !== 'battle' || effectiveMobileMode ? 'overflow-y-auto' : 'overflow-hidden'
+        activeTab !== 'battle' ? 'overflow-y-auto' : 'overflow-hidden'
       }`}>
         {/* Integrated main menu (former start page) - reachable via TopBar, pause menu & end screen */}
-        {activeTab === 'home' && (
+        {(activeTab === 'home' || activeTab === 'hub') && (
           <HomeDashboard
             playerName={playerName}
             clanTag={clanTag}
@@ -1294,26 +1721,6 @@ export default function App() {
         )}
 
         {activeTab === 'battle' && (
-          effectiveMobileMode ? (
-            <MobileTacticalHub
-              budget={budget}
-              reputation={reputation}
-              playerName={playerName}
-              clanTag={clanTag}
-              totalIncomePerSec={totalIncomePerSec}
-              totalWins={totalWins}
-              unlockedMaps={effectiveUnlockedMaps}
-              dailyMissionsState={dailyMissionsState}
-              onOpenDailyMissions={() => setShowDailyMissionsModal(true)}
-              onClaimDailyMission={handleClaimMission}
-              onNavigateTab={openTab}
-              onSwitchToPcMode={() => handleSetMobileMode(false)}
-              onSimulatePatrol={handleSimulatePatrol}
-              isMobileHardware={isMobileHardware}
-              isLandscape={isLandscape}
-              skillPoints={skillPoints}
-            />
-          ) : (
             <ThreeCanvas
               currentArena={currentArena}
               onChangeArena={(arenaId) => setCurrentArena(arenaId)}
@@ -1347,7 +1754,6 @@ export default function App() {
               onOperatorLevelUp={handleOperatorLevelUp}
               onExitToMenu={handleExitToMenu}
             />
-          )
         )}
 
         {activeTab === 'gunsmith' && (

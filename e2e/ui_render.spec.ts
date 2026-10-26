@@ -181,4 +181,82 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     // Verify user is authenticated and reaches the main dashboard
     await expect(page.locator('header')).toBeVisible({ timeout: 15000 });
   });
+
+  test('4. Mobile Redesign: 5-Tab Dock, Tactical Patrol combat dispatch, and Mobile Hub navigation', async ({ page }) => {
+    // Set smartphone viewport (e.g. iPhone / Android portrait) to test mobile redesign layout
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileUsername = `Mob_${Date.now().toString().slice(-6)}`;
+    await page.goto('/');
+
+    // Register user
+    await page.getByRole('tab', { name: /Registrieren/i }).click();
+    await page.fill('#auth-username', mobileUsername);
+    await page.fill('#auth-clan-tag', 'MOB1');
+    await page.fill('#auth-password', 'MobilePass123!');
+    await page.fill('#auth-confirm-password', 'MobilePass123!');
+    await page.locator('input[type="checkbox"]').check();
+    await page.getByRole('button', { name: /Konto registrieren & Spiel starten/i }).click();
+
+    // Verify Mobile App Header
+    await expect(page.locator('header')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('NEU-ANSPACH').first()).toBeVisible();
+    await expect(page.getByText('ROYALE').first()).toBeVisible();
+
+    // Verify 5-Tab Mobile Dock
+    const dock = page.locator('nav[aria-label="Mobile Navigation"]');
+    await expect(dock).toBeVisible();
+    const tabZentrale = dock.getByRole('button', { name: 'Zentrale' });
+    const tabEinsatz = dock.getByRole('button', { name: 'Einsatz' });
+    const tabArsenal = dock.getByRole('button', { name: 'Arsenal' });
+    const tabSkills = dock.getByRole('button', { name: 'Skills' });
+    const tabMehr = dock.getByRole('button', { name: 'Mehr' });
+
+    await expect(tabZentrale).toBeVisible();
+    await expect(tabEinsatz).toBeVisible();
+    await expect(tabArsenal).toBeVisible();
+    await expect(tabSkills).toBeVisible();
+    await expect(tabMehr).toBeVisible();
+
+    // 1. Test Tab "Einsatz" & Tactical Patrol Dispatch
+    await tabEinsatz.click();
+    await expect(page.getByText('Taktische Zentrale')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Einsatzgebiete & Streifen')).toBeVisible();
+
+    // Dispatch patrol in Hessenpark
+    const streifeBtn = page.getByRole('button', { name: /Streife/i }).first();
+    await expect(streifeBtn).toBeVisible();
+    await streifeBtn.click();
+
+    // Verify combat loot report appears
+    await expect(page.getByText(/Wehrheimer Späher.*abgewehrt/i)).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText(/NAT Beute/i)).toBeVisible();
+
+    // 2. Test Tab "Arsenal"
+    await tabArsenal.click();
+    await expect(page.getByText(/Waffen-Arsenal|Arsenal V5|Waffenschmiede/i).first()).toBeVisible({ timeout: 5000 });
+
+    // 3. Test Tab "Skills"
+    await tabSkills.click();
+    await expect(page.getByText(/Spezialisierung|Skilltree|Operator-Skilltree/i).first()).toBeVisible({ timeout: 5000 });
+
+    // 4. Test Tab "Mehr" (Mobile Hub Drawer)
+    await tabMehr.click();
+    await expect(page.getByText('Kommando-Hub').or(page.getByText('Weitere Bereiche')).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Mein Clan').first()).toBeVisible();
+    await expect(page.getByText('Maps & Tycoon').first()).toBeVisible();
+    await expect(page.getByText('Live-Bestenliste').first()).toBeVisible();
+    await expect(page.getByText('Freunde-Lobby').first()).toBeVisible();
+
+    // Jump to Clan Hub via Hub card
+    await page.getByRole('button', { name: /Mein Clan/i }).first().click();
+    await expect(page.getByText(/Clan-Verwaltung|Squad|Clanzentrale|Clan gründen/i).first()).toBeVisible({ timeout: 5000 });
+
+    // Back button in Clan view to Hub
+    await page.getByRole('button', { name: /Zurück zum Hub/i }).click();
+    await expect(page.getByText('Weitere Bereiche').first()).toBeVisible({ timeout: 5000 });
+
+    // Return to Zentrale via Dock
+    await tabZentrale.click();
+    await expect(page.getByText('BÜRGERWEHR-RADAR ONLINE').first()).toBeVisible({ timeout: 5000 });
+  });
 });
