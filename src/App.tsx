@@ -11,6 +11,7 @@ import { SkillTreeView } from './components/SkillTreeView';
 import { OperatorOnboardingModal } from './components/OperatorOnboardingModal';
 import { LegalModal } from './components/LegalModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
+import { TutorialModal } from './components/TutorialModal';
 import { MobileTacticalHub } from './components/MobileTacticalHub';
 import { ClanHub } from './components/ClanHub';
 import { HomeDashboard } from './components/HomeDashboard';
@@ -171,6 +172,11 @@ export default function App() {
     return localStorage.getItem('na_operator_registered') !== 'true';
   });
   const [showLegalModal, setShowLegalModal] = useState<boolean>(false);
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const [isTutorialMinimized, setIsTutorialMinimized] = useState<boolean>(false);
+  const [tutorialRewardClaimed, setTutorialRewardClaimed] = useState<boolean>(() => {
+    return localStorage.getItem('na_tutorial_reward_claimed') === 'true';
+  });
   const [legalConsent, setLegalConsent] = useState<LegalConsentRecord | undefined>(() => {
     const stored = localStorage.getItem('na_legal_consent');
     if (!stored) return undefined;
@@ -185,7 +191,7 @@ export default function App() {
     return localStorage.getItem('na_player_name') || 'AnspachOperator';
   });
   const [clanTag, setClanTag] = useState<string>(() => {
-    return localStorage.getItem('na_clan_tag') || '61267';
+    return localStorage.getItem('na_clan_tag') || '';
   });
   const [playerCity, setPlayerCity] = useState<string>(() => {
     return localStorage.getItem('na_player_city') || 'Neu-Anspach';
@@ -405,10 +411,10 @@ export default function App() {
               new URLSearchParams(window.location.search).get('google_onboarding') === '1';
             if (hasGoogleOnboardingFlag) {
               window.history.replaceState({}, '', window.location.pathname);
-              setShowProfileModal(true);
-            } else {
-              setShowProfileModal(false);
+              setShowTutorial(true);
+              setIsTutorialMinimized(false);
             }
+            setShowProfileModal(false);
             localStorage.setItem('na_clan_tag', profileClanTag);
             localStorage.setItem('na_player_city', profileCity);
             localStorage.setItem('na_operator_registered', 'true');
@@ -444,10 +450,10 @@ export default function App() {
       localStorage.setItem('na_player_city', profileCity);
       localStorage.setItem('na_operator_registered', 'true');
       setIsOperatorRegistered(true);
-      if (user.isNewAccount && user.authProvider === 'google') {
-        setShowProfileModal(true);
-      } else {
-        setShowProfileModal(false);
+      setShowProfileModal(false);
+      if (user.isNewAccount) {
+        setShowTutorial(true);
+        setIsTutorialMinimized(false);
       }
       registerOperatorProfile({
         name: cleanName,
@@ -1268,6 +1274,24 @@ export default function App() {
   const openTab = (tab: AppTab) => {
     setActiveTab(tab);
     setShowMobileCommandOverlay(false);
+    if (showTutorial && !isTutorialMinimized) {
+      setIsTutorialMinimized(true);
+    }
+  };
+
+  const handleCompleteTutorialAndClaimReward = () => {
+    if (!tutorialRewardClaimed) {
+      soundFx.playRewardClaim();
+      setBudget((prev) => prev + 500);
+      setReputation((prev) => prev + 150);
+      setSkillPoints((prev) => prev + 1);
+      setTutorialRewardClaimed(true);
+      try {
+        localStorage.setItem('na_tutorial_reward_claimed', 'true');
+      } catch {}
+    }
+    setShowTutorial(false);
+    setIsTutorialMinimized(false);
   };
 
   // Return from a running/finished match (pause menu or end screen) to the integrated main menu.
@@ -1366,6 +1390,29 @@ export default function App() {
           onLogout={handleLogout}
         />
       )}
+
+      {/* Comprehensive 8-Chapter First-Time Registration & Bootcamp Tutorial Modal */}
+      <TutorialModal
+        isOpen={showTutorial}
+        isMinimized={isTutorialMinimized}
+        playerName={playerName}
+        rewardClaimed={tutorialRewardClaimed}
+        onMinimizeToggle={(minimized) => setIsTutorialMinimized(minimized)}
+        onClose={() => {
+          setShowTutorial(false);
+          setIsTutorialMinimized(false);
+        }}
+        onCompleteAndClaimReward={handleCompleteTutorialAndClaimReward}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          setShowMobileCommandOverlay(false);
+          setIsTutorialMinimized(true);
+        }}
+        onOpenProfileModal={() => {
+          setIsTutorialMinimized(true);
+          setShowProfileModal(true);
+        }}
+      />
 
       {/* Legal & Privacy Transparency Modal */}
       <LegalModal
@@ -1485,6 +1532,10 @@ export default function App() {
               openTab('battle');
             }}
             onSimulatePatrol={handleSimulatePatrol}
+            onOpenTutorial={() => {
+              setShowTutorial(true);
+              setIsTutorialMinimized(false);
+            }}
           />
         )}
 
@@ -1750,6 +1801,10 @@ export default function App() {
             onClaimAchievement={handleClaimAchievement}
             onClaimDailyLoginBonus={handleClaimDailyLoginBonus}
             onUnlockMap={handleUnlockMap}
+            onOpenTutorial={() => {
+              setShowTutorial(true);
+              setIsTutorialMinimized(false);
+            }}
           />
         )}
 

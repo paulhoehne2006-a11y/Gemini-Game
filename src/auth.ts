@@ -153,7 +153,7 @@ export async function register(
   });
   const user = normalizeUser(res);
   if (!user) throw new AuthRequestError('Die Registrierung hat kein Benutzerkonto zurückgegeben.', 502);
-  return user;
+  return { ...user, isNewAccount: true };
 }
 
 export async function updateOperatorUsername(

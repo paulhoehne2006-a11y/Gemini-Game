@@ -72,6 +72,18 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     // Wait for authentication and TopBar to appear
     await expect(page.locator('header')).toBeVisible({ timeout: 15000 });
 
+    // Verify comprehensive First-Time Registration Tutorial Modal opens automatically
+    const tutorialModal = page.getByTestId('onboarding-tutorial-modal');
+    await expect(tutorialModal).toBeVisible({ timeout: 5000 });
+    await expect(tutorialModal.getByText(/Willkommen in 61267 Neu-Anspach/i)).toBeVisible();
+
+    // Advance to next chapter and then jump to chapter 8 to claim starter package
+    await page.getByTestId('tutorial-next-btn').click();
+    await page.getByTestId('tutorial-chapter-tab-8').click();
+    await expect(page.getByTestId('tutorial-starter-reward-box')).toBeVisible();
+    await page.getByTestId('tutorial-claim-reward-btn').click();
+    await expect(tutorialModal).toBeHidden();
+
     // Verify TopBar elements
     await expect(page.getByText('NEU-ANSPACH').first()).toBeVisible();
     await expect(page.getByText('ROYALE').first()).toBeVisible();

@@ -71,6 +71,7 @@ export interface MobileHomeViewProps {
   onClaimDailyLoginBonus: () => void;
   onStartBattle?: (arenaId?: string) => void;
   onSimulatePatrol?: (arenaId: string) => void;
+  onOpenTutorial?: () => void;
 }
 
 export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
@@ -98,6 +99,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
   onClaimDailyLoginBonus,
   onStartBattle,
   onSimulatePatrol,
+  onOpenTutorial,
 }) => {
   const [resetTimer, setResetTimer] = useState<string>(() => getTimeUntilDailyReset().formatted);
 
@@ -163,7 +165,7 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
             <div className="truncate">
               <div className="flex items-center gap-1.5">
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  [{clanTag || '61267'}]
+                  {clanTag ? `[${clanTag}]` : 'CLANLOS'}
                 </span>
                 <h2 className="text-sm font-bold text-white truncate">
                   {playerName}
@@ -176,16 +178,31 @@ export const MobileHomeView: React.FC<MobileHomeViewProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              soundFx.playUiClick();
-              onOpenProfileModal();
-            }}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/10 text-xs font-mono text-slate-300 font-bold shrink-0 transition-transform active:scale-95 cursor-pointer"
-          >
-            Profil
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenTutorial && (
+              <button
+                type="button"
+                data-testid="mobile-open-tutorial-btn"
+                onClick={() => {
+                  soundFx.playUiClick();
+                  onOpenTutorial();
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-mono text-amber-300 font-bold transition-transform active:scale-95 cursor-pointer"
+              >
+                Tutorial
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playUiClick();
+                onOpenProfileModal();
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/10 text-xs font-mono text-slate-300 font-bold transition-transform active:scale-95 cursor-pointer"
+            >
+              Profil
+            </button>
+          </div>
         </div>
 
         {/* Reputation Progress Bar */}

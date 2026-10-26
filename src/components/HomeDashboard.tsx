@@ -96,6 +96,7 @@ export interface HomeDashboardProps {
   onClaimAchievement: (achievementId: string) => void;
   onClaimDailyLoginBonus: () => void;
   onUnlockMap?: (arenaId: string, costNAT: number) => void;
+  onOpenTutorial?: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
@@ -126,6 +127,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onClaimAchievement,
   onClaimDailyLoginBonus,
   onUnlockMap,
+  onOpenTutorial,
 }) => {
   // Live Reset Countdown for Daily Missions
   const [resetTimer, setResetTimer] = useState<string>(() => getTimeUntilDailyReset().formatted);
@@ -232,7 +234,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-400">
+          <div className="flex items-center gap-3 sm:gap-4 text-slate-400">
+            {onOpenTutorial && (
+              <button
+                type="button"
+                data-testid="open-tutorial-btn"
+                onClick={() => {
+                  soundFx.playUiClick();
+                  onOpenTutorial();
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Tutorial & Einweisung</span>
+              </button>
+            )}
             <div className="hidden md:flex items-center gap-1.5 text-slate-300">
               <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>{playerCity}</span>
