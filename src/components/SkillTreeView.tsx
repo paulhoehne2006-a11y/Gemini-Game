@@ -5,6 +5,7 @@ import {
   SkillNodeDef,
   computeSkillTreeBonuses,
   isSkillNodeUnlocked,
+  getOperatorXpForNextLevel,
 } from '../game/skillTree';
 import { SkillTreeLevels } from '../types';
 import {
@@ -16,13 +17,9 @@ import {
   Coins,
   Sparkles,
   RotateCcw,
-  ArrowUpRight,
   Award,
   X,
-  Activity,
   Cpu,
-  ChevronRight,
-  Crosshair,
   TrendingUp,
   Heart,
   Users,
@@ -33,9 +30,10 @@ interface SkillTreeViewProps {
   budget: number;
   skillPoints: number;
   operatorLevel: number;
+  operatorXp?: number;
   skillTree: SkillTreeLevels;
   onUpgradeSkillWithSP: (skillId: string, spCost: number) => void;
-  onUpgradeSkillWithNAT: (skillId: string, natCost: number) => void;
+  onUpgradeSkillWithNAT?: (skillId: string, natCost: number) => void;
   onResetSkillTree: () => void;
   onClose?: () => void;
 }
@@ -44,13 +42,15 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
   budget,
   skillPoints,
   operatorLevel,
+  operatorXp = 0,
   skillTree,
   onUpgradeSkillWithSP,
-  onUpgradeSkillWithNAT,
   onResetSkillTree,
   onClose,
 }) => {
   const bonuses = computeSkillTreeBonuses(skillTree);
+  const nextLevelXp = getOperatorXpForNextLevel(operatorLevel);
+  const xpPct = Math.min(100, Math.round((operatorXp / Math.max(1, nextLevelXp)) * 100));
 
   const getBranchIcon = (branchId: string) => {
     if (branchId === 'combat') return Flame;
@@ -140,7 +140,7 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
               </h1>
 
               <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-                Schalte dauerhafte passive Gefechtsvorteile frei! Erhalte Skill-Punkte (SP) durch Operator-Levelaufstiege und Match-Siege – oder trainiere deine Talente direkt mit Neu-Anspach-Talern (NAT).
+                Schalte dauerhafte passive Gefechtsvorteile frei! Erhalte Skill-Punkte (SP) durch Operator-Levelaufstiege, Wellen-Überleben und Match-Siege. Höhere Talent-Stufen setzen ein entsprechendes Operator-Level voraus.
               </p>
             </div>
 
@@ -150,12 +150,21 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                 <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]">
                   <Award className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="text-[10px] text-purple-300/80 uppercase tracking-wider font-bold">
-                    Operator Lv. {operatorLevel}
+                <div className="min-w-[140px]">
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-purple-300/80 uppercase tracking-wider font-bold">
+                    <span>Operator Lv. {operatorLevel}</span>
+                    <span className="text-purple-200 tabular-nums">
+                      {operatorXp} / {getOperatorXpForNextLevel(operatorLevel)} XP
+                    </span>
                   </div>
                   <div className="text-base sm:text-lg font-black text-purple-200 tabular-nums">
                     {skillPoints} <span className="text-xs text-purple-300/70 font-semibold">SP verfügbar</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-950 border border-white/10 overflow-hidden mt-1">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-fuchsia-400 transition-all duration-300"
+                      style={{ width: `${xpPct}%` }}
+                    />
                   </div>
                 </div>
               </div>
@@ -317,13 +326,15 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                   {branchNodes.map((node: SkillNodeDef, idx: number) => {
                     const currentLv = skillTree[node.id] || 0;
                     const isMax = currentLv >= node.maxLevel;
-                    const unlocked = isSkillNodeUnlocked(node, skillTree);
-                    const natCost = node.costNATPerLevel * (currentLv + 1);
+                    const unlocked = isSkillNodeUnlocked(node, skillTree, operatorLevel);
                     const canAffordSP = unlocked && !isMax && skillPoints >= node.costSP;
-                    const canAffordNAT = unlocked && !isMax && budget >= natCost;
                     const parentNode = node.requiresSkillId
                       ? SKILL_TREE_NODES.find((n) => n.id === node.requiresSkillId)
                       : null;
+                    const missingOpLevel = (node.requiredOperatorLevel || 1) > operatorLevel;
+                    const missingPrereqSkill =
+                      !!node.requiresSkillId &&
+                      (skillTree[node.requiresSkillId] || 0) < (node.requiresSkillLevel || 1);
 
                     return (
                       <React.Fragment key={node.id}>
@@ -429,13 +440,17 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                             ))}
                           </div>
 
-                          {/* Prerequisite Lock Info or Dual Upgrade Trigger Buttons */}
+                          {/* Prerequisite Lock Info or SP Upgrade Trigger Button */}
                           <div className="mt-4 pt-3.5 border-t border-white/10">
                             {!unlocked ? (
                               <div className="flex items-center gap-2 text-xs font-mono text-amber-400/90 bg-amber-500/10 border border-amber-500/25 p-3 rounded-xl">
                                 <Lock className="w-4 h-4 shrink-0 text-amber-400" />
                                 <span>
-                                  Benötigt „{parentNode?.name}“ auf Stufe {node.requiresSkillLevel || 1}
+                                  {missingOpLevel && missingPrereqSkill
+                                    ? `Benötigt Operator-Lv. ${node.requiredOperatorLevel} & „${parentNode?.name}“ Lv. ${node.requiresSkillLevel || 1}`
+                                    : missingOpLevel
+                                    ? `Benötigt Operator-Lv. ${node.requiredOperatorLevel}`
+                                    : `Benötigt „${parentNode?.name}“ auf Stufe ${node.requiresSkillLevel || 1}`}
                                 </span>
                               </div>
                             ) : isMax ? (
@@ -444,8 +459,7 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                                 <span>[STUFE MAXIMIERT · PERK AKTIV]</span>
                               </div>
                             ) : (
-                              <div className="grid grid-cols-2 gap-2.5">
-                                {/* SP Button */}
+                              <div className="space-y-2">
                                 <button
                                   type="button"
                                   disabled={!canAffordSP}
@@ -453,7 +467,7 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                                     soundFx.playLevelUp();
                                     onUpgradeSkillWithSP(node.id, node.costSP);
                                   }}
-                                  className={`py-2.5 px-3 rounded-xl font-mono font-black text-xs flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/60 ${
+                                  className={`w-full py-2.5 px-3 rounded-xl font-mono font-black text-xs flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/60 ${
                                     canAffordSP
                                       ? 'bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:-translate-y-0.5 active:scale-[0.98]'
                                       : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
@@ -462,24 +476,9 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
                                   <Award className="w-3.5 h-3.5 shrink-0" />
                                   <span>+{node.costSP} SP lernen</span>
                                 </button>
-
-                                {/* NAT Button */}
-                                <button
-                                  type="button"
-                                  disabled={!canAffordNAT}
-                                  onClick={() => {
-                                    soundFx.playLevelUp();
-                                    onUpgradeSkillWithNAT(node.id, natCost);
-                                  }}
-                                  className={`py-2.5 px-3 rounded-xl font-mono font-black text-xs flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 ${
-                                    canAffordNAT
-                                      ? 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.25)] hover:-translate-y-0.5 active:scale-[0.98]'
-                                      : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
-                                  }`}
-                                >
-                                  <ArrowUpRight className="w-3.5 h-3.5 shrink-0 stroke-[3]" />
-                                  <span>{natCost} NAT</span>
-                                </button>
+                                <div className="text-[10px] font-mono text-slate-400 text-center">
+                                  Erfordert Skill-Punkte (SP) durch Level-Ups & Einsätze
+                                </div>
                               </div>
                             )}
                           </div>

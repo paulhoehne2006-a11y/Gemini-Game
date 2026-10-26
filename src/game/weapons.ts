@@ -26,6 +26,7 @@ export interface RarityTierInfo {
   damageMultiplier: number;
   accuracyBonus: number;
   costNAT: number;
+  requiredWeaponLevel: number;
   colorHex: string;
   badgeClass: string;
   borderClass: string;
@@ -39,6 +40,7 @@ export const COLD_WAR_RARITIES: RarityTierInfo[] = [
     damageMultiplier: 1.0,
     accuracyBonus: 0,
     costNAT: 0,
+    requiredWeaponLevel: 1,
     colorHex: '#94A3B8',
     badgeClass: 'bg-slate-800 text-slate-300 border-slate-600',
     borderClass: 'border-slate-600',
@@ -49,7 +51,8 @@ export const COLD_WAR_RARITIES: RarityTierInfo[] = [
     codLabel: 'GRÜN (TIER II)',
     damageMultiplier: 1.25,
     accuracyBonus: 10,
-    costNAT: 120,
+    costNAT: 220,
+    requiredWeaponLevel: 3,
     colorHex: '#22C55E',
     badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50',
     borderClass: 'border-emerald-500',
@@ -60,7 +63,8 @@ export const COLD_WAR_RARITIES: RarityTierInfo[] = [
     codLabel: 'BLAU (TIER III)',
     damageMultiplier: 1.55,
     accuracyBonus: 20,
-    costNAT: 260,
+    costNAT: 480,
+    requiredWeaponLevel: 7,
     colorHex: '#3B82F6',
     badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/50',
     borderClass: 'border-blue-500',
@@ -71,7 +75,8 @@ export const COLD_WAR_RARITIES: RarityTierInfo[] = [
     codLabel: 'VIOLETT (TIER IV)',
     damageMultiplier: 1.95,
     accuracyBonus: 30,
-    costNAT: 450,
+    costNAT: 850,
+    requiredWeaponLevel: 13,
     colorHex: '#A855F7',
     badgeClass: 'bg-purple-500/20 text-purple-300 border-purple-500/50',
     borderClass: 'border-purple-500',
@@ -82,7 +87,8 @@ export const COLD_WAR_RARITIES: RarityTierInfo[] = [
     codLabel: 'GOLD (TIER V)',
     damageMultiplier: 2.5,
     accuracyBonus: 45,
-    costNAT: 750,
+    costNAT: 1450,
+    requiredWeaponLevel: 20,
     colorHex: '#F59E0B',
     badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-400',
     borderClass: 'border-amber-400',
@@ -96,6 +102,7 @@ export interface PackAPunchTierInfo {
   damageMultiplier: number;
   fireRateMultiplier: number;
   costNAT: number;
+  requiredWeaponLevel: number;
   badgeColor: string;
 }
 
@@ -107,6 +114,7 @@ export const PACK_A_PUNCH_TIERS: PackAPunchTierInfo[] = [
     damageMultiplier: 1.0,
     fireRateMultiplier: 1.0,
     costNAT: 0,
+    requiredWeaponLevel: 1,
     badgeColor: 'text-slate-400',
   },
   {
@@ -115,7 +123,8 @@ export const PACK_A_PUNCH_TIERS: PackAPunchTierInfo[] = [
     subtitle: '+45% Feuerkraft, +15% Feuerrate & Cyan-Plasma-Spur',
     damageMultiplier: 1.45,
     fireRateMultiplier: 1.15,
-    costNAT: 300,
+    costNAT: 550,
+    requiredWeaponLevel: 5,
     badgeColor: 'text-cyan-400',
   },
   {
@@ -124,7 +133,8 @@ export const PACK_A_PUNCH_TIERS: PackAPunchTierInfo[] = [
     subtitle: '+100% Feuerkraft, +30% Feuerrate & Violett-Äther-Spur',
     damageMultiplier: 2.0,
     fireRateMultiplier: 1.3,
-    costNAT: 650,
+    costNAT: 1150,
+    requiredWeaponLevel: 12,
     badgeColor: 'text-fuchsia-400',
   },
   {
@@ -133,7 +143,8 @@ export const PACK_A_PUNCH_TIERS: PackAPunchTierInfo[] = [
     subtitle: '+180% Feuerkraft, +45% Feuerrate & Ultra-Gold-Plasma',
     damageMultiplier: 2.8,
     fireRateMultiplier: 1.45,
-    costNAT: 1100,
+    costNAT: 2100,
+    requiredWeaponLevel: 22,
     badgeColor: 'text-amber-400',
   },
 ];
@@ -162,21 +173,21 @@ export const GUNSMITH_CATALOG: GunsmithCategoryDef[] = [
       {
         level: 1,
         name: 'Millstop-Reflexvisier',
-        costNAT: 80,
+        costNAT: 120,
         pros: ['+15% Präzisions-Zoom (ADS)', '-12% Vertikaler Rückstoß'],
         cons: [],
       },
       {
         level: 2,
         name: 'Axial Arms 3x Präzisionsoptik',
-        costNAT: 180,
+        costNAT: 270,
         pros: ['+30% Fernkampf-Zoom', '-25% Streuung im Dauerfeuer'],
         cons: ['-3% ZV-Reaktionszeit'],
       },
       {
         level: 3,
         name: 'Royal & Kross 4x Feldberg-Thermal',
-        costNAT: 320,
+        costNAT: 490,
         pros: ['+45% Scharfschützen-Zoom', '-40% Streuung & Rückstoß'],
         cons: ['-5% ZV-Reaktionszeit'],
       },
@@ -190,21 +201,21 @@ export const GUNSMITH_CATALOG: GunsmithCategoryDef[] = [
       {
         level: 1,
         name: '13.5" Verstärkter Schwerlauf',
-        costNAT: 100,
+        costNAT: 140,
         pros: ['+20% Waffenschaden', '+25% Geschossgeschwindigkeit'],
         cons: [],
       },
       {
         level: 2,
         name: '14.5" Ranger-Präzisionslauf',
-        costNAT: 220,
+        costNAT: 320,
         pros: ['+40% Waffenschaden', '+50% Geschossgeschwindigkeit', '+15% Effektive Reichweite'],
         cons: ['-4% Bewegungstempo beim Zielen'],
       },
       {
         level: 3,
         name: '13.7" Task-Force-Speziallauf',
-        costNAT: 380,
+        costNAT: 580,
         pros: ['+60% Waffenschaden', '+75% Geschossgeschwindigkeit', '+30% Effektive Reichweite'],
         cons: ['-8% Rückstoßkontrolle ohne Visier'],
       },
@@ -218,21 +229,21 @@ export const GUNSMITH_CATALOG: GunsmithCategoryDef[] = [
       {
         level: 1,
         name: 'Mündungsbremse 5.56 & Leichtbolzen',
-        costNAT: 90,
+        costNAT: 130,
         pros: ['+18% Feuerrate (Kadenz)', '-10% Mündungsfeuer'],
         cons: [],
       },
       {
         level: 2,
         name: 'SOCOM-Kompensator & Schnellverschluss',
-        costNAT: 200,
+        costNAT: 290,
         pros: ['+36% Feuerrate (Kadenz)', '+15% Horizontale Kontrolle'],
         cons: ['-4% Schussreichweite'],
       },
       {
         level: 3,
         name: 'Agency-Schalldämpfer & Titan-Bolzen',
-        costNAT: 350,
+        costNAT: 530,
         pros: ['+54% Feuerrate (Kadenz)', '100% Mündungsfeuer-Dämpfung'],
         cons: ['-5% Geschosstempo'],
       },
@@ -246,21 +257,21 @@ export const GUNSMITH_CATALOG: GunsmithCategoryDef[] = [
       {
         level: 1,
         name: '40-Schuss STANAG-Trommel',
-        costNAT: 95,
+        costNAT: 135,
         pros: ['+8% Kritische Trefferchance', '+20% Wirkungs-/Splitterradius'],
         cons: [],
       },
       {
         level: 2,
         name: 'Dschungel-Schnellwechsel-Magazin',
-        costNAT: 210,
+        costNAT: 300,
         pros: ['+16% Kritische Trefferchance', '+40% Wirkungsradius', '+1 Schrot-Pellet'],
         cons: ['-3% Nachladebewegung'],
       },
       {
         level: 3,
         name: 'Salven-50-Schuss Hochdruck-Trommel',
-        costNAT: 360,
+        costNAT: 550,
         pros: ['+24% Kritische Trefferchance', '+60% Wirkungsradius', '+3 Schrot-Pellets'],
         cons: ['-5% ZV-Tempo'],
       },
@@ -274,21 +285,21 @@ export const GUNSMITH_CATALOG: GunsmithCategoryDef[] = [
       {
         level: 1,
         name: 'Taktischer Kommandoschaft',
-        costNAT: 85,
+        costNAT: 115,
         pros: ['+6% Geh- & Zielbewegungstempo', '+10% ZV-Geschwindigkeit'],
         cons: [],
       },
       {
         level: 2,
         name: 'Luftlande-Elastikwickel',
-        costNAT: 190,
+        costNAT: 260,
         pros: ['+12% Geh- & Zielbewegungstempo', '+25% ZV-Geschwindigkeit'],
         cons: ['-4% Sprint-zu-Feuer-Verzögerung'],
       },
       {
         level: 3,
         name: 'Raider-Kampfschaft (SAS)',
-        costNAT: 310,
+        costNAT: 480,
         pros: ['+18% Geh- & Zielbewegungstempo', '+40% ZV-Geschwindigkeit'],
         cons: ['-5% Hüftfeuer-Präzision'],
       },
@@ -481,12 +492,12 @@ export const WEAPON_MASTERY_CAMOS: WeaponMasteryCamo[] = [
 
 export function getWeaponXpForNextLevel(level: number): number {
   const clamped = Math.max(1, Math.min(MAX_WEAPON_LEVEL, level));
-  return Math.round(140 + (clamped - 1) * 65);
+  return Math.round(180 + (clamped - 1) * 90 + Math.pow(clamped - 1, 1.35) * 18);
 }
 
 export function getWeaponLevelTrainCostNAT(level: number): number {
   const clamped = Math.max(1, Math.min(MAX_WEAPON_LEVEL, level));
-  return Math.round(55 + (clamped - 1) * 28);
+  return Math.round(140 + (clamped - 1) * 75 + Math.pow(clamped - 1, 1.5) * 22);
 }
 
 export function addWeaponXpToState(

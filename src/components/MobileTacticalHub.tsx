@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Target,
   Coins,
@@ -44,6 +44,52 @@ export interface MobileTacticalHubProps {
   onLaunch3DMobileCombat?: (arenaId?: string) => void;
 }
 
+const PATROL_STORAGE_KEY = 'na_patrol_state_v2';
+const MAX_PATROL_CHARGES = 3;
+const CHARGE_REGEN_MS = 180_000;
+const ARENA_COOLDOWN_MS = 30_000;
+
+interface PatrolPersistedState {
+  charges: number;
+  lastRegenAt: number;
+  arenaCooldowns: Record<string, number>;
+}
+
+function loadPatrolState(): PatrolPersistedState {
+  const now = Date.now();
+  try {
+    const raw = localStorage.getItem(PATROL_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PatrolPersistedState>;
+      let charges =
+        typeof parsed.charges === 'number'
+          ? Math.max(0, Math.min(MAX_PATROL_CHARGES, parsed.charges))
+          : MAX_PATROL_CHARGES;
+      let lastRegenAt = typeof parsed.lastRegenAt === 'number' ? parsed.lastRegenAt : now;
+      if (charges < MAX_PATROL_CHARGES) {
+        const elapsed = Math.max(0, now - lastRegenAt);
+        const gained = Math.floor(elapsed / CHARGE_REGEN_MS);
+        if (gained > 0) {
+          charges = Math.min(MAX_PATROL_CHARGES, charges + gained);
+          lastRegenAt = charges >= MAX_PATROL_CHARGES ? now : lastRegenAt + gained * CHARGE_REGEN_MS;
+        }
+      } else {
+        lastRegenAt = now;
+      }
+      const arenaCooldowns =
+        parsed.arenaCooldowns && typeof parsed.arenaCooldowns === 'object'
+          ? parsed.arenaCooldowns
+          : {};
+      return { charges, lastRegenAt, arenaCooldowns };
+    }
+  } catch {}
+  return {
+    charges: MAX_PATROL_CHARGES,
+    lastRegenAt: now,
+    arenaCooldowns: {},
+  };
+}
+
 export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
   budget,
   reputation,
@@ -67,9 +113,63 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
     rewardRep: number;
   } | null>(null);
   const [activePatrolArena, setActivePatrolArena] = useState<string | null>(null);
+  const [patrolState, setPatrolState] = useState<PatrolPersistedState>(() => loadPatrolState());
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentNow = Date.now();
+      setNowMs(currentNow);
+      setPatrolState((prev) => {
+        if (prev.charges >= MAX_PATROL_CHARGES) return prev;
+        const elapsed = Math.max(0, currentNow - prev.lastRegenAt);
+        if (elapsed < CHARGE_REGEN_MS) return prev;
+        const gained = Math.floor(elapsed / CHARGE_REGEN_MS);
+        const nextCharges = Math.min(MAX_PATROL_CHARGES, prev.charges + gained);
+        const next: PatrolPersistedState = {
+          ...prev,
+          charges: nextCharges,
+          lastRegenAt:
+            nextCharges >= MAX_PATROL_CHARGES
+              ? currentNow
+              : prev.lastRegenAt + gained * CHARGE_REGEN_MS,
+        };
+        try {
+          localStorage.setItem(PATROL_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const regenRemainingSec =
+    patrolState.charges < MAX_PATROL_CHARGES
+      ? Math.max(1, Math.ceil((CHARGE_REGEN_MS - (nowMs - patrolState.lastRegenAt)) / 1000))
+      : 0;
 
   const handleStartPatrol = (arenaId: string, arenaName: string) => {
     if (activePatrolArena) return;
+    const currentNow = Date.now();
+    const cooldownUntil = patrolState.arenaCooldowns[arenaId] || 0;
+    if (patrolState.charges <= 0 || cooldownUntil > currentNow) return;
+
+    setPatrolState((prev) => {
+      const wasFull = prev.charges >= MAX_PATROL_CHARGES;
+      const next: PatrolPersistedState = {
+        charges: Math.max(0, prev.charges - 1),
+        lastRegenAt: wasFull ? currentNow : prev.lastRegenAt,
+        arenaCooldowns: {
+          ...prev.arenaCooldowns,
+          [arenaId]: currentNow + ARENA_COOLDOWN_MS,
+        },
+      };
+      try {
+        localStorage.setItem(PATROL_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
     setActivePatrolArena(arenaId);
     soundFx.playShoot();
 
@@ -78,8 +178,8 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
       soundFx.playCoin();
       onSimulatePatrol(arenaId);
 
-      const bonusNAT = Math.floor(Math.random() * 80) + 90;
-      const bonusRep = Math.floor(Math.random() * 20) + 15;
+      const bonusNAT = Math.floor(Math.random() * 16) + 20;
+      const bonusRep = Math.floor(Math.random() * 8) + 8;
 
       setPatrolFeedback({
         arenaName,
@@ -259,16 +359,22 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
 
       {/* 4. Einsatzgebiete & Streifen (Interactive Arena Patrol Dispatch) */}
       <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 shadow-lg space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Radio className="w-4 h-4 text-emerald-400" />
             <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
               Einsatzgebiete & Streifen
             </h2>
           </div>
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 font-bold">
-            {unlockedMaps.length}/7 Aktiv
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 font-bold tabular-nums">
+              Streifen-Funkbefehle: {patrolState.charges}/{MAX_PATROL_CHARGES} bereit
+              {patrolState.charges < MAX_PATROL_CHARGES ? ` (+1 in ${regenRemainingSec}s)` : ''}
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 font-bold">
+              {unlockedMaps.length}/7 Aktiv
+            </span>
+          </div>
         </div>
 
         <p className="text-[11px] text-slate-300 leading-snug">
@@ -279,6 +385,14 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
           {Object.values(ARENAS).map((arena) => {
             const isUnlocked = checkArenaUnlocked(arena.id, totalWins, unlockedMaps);
             const isPatrolling = activePatrolArena === arena.id;
+            const arenaCooldownRemaining = Math.max(
+              0,
+              Math.ceil(((patrolState.arenaCooldowns[arena.id] || 0) - nowMs) / 1000)
+            );
+            const isButtonDisabled =
+              Boolean(activePatrolArena) ||
+              patrolState.charges <= 0 ||
+              arenaCooldownRemaining > 0;
 
             return (
               <div
@@ -313,16 +427,26 @@ export const MobileTacticalHub: React.FC<MobileTacticalHubProps> = ({
                   {isUnlocked ? (
                     <button
                       type="button"
-                      disabled={Boolean(activePatrolArena)}
+                      disabled={isButtonDisabled}
                       onClick={() => handleStartPatrol(arena.id, arena.name)}
-                      className={`px-3 py-2 min-h-[40px] min-w-[100px] rounded-xl text-xs font-mono font-bold transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                      className={`px-3 py-2 min-h-[40px] min-w-[100px] rounded-xl text-xs font-mono font-bold transition-all duration-150 flex items-center justify-center gap-1.5 ${
                         isPatrolling
-                          ? 'bg-amber-500 text-slate-950 font-black animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)]'
-                          : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 shadow-sm'
+                          ? 'bg-amber-500 text-slate-950 font-black animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)] cursor-wait'
+                          : isButtonDisabled
+                          ? 'bg-slate-900 text-slate-500 border border-white/10 opacity-60 cursor-not-allowed'
+                          : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 shadow-sm cursor-pointer active:scale-95'
                       }`}
                     >
                       <Play className="w-3 h-3 fill-current shrink-0" />
-                      <span>{isPatrolling ? 'Im Einsatz...' : 'Streife'}</span>
+                      <span>
+                        {isPatrolling
+                          ? 'Im Einsatz...'
+                          : arenaCooldownRemaining > 0
+                          ? `Streife (${arenaCooldownRemaining}s)`
+                          : patrolState.charges <= 0
+                          ? 'Funk-Pause'
+                          : 'Streife'}
+                      </span>
                     </button>
                   ) : (
                     <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-mono text-slate-500">

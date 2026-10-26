@@ -158,8 +158,8 @@ const WAR_MODES: {
     recLevel: 3,
     description: 'Stürme die gepanzerten Wehrheimer Stellungen im vorderen Sektor.',
     fameRange: '+150–250 Kriegsruhm',
-    rewardNatText: '+350 NAT',
-    rewardRepText: '+80 Ruf',
+    rewardNatText: '+110 NAT',
+    rewardRepText: '+55 Ruf',
     accentBorder: 'border-cyan-500/35 hover:border-cyan-400/60',
     accentBg: 'from-slate-900/90 via-slate-900/80 to-cyan-950/30',
     badgeStyle: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40',
@@ -171,9 +171,9 @@ const WAR_MODES: {
     recLevel: 6,
     description:
       'Eskortiere den Bembel-Versorgungszug durch schweres Artilleriefeuer und Elite-Scharfschützen.',
-    fameRange: '+300–450 Kriegsruhm',
-    rewardNatText: '+700 NAT',
-    rewardRepText: '+160 Ruf',
+    fameRange: '+220–350 Kriegsruhm',
+    rewardNatText: '+160 NAT',
+    rewardRepText: '+85 Ruf',
     accentBorder: 'border-amber-500/40 hover:border-amber-400/70',
     accentBg: 'from-slate-900/90 via-slate-900/80 to-amber-950/35',
     badgeStyle: 'bg-amber-500/20 text-amber-300 border-amber-400/40',
@@ -185,10 +185,10 @@ const WAR_MODES: {
     recLevel: 10,
     description:
       'Tritt im 3-Phasen-Bosskampf gegen das schwer gepanzerte Kommandofahrzeug auf dem Feldberg an.',
-    fameRange: '+550–800 Kriegsruhm',
-    rewardNatText: '+1.200 NAT',
-    rewardRepText: '+300 Ruf',
-    rewardSpText: '+1 Skillpunkt',
+    fameRange: '+320–500 Kriegsruhm',
+    rewardNatText: '+240 NAT',
+    rewardRepText: '+120 Ruf',
+    rewardSpText: '+1 SP (1x/Tag)',
     accentBorder: 'border-rose-500/45 hover:border-rose-400/75',
     accentBg: 'from-slate-900/90 via-slate-900/80 to-rose-950/40',
     badgeStyle: 'bg-rose-500/20 text-rose-300 border-rose-400/40',
@@ -2020,14 +2020,26 @@ export const ClanHub: React.FC<ClanHubProps> = ({
                             disabled={busy}
                             onClick={() =>
                               run(async () => {
-                                await contributeClanQuest(q.id);
-                                showToast(`Taktischer Beitrag zu "${q.title}" geleistet!`);
+                                try {
+                                  const res = await contributeClanQuest(q.id);
+                                  if (res.costNAT && res.costNAT > 0) {
+                                    onSpendNAT?.(res.costNAT);
+                                  }
+                                  showToast(`Taktischer Beitrag zu "${q.title}" geleistet!`);
+                                } catch (err) {
+                                  const msg =
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Taktischer Beitrag fehlgeschlagen.';
+                                  showToast(msg);
+                                  throw err;
+                                }
                               })
                             }
                             className="px-4 py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-mono font-bold text-xs uppercase tracking-wider active:scale-[0.98] transition-all cursor-pointer flex items-center gap-2"
                           >
                             <Zap className="w-4 h-4 text-cyan-400" />
-                            <span>Taktischen Einsatz-Beitrag leisten</span>
+                            <span>Taktischer Einsatz-Beitrag (80 NAT · Max. 2x/Tag)</span>
                           </button>
                         )}
                       </div>

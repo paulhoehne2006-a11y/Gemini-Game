@@ -37,7 +37,7 @@ import {
   saveCareerStats,
 } from './game/progression';
 import { AgentRole } from './game/agents/microAgents';
-import { INITIAL_FACILITIES, Facility } from './game/tycoon';
+import { INITIAL_FACILITIES, Facility, getPassiveShiftVaultCap } from './game/tycoon';
 import {
   MultiplayerRoom,
   updateMultiplayerState,
@@ -81,6 +81,7 @@ import {
   SKILL_TREE_NODES,
   computeSkillTreeBonuses,
   getTotalSpentSkillPoints,
+  getOperatorXpForNextLevel,
 } from './game/skillTree';
 import {
   AllWeaponsUpgrades,
@@ -218,7 +219,7 @@ export default function App() {
   // Economy & Progression State
   const [budget, setBudget] = useState<number>(() => {
     const saved = localStorage.getItem('na_budget');
-    return saved ? parseInt(saved, 10) : 450;
+    return saved ? parseInt(saved, 10) : 250;
   });
   const [facilities, setFacilities] = useState<Record<string, Facility>>(() => {
     const saved = localStorage.getItem('na_facilities');
@@ -264,12 +265,60 @@ export default function App() {
   });
   const [skillPoints, setSkillPoints] = useState<number>(() => {
     const saved = localStorage.getItem('na_skill_points');
-    return saved ? parseInt(saved, 10) : 3;
+    return saved ? parseInt(saved, 10) : 1;
   });
   const [operatorLevel, setOperatorLevel] = useState<number>(() => {
     const saved = localStorage.getItem('na_operator_level');
     return saved ? parseInt(saved, 10) : 1;
   });
+  const [operatorXp, setOperatorXp] = useState<number>(() => {
+    const saved = localStorage.getItem('na_operator_xp');
+    return saved ? Math.max(0, parseInt(saved, 10)) : 0;
+  });
+  const [passiveShiftEarned, setPassiveShiftEarned] = useState<number>(() => {
+    const saved = localStorage.getItem('na_passive_shift_earned');
+    return saved ? Math.max(0, parseInt(saved, 10)) : 0;
+  });
+  const [spSpentCount, setSpSpentCount] = useState<number>(() => {
+    const saved = localStorage.getItem('na_sp_spent');
+    return saved ? Math.max(0, parseInt(saved, 10)) : 0;
+  });
+
+  const operatorLevelRef = useRef<number>(operatorLevel);
+  operatorLevelRef.current = operatorLevel;
+  const operatorXpRef = useRef<number>(operatorXp);
+  operatorXpRef.current = operatorXp;
+
+  const gainOperatorXp = (amount: number) => {
+    if (amount <= 0) return;
+    let xp = operatorXpRef.current + Math.round(amount);
+    let lv = operatorLevelRef.current;
+    let gainedSpTotal = 0;
+
+    while (lv < 250 && xp >= getOperatorXpForNextLevel(lv)) {
+      xp -= getOperatorXpForNextLevel(lv);
+      lv += 1;
+      gainedSpTotal += lv % 5 === 0 ? 2 : 1;
+    }
+
+    operatorXpRef.current = xp;
+    setOperatorXp(xp);
+    localStorage.setItem('na_operator_xp', xp.toString());
+
+    if (lv !== operatorLevelRef.current) {
+      operatorLevelRef.current = lv;
+      setOperatorLevel(lv);
+      localStorage.setItem('na_operator_level', lv.toString());
+      soundFx.playLevelUp();
+    }
+    if (gainedSpTotal > 0) {
+      setSkillPoints((prev) => {
+        const next = prev + gainedSpTotal;
+        localStorage.setItem('na_skill_points', next.toString());
+        return next;
+      });
+    }
+  };
 
   // CoD: Black Ops Cold War Weapon Upgrades State (5-Slot Gunsmith, Rarity Tiers I-V, Pack-a-Punch I-III, Weapon Level 1-30 & Mastery Camos)
   const [weaponUpgrades, setWeaponUpgrades] = useState<AllWeaponsUpgrades>(() => {
@@ -502,19 +551,28 @@ export default function App() {
     0
   );
 
-  // Passive Income Timer
+  // Passive Income Timer (ticks every 3000ms and enforces Tycoon Shift Vault Cap)
   useEffect(() => {
     const interval = setInterval(() => {
       if (totalIncomePerSec > 0) {
-        setBudget((prev) => {
-          const next = prev + totalIncomePerSec;
-          localStorage.setItem('na_budget', next.toString());
-          return next;
+        setPassiveShiftEarned((prevShift) => {
+          const vaultCap = getPassiveShiftVaultCap(facilities);
+          const roomLeft = Math.max(0, vaultCap - prevShift);
+          const payout = Math.min(totalIncomePerSec, roomLeft);
+          if (payout <= 0) return prevShift;
+          setBudget((prevBudget) => {
+            const nextBudget = prevBudget + payout;
+            localStorage.setItem('na_budget', nextBudget.toString());
+            return nextBudget;
+          });
+          const nextShift = prevShift + payout;
+          localStorage.setItem('na_passive_shift_earned', nextShift.toString());
+          return nextShift;
         });
       }
-    }, 1000);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [totalIncomePerSec]);
+  }, [totalIncomePerSec, facilities]);
 
   // Persist state in localStorage
   useEffect(() => {
@@ -556,6 +614,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('na_operator_level', operatorLevel.toString());
   }, [operatorLevel]);
+
+  useEffect(() => {
+    localStorage.setItem('na_operator_xp', operatorXp.toString());
+  }, [operatorXp]);
+
+  useEffect(() => {
+    localStorage.setItem('na_passive_shift_earned', passiveShiftEarned.toString());
+  }, [passiveShiftEarned]);
+
+  useEffect(() => {
+    localStorage.setItem('na_sp_spent', spSpentCount.toString());
+  }, [spSpentCount]);
 
   useEffect(() => {
     saveCareerStats(careerStats);
@@ -921,6 +991,11 @@ export default function App() {
     if (skillPoints < costSP) return;
 
     setSkillPoints((prev) => prev - costSP);
+    setSpSpentCount((prev) => {
+      const next = prev + costSP;
+      localStorage.setItem('na_sp_spent', next.toString());
+      return next;
+    });
     setSkillTree((prev) => ({
       ...prev,
       [nodeId]: (prev[nodeId] || 0) + 1,
@@ -944,8 +1019,14 @@ export default function App() {
   const handleResetSkillTree = () => {
     const spent = getTotalSpentSkillPoints(skillTree);
     if (spent <= 0) return;
+    const trackedSpSpent = Math.max(0, spSpentCount);
+    const refund = Math.min(spent, trackedSpSpent);
     setSkillTree(INITIAL_SKILL_TREE);
-    setSkillPoints((prev) => prev + spent);
+    setSpSpentCount(0);
+    localStorage.setItem('na_sp_spent', '0');
+    if (refund > 0) {
+      setSkillPoints((prev) => prev + refund);
+    }
   };
 
   // Map Level Upgrade Handler (Lv. 1-10 -> stronger bots & higher NAT/XP rewards)
@@ -1126,9 +1207,9 @@ export default function App() {
     if (res) {
       soundFx.playRewardClaim();
       setDailyMissionsState(res.nextState);
-      setBudget((prev) => prev + res.rewardedNAT);
+      setBudget((prev) => prev + Math.round(res.rewardedNAT * 0.75));
       setReputation((prev) => prev + res.rewardedReputation);
-      setSkillPoints((prev) => prev + 1);
+      gainOperatorXp(65);
       if (completedMissionToast?.id === missionId) {
         setCompletedMissionToast(null);
       }
@@ -1140,9 +1221,10 @@ export default function App() {
     if (res) {
       soundFx.playRewardClaim();
       setDailyMissionsState(res.nextState);
-      setBudget((prev) => prev + res.rewardedNAT);
+      setBudget((prev) => prev + 350);
       setReputation((prev) => prev + res.rewardedReputation);
-      setSkillPoints((prev) => prev + 2);
+      setSkillPoints((prev) => prev + 1);
+      gainOperatorXp(160);
     }
   };
 
@@ -1151,20 +1233,21 @@ export default function App() {
     const botScaling = getMapBotScaling(arenaId, mapLv);
     const skillBonuses = computeSkillTreeBonuses(skillTree);
 
-    // Generate 2-4 tactical enemy eliminations in the target arena
-    const patrolKills = Math.floor(Math.random() * 3) + 2;
+    // Generate 1-2 tactical enemy eliminations in the target arena
+    const patrolKills = Math.floor(Math.random() * 2) + 1;
     const earnedNAT = Math.round(
-      (45 + patrolKills * 12) * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
+      (16 + patrolKills * 7) * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
     );
     const earnedScore = patrolKills * 125;
     const earnedWeaponXp = Math.round(
-      patrolKills * 45 * botScaling.xpRewardMult * skillBonuses.weaponXpMultiplier
+      patrolKills * 18 * botScaling.xpRewardMult * skillBonuses.weaponXpMultiplier
     );
 
     setBudget((prev) => prev + earnedNAT);
     setLastMatchKills((prev) => prev + patrolKills);
     setLastMatchScore((prev) => prev + earnedScore);
     handleWeaponXpGain(selectedGunsmithWeapon, earnedWeaponXp);
+    gainOperatorXp(25);
 
     for (let i = 0; i < patrolKills; i++) {
       triggerMissionEvent({
@@ -1207,9 +1290,9 @@ export default function App() {
     const botScaling = getMapBotScaling(currentArena, mapLv);
     const skillBonuses = computeSkillTreeBonuses(skillTree);
 
-    const waveBonus = stats.wave * 6;
-    const scoreBonus = Math.round(stats.score * 0.06);
-    const winBonus = victory ? 45 : 12;
+    const waveBonus = stats.wave * 4;
+    const scoreBonus = Math.round(stats.score * 0.03);
+    const winBonus = victory ? 32 : 10;
     const rawReward = Math.max(8, waveBonus + scoreBonus + winBonus);
     const reward = Math.round(
       rawReward * botScaling.natRewardMult * skillBonuses.talerBonusMultiplier
@@ -1217,23 +1300,22 @@ export default function App() {
     setLastMatchReward(reward);
     setBudget((prev) => prev + reward);
     setReputation((prev) => prev + (victory ? 65 : 25));
+    setPassiveShiftEarned(0);
+    localStorage.setItem('na_passive_shift_earned', '0');
 
     let nextWins = totalWins;
-    let nextUnlocked = [...unlockedMaps];
+    const nextUnlocked = [...unlockedMaps];
 
     if (victory) {
       nextWins = totalWins + 1;
       setTotalWins(nextWins);
-      setSkillPoints((prev) => prev + 1);
-      setOperatorLevel((prev) => prev + 1);
-
-      Object.values(ARENA_UNLOCK_RULES).forEach((rule) => {
-        if (nextWins >= rule.requiredWins && !nextUnlocked.includes(rule.id)) {
-          nextUnlocked.push(rule.id);
-        }
-      });
-      setUnlockedMaps(nextUnlocked);
     }
+
+    gainOperatorXp(
+      victory
+        ? 125 + stats.wave * 18 + stats.kills * 3
+        : 40 + stats.wave * 8 + stats.kills * 1.5
+    );
 
     const clampedScore = Math.min(24900, Math.max(0, Math.round(stats.score)));
     const clampedKills = Math.min(295, Math.max(0, Math.round(stats.kills)));
@@ -1282,9 +1364,10 @@ export default function App() {
   const handleCompleteTutorialAndClaimReward = () => {
     if (!tutorialRewardClaimed) {
       soundFx.playRewardClaim();
-      setBudget((prev) => prev + 500);
+      setBudget((prev) => prev + 250);
       setReputation((prev) => prev + 150);
       setSkillPoints((prev) => prev + 1);
+      gainOperatorXp(80);
       setTutorialRewardClaimed(true);
       try {
         localStorage.setItem('na_tutorial_reward_claimed', 'true');
@@ -1580,6 +1663,7 @@ export default function App() {
             skillPoints={skillPoints}
             skillTree={skillTree}
             operatorLevel={operatorLevel}
+            operatorXp={operatorXp}
             onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
             onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
             onResetSkillTree={handleResetSkillTree}
@@ -1657,6 +1741,8 @@ export default function App() {
               unlockedMaps={effectiveUnlockedMaps}
               onUnlockMap={handleUnlockMap}
               totalIncomePerSec={totalIncomePerSec}
+              passiveShiftEarned={passiveShiftEarned}
+              passiveShiftCap={getPassiveShiftVaultCap(facilities)}
               commanderCrisisEvent={crisisEvent}
               onAcceptCrisisEvent={handleAcceptCrisis}
               onStartArena={(arenaId) => {
@@ -1865,6 +1951,7 @@ export default function App() {
             skillPoints={skillPoints}
             skillTree={skillTree}
             operatorLevel={operatorLevel}
+            operatorXp={operatorXp}
             onUpgradeSkillWithSP={handleUpgradeSkillWithSP}
             onUpgradeSkillWithNAT={handleUpgradeSkillWithNAT}
             onResetSkillTree={handleResetSkillTree}
@@ -1881,6 +1968,8 @@ export default function App() {
             unlockedMaps={effectiveUnlockedMaps}
             onUnlockMap={handleUnlockMap}
             totalIncomePerSec={totalIncomePerSec}
+            passiveShiftEarned={passiveShiftEarned}
+            passiveShiftCap={getPassiveShiftVaultCap(facilities)}
             commanderCrisisEvent={crisisEvent}
             onAcceptCrisisEvent={handleAcceptCrisis}
             onStartArena={(arenaId) => {

@@ -334,11 +334,11 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
       description: 'Eliminiert gemeinsam 750 feindliche Einheiten in beliebigen Einsätzen oder liefert Gefechtsdaten.',
       difficulty: 'hard',
       category: 'kills',
-      progress: 120,
+      progress: 40,
       target: 750,
-      rewardNAT: 1800,
-      rewardReputation: 450,
-      rewardSkillPoints: 2,
+      rewardNAT: 600,
+      rewardReputation: 220,
+      rewardSkillPoints: 0,
       rewardWarFame: 350,
       completed: false,
       claimedAccountIds: [],
@@ -349,11 +349,11 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
       description: 'Übersteht als Clan insgesamt 150 Einsatzwellen im Hochtaunus.',
       difficulty: 'hard',
       category: 'waves',
-      progress: 25,
+      progress: 10,
       target: 150,
-      rewardNAT: 2200,
-      rewardReputation: 600,
-      rewardSkillPoints: 2,
+      rewardNAT: 850,
+      rewardReputation: 320,
+      rewardSkillPoints: 0,
       rewardWarFame: 450,
       completed: false,
       claimedAccountIds: [],
@@ -364,11 +364,11 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
       description: 'Bezwingt 25 schwer gepanzerte Kommandanten oder Clan-Krieg-Bosse.',
       difficulty: 'extreme',
       category: 'bosses',
-      progress: 4,
+      progress: 2,
       target: 25,
-      rewardNAT: 3500,
-      rewardReputation: 900,
-      rewardSkillPoints: 3,
+      rewardNAT: 1200,
+      rewardReputation: 480,
+      rewardSkillPoints: 1,
       rewardWarFame: 700,
       completed: false,
       claimedAccountIds: [],
@@ -379,11 +379,11 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
       description: 'Investiert gemeinsam 15.000 NAT in die befestigte Clan-Garnison & Geschütztürme.',
       difficulty: 'extreme',
       category: 'funding',
-      progress: 2500,
+      progress: 1000,
       target: 15000,
-      rewardNAT: 4000,
-      rewardReputation: 1200,
-      rewardSkillPoints: 4,
+      rewardNAT: 1600,
+      rewardReputation: 650,
+      rewardSkillPoints: 1,
       rewardWarFame: 850,
       completed: false,
       claimedAccountIds: [],
@@ -394,11 +394,11 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
       description: 'Erringt 40 vollständige Einsatzsiege oder siegreiche Clan-Krieg-Offensiven.',
       difficulty: 'nightmare',
       category: 'wins',
-      progress: 6,
+      progress: 3,
       target: 40,
-      rewardNAT: 6000,
-      rewardReputation: 2000,
-      rewardSkillPoints: 5,
+      rewardNAT: 2200,
+      rewardReputation: 950,
+      rewardSkillPoints: 1,
       rewardWarFame: 1200,
       completed: false,
       claimedAccountIds: [],
@@ -409,6 +409,7 @@ function createDefaultClanQuests(): ClanQuestRecord[] {
 const clans = new Map<string, ClanRecord>();
 const clanInvitations = new Map<string, ClanInvitationRecord>();
 const clanMessages = new Map<string, ClanMessageRecord[]>();
+const clanQuestDailyContribs = new Map<string, number>();
 
 function seedDefaultClans() {
   const defaults: Array<Omit<ClanRecord, 'memberRoles' | 'memberWarFame' | 'memberQuestContrib' | 'warDecksUsedByDate' | 'quests' | 'joinRequests'>> = [
@@ -2184,9 +2185,9 @@ app.post('/api/clans/war/battle', requireAccount, requireCsrf, async (req, res) 
 
     const baseFame = mode === 'boss' ? 320 : mode === 'siege' ? 220 : 150;
     const fameEarned = victory ? baseFame + Math.min(180, operatorLevel * 12) : Math.floor(baseFame * 0.45);
-    const rewardNAT = victory ? (mode === 'boss' ? 650 : mode === 'siege' ? 420 : 280) : 110;
-    const rewardReputation = victory ? (mode === 'boss' ? 240 : mode === 'siege' ? 160 : 100) : 40;
-    const rewardSkillPoints = victory && mode === 'boss' ? 1 : 0;
+    const rewardNAT = victory ? (mode === 'boss' ? 240 : mode === 'siege' ? 160 : 110) : 45;
+    const rewardReputation = victory ? (mode === 'boss' ? 120 : mode === 'siege' ? 85 : 55) : 20;
+    const rewardSkillPoints = victory && mode === 'boss' && usedToday === 0 ? 1 : 0;
 
     record.warFame += fameEarned;
     record.warTrophies += victory ? (mode === 'boss' ? 35 : mode === 'siege' ? 22 : 14) : 4;
@@ -2252,28 +2253,56 @@ app.post('/api/clans/quests/:questId/contribute', requireAccount, requireCsrf, a
     if (!quest) return res.status(404).json({ error: 'Clan-Quest nicht gefunden.' });
     if (quest.completed) return res.status(400).json({ error: 'Diese Clan-Quest ist bereits abgeschlossen.' });
 
+    const isFunding = quest.category === 'funding';
+    const todayKey = getTodayKey(account.id);
+    const contribKey = `${account.id}:${todayKey}:${quest.id}`;
+
+    if (!isFunding) {
+      const count = clanQuestDailyContribs.get(contribKey) || 0;
+      if (count >= 2) {
+        return res.status(429).json({
+          error: 'Tägliches Limit (2/2) für manuelle Taktik-Beiträge bei dieser Quest erreicht! Spiele Arena-Matches oder Clan-Kriege für weiteren Fortschritt.',
+        });
+      }
+    }
+
     const defaultStep =
-      quest.category === 'funding'
+      isFunding
         ? 500
         : quest.category === 'kills'
-        ? 50
+        ? 25
         : quest.category === 'waves'
-        ? 10
+        ? 4
         : quest.category === 'wins'
-        ? 3
-        : 2;
+        ? 1
+        : 1;
 
-    const amount = Math.max(1, Math.min(quest.target, Math.floor(Number(req.body?.amount) || defaultStep)));
-    const costNAT = quest.category === 'funding' ? amount : 0;
+    const rawAmount = Math.floor(Number(req.body?.amount) || defaultStep);
+    const amount = isFunding
+      ? Math.max(1, Math.min(quest.target, rawAmount))
+      : Math.max(1, Math.min(quest.target, Math.min(50, rawAmount)));
 
     const savedProgress = await storage.getGameProgress(account.id);
-    if (costNAT > 0 && savedProgress) {
-      if (savedProgress.budget < costNAT) {
-        return res.status(400).json({ error: `Nicht genügend NAT für die Kriegsanleihe (${costNAT} NAT benötigt).` });
+    let costNAT = 0;
+
+    if (isFunding) {
+      costNAT = amount;
+      if (savedProgress) {
+        if (savedProgress.budget < costNAT) {
+          return res.status(400).json({ error: `Nicht genügend NAT für die Kriegsanleihe (${costNAT} NAT benötigt).` });
+        }
+        savedProgress.budget -= costNAT;
+        savedProgress.updatedAt = Date.now();
+        await storage.saveGameProgress(savedProgress);
       }
-      savedProgress.budget -= costNAT;
-      savedProgress.updatedAt = Date.now();
-      await storage.saveGameProgress(savedProgress);
+    } else {
+      if (savedProgress && savedProgress.budget >= 80) {
+        costNAT = 80;
+        savedProgress.budget -= costNAT;
+        savedProgress.updatedAt = Date.now();
+        await storage.saveGameProgress(savedProgress);
+      }
+      clanQuestDailyContribs.set(contribKey, (clanQuestDailyContribs.get(contribKey) || 0) + 1);
     }
 
     quest.progress = Math.min(quest.target, quest.progress + amount);

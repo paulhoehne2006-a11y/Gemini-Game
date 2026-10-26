@@ -73,12 +73,8 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
   const nextPap = PACK_A_PUNCH_TIERS.find((p) => p.level === currentState.papLevel + 1);
 
   const train1Cost = getWeaponLevelTrainCostNAT(stats.weaponLevel);
-  const remainingLevels = Math.max(0, MAX_WEAPON_LEVEL - stats.weaponLevel);
-  const bulkCount = Math.min(5, remainingLevels);
-  const trainBulkCost = Array.from({ length: bulkCount }).reduce<number>(
-    (acc, _, idx) => acc + getWeaponLevelTrainCostNAT(stats.weaponLevel + idx),
-    0
-  );
+  const meetsRarityLevel = nextRarity ? stats.weaponLevel >= nextRarity.requiredWeaponLevel : true;
+  const meetsPapLevel = nextPap ? stats.weaponLevel >= nextPap.requiredWeaponLevel : true;
 
   const handleSelectWeaponTab = (id: string) => {
     setSelectedWeaponId(id);
@@ -310,7 +306,7 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
               </div>
             </div>
 
-            {/* Direct NAT Weapon Level Up Training Buttons with Tactile Depression */}
+            {/* Direct NAT Weapon Level Up Training Button with Tactile Depression */}
             {onTrainWeaponLevel && stats.weaponLevel < MAX_WEAPON_LEVEL && (
               <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <button
@@ -327,27 +323,8 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
                   }`}
                 >
                   <ArrowUpRight className="w-4 h-4 stroke-[3]" />
-                  <span>+1 Level ({train1Cost} NAT)</span>
+                  <span>+1 Level Drill ({train1Cost} NAT)</span>
                 </button>
-
-                {bulkCount > 1 && (
-                  <button
-                    type="button"
-                    disabled={budget < trainBulkCost}
-                    onClick={() => {
-                      soundFx.playLevelUp();
-                      onTrainWeaponLevel(selectedWeaponId, bulkCount, trainBulkCost);
-                    }}
-                    className={`px-4 sm:px-5 py-3 rounded-xl font-mono font-black text-xs flex items-center gap-2 transition-all duration-150 cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/60 ${
-                      budget >= trainBulkCost
-                        ? 'bg-gradient-to-r from-purple-600/30 via-purple-600/25 to-fuchsia-600/30 hover:from-purple-600/45 hover:to-fuchsia-600/45 text-purple-200 border-purple-400/60 shadow-[0_0_20px_rgba(168,85,247,0.3)] hover:-translate-y-0.5 active:scale-[0.98]'
-                        : 'bg-slate-950/60 text-slate-600 border-white/5 cursor-not-allowed'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4 text-purple-300" />
-                    <span>+{bulkCount} Level Boost ({trainBulkCost} NAT)</span>
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -645,7 +622,7 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
                         <span className="font-bold">{r.codLabel}</span>
                       </div>
                       <span className="tabular-nums font-semibold">
-                        {Math.round(r.damageMultiplier * 100)}% Schaden
+                        {Math.round(r.damageMultiplier * 100)}% Schaden · ab Lv. {r.requiredWeaponLevel}
                       </span>
                     </div>
                   );
@@ -654,24 +631,34 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
             </div>
 
             {nextRarity ? (
-              <button
-                type="button"
-                disabled={budget < nextRarity.costNAT}
-                onClick={() => {
-                  soundFx.playLevelUp();
-                  onUpgradeRarity(selectedWeaponId, nextRarity.tier, nextRarity.costNAT);
-                }}
-                className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 ${
-                  budget >= nextRarity.costNAT
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:scale-[0.98]'
-                    : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
-                }`}
-              >
-                <ArrowUpRight className="w-4 h-4 stroke-[3]" />
-                <span>
-                  Auf {nextRarity.name} aufwerten ({nextRarity.costNAT} NAT)
-                </span>
-              </button>
+              <div className="space-y-2">
+                {!meetsRarityLevel && (
+                  <div className="flex items-center gap-2 text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/25 px-3 py-2 rounded-xl">
+                    <Lock className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Benötigt Waffen-Lv. {nextRarity.requiredWeaponLevel} (aktuell Lv. {stats.weaponLevel})
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={budget < nextRarity.costNAT || !meetsRarityLevel}
+                  onClick={() => {
+                    soundFx.playLevelUp();
+                    onUpgradeRarity(selectedWeaponId, nextRarity.tier, nextRarity.costNAT);
+                  }}
+                  className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 ${
+                    budget >= nextRarity.costNAT && meetsRarityLevel
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:-translate-y-0.5 active:scale-[0.98]'
+                      : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
+                  }`}
+                >
+                  <ArrowUpRight className="w-4 h-4 stroke-[3]" />
+                  <span>
+                    Auf {nextRarity.name} aufwerten ({nextRarity.costNAT} NAT)
+                  </span>
+                </button>
+              </div>
             ) : (
               <div className="w-full py-3.5 px-4 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-300 font-mono font-bold text-xs text-center shadow-[0_0_15px_rgba(245,158,11,0.2)]">
                 [MAXIMALE SELTENHEIT: LEGENDÄR TIER V AKTIV]
@@ -715,7 +702,7 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
                       <div className="flex items-center justify-between font-mono font-bold">
                         <span className={pap.badgeColor}>{pap.name}</span>
                         <span className="text-fuchsia-300 font-black">
-                          {Math.round(pap.damageMultiplier * 100)}% DMG
+                          {Math.round(pap.damageMultiplier * 100)}% DMG · ab Lv. {pap.requiredWeaponLevel}
                         </span>
                       </div>
                       <div className="text-xs font-black text-white mt-1">
@@ -729,24 +716,34 @@ export const GunsmithView: React.FC<GunsmithViewProps> = ({
             </div>
 
             {nextPap ? (
-              <button
-                type="button"
-                disabled={budget < nextPap.costNAT}
-                onClick={() => {
-                  soundFx.playLevelUp();
-                  onUpgradePackAPunch(selectedWeaponId, nextPap.level, nextPap.costNAT);
-                }}
-                className={`w-full py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400/60 ${
-                  budget >= nextPap.costNAT
-                    ? 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white shadow-[0_0_24px_rgba(217,70,239,0.4)] hover:-translate-y-0.5 active:scale-[0.98]'
-                    : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
-                }`}
-              >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>
-                  {nextPap.name} schmieden ({nextPap.costNAT} NAT)
-                </span>
-              </button>
+              <div className="space-y-2">
+                {!meetsPapLevel && (
+                  <div className="flex items-center gap-2 text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/25 px-3 py-2 rounded-xl">
+                    <Lock className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Benötigt Waffen-Lv. {nextPap.requiredWeaponLevel} (aktuell Lv. {stats.weaponLevel})
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={budget < nextPap.costNAT || !meetsPapLevel}
+                  onClick={() => {
+                    soundFx.playLevelUp();
+                    onUpgradePackAPunch(selectedWeaponId, nextPap.level, nextPap.costNAT);
+                  }}
+                  className={`w-full py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400/60 ${
+                    budget >= nextPap.costNAT && meetsPapLevel
+                      ? 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white shadow-[0_0_24px_rgba(217,70,239,0.4)] hover:-translate-y-0.5 active:scale-[0.98]'
+                      : 'bg-slate-850 text-slate-500 border border-white/5 cursor-not-allowed'
+                  }`}
+                >
+                  <Zap className="w-4 h-4 fill-current" />
+                  <span>
+                    {nextPap.name} schmieden ({nextPap.costNAT} NAT)
+                  </span>
+                </button>
+              </div>
             ) : (
               <div className="w-full py-3.5 px-4 rounded-xl bg-fuchsia-500/15 border border-fuchsia-400/40 text-fuchsia-200 font-mono font-bold text-xs text-center shadow-[0_0_16px_rgba(217,70,239,0.25)]">
                 [PACK-A-PUNCH STUFE III (ULTRA-MAX) AKTIV]

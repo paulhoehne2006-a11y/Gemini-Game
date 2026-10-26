@@ -231,8 +231,9 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                   </div>
                   <p className="text-xs text-slate-200 mt-0.5 leading-relaxed">
                     Schließe alle {totalCount} Tagesbefehle ab für den täglichen Jackpot:{' '}
-                    <span className="text-amber-300 font-black">+500 NAT</span> &{' '}
-                    <span className="text-purple-300 font-black">+250 RUF</span>
+                    <span className="text-amber-300 font-black">+350 NAT</span>,{' '}
+                    <span className="text-purple-300 font-black">+200 RUF</span> &{' '}
+                    <span className="text-cyan-300 font-black">+1 SP</span>
                   </p>
                 </div>
               </div>
@@ -253,7 +254,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                     className="btn-tactile flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 text-xs font-black uppercase tracking-wider shadow-[0_4px_20px_rgba(245,158,11,0.4)] transition-all duration-150 cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4 fill-slate-950" />
-                    <span>Jackpot Einfordern (+500 NAT)</span>
+                    <span>Jackpot Einfordern (+350 NAT & +1 SP)</span>
                   </button>
                 ) : (
                   <span className="text-xs font-mono text-slate-400 px-3 py-1.5 rounded-lg bg-slate-950/60 border border-white/10">

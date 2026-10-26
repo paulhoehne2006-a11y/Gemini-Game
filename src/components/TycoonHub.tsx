@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Facility, DISTRICTS } from '../game/tycoon';
+import { Facility, DISTRICTS, getPassiveShiftVaultCap } from '../game/tycoon';
 import {
   ARENAS,
   ARENA_UNLOCK_RULES,
@@ -27,6 +27,7 @@ import {
   Flame,
   Sun,
   Moon,
+  ShieldAlert,
 } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
 
@@ -38,6 +39,8 @@ interface TycoonHubProps {
   unlockedMaps: string[];
   onUnlockMap: (arenaId: string, costNAT: number) => void;
   totalIncomePerSec: number;
+  passiveShiftEarned?: number;
+  passiveShiftCap?: number;
   commanderCrisisEvent?: {
     title: string;
     description: string;
@@ -68,6 +71,8 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
   unlockedMaps,
   onUnlockMap,
   totalIncomePerSec,
+  passiveShiftEarned,
+  passiveShiftCap,
   commanderCrisisEvent,
   onAcceptCrisisEvent,
   onStartArena,
@@ -76,6 +81,10 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
   isMobileHardware = false,
 }) => {
   const [selectedDistrict, setSelectedDistrict] = useState<string>('anspach');
+  const effectiveShiftCap = passiveShiftCap ?? getPassiveShiftVaultCap(facilities);
+  const effectiveShiftEarned = Math.min(effectiveShiftCap, passiveShiftEarned ?? 0);
+  const shiftVaultFull = effectiveShiftEarned >= effectiveShiftCap;
+  const shiftVaultPct = Math.min(100, Math.round((effectiveShiftEarned / Math.max(1, effectiveShiftCap)) * 100));
 
   const getFacilityCost = (f: Facility) => {
     return Math.round(f.baseCost * Math.pow(f.costMultiplier, f.level));
@@ -127,6 +136,43 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
               <div className="text-xl font-black text-sky-400 tabular-nums">{totalWins}</div>
             </div>
           </div>
+        </div>
+
+        {/* Stadtkassen-Schicht-Tresor (Lieferketten-Sicherheit) */}
+        <div
+          className={`p-4 sm:p-5 rounded-2xl border font-mono transition-all ${
+            shiftVaultFull
+              ? 'bg-amber-950/30 border-amber-500/45 shadow-[0_0_24px_rgba(245,158,11,0.18)]'
+              : 'bg-slate-900/80 border-white/10'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 font-bold text-slate-200">
+              <ShieldAlert className={`w-4 h-4 ${shiftVaultFull ? 'text-amber-400' : 'text-emerald-400'}`} />
+              <span>Stadtkassen-Schicht-Tresor (Lieferketten-Sicherheit)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Passiv-Puffer vor nächstem Einsatz:</span>
+              <span className={`font-black tabular-nums ${shiftVaultFull ? 'text-amber-300' : 'text-emerald-400'}`}>
+                {effectiveShiftEarned} / {effectiveShiftCap} NAT
+              </span>
+            </div>
+          </div>
+          <div className="w-full h-2 rounded-full bg-slate-950 border border-white/10 overflow-hidden mt-2.5">
+            <div
+              className={`h-full transition-all duration-300 ${
+                shiftVaultFull
+                  ? 'bg-gradient-to-r from-amber-500 to-red-400'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+              }`}
+              style={{ width: `${shiftVaultPct}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            {shiftVaultFull
+              ? 'Schicht-Tresor voll! Absolviere ein Arena-Gefecht, um die Wehrheimer Blockade zu durchbrechen und weitere passive Erträge freizuschalten.'
+              : 'Passive Einnahmen füllen den Schicht-Tresor bis zur Kapazitätsgrenze. Jedes abgeschlossene Arena-Gefecht sichert die Lieferkette neu.'}
+          </p>
         </div>
 
         {/* Gemini Pro Dynamic Municipal Crisis Event */}
@@ -189,7 +235,8 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
               const unlocked = checkArenaUnlocked(arena.id, totalWins, unlockedMaps);
               const rule = ARENA_UNLOCK_RULES[arena.id];
               const arenaDef = ARENAS[arena.id];
-              const canAffordUnlock = rule && budget >= rule.unlockCostNAT;
+              const meetsWins = totalWins >= (rule?.requiredWins || 0);
+              const canAffordUnlock = rule && meetsWins && budget >= rule.unlockCostNAT;
               const mapLv = mapLevels[arena.id] || 1;
               const botScaling = getMapBotScaling(arena.id, mapLv);
               const upgradeCost = getMapUpgradeCostNAT(arena.id, mapLv);
@@ -307,13 +354,13 @@ export const TycoonHub: React.FC<TycoonHubProps> = ({
                     ) : (
                       <div className="space-y-2">
                         <div className="text-[10px] font-mono text-slate-400">
-                          Benötigt {rule?.requiredWins} Siege ({totalWins}/{rule?.requiredWins}) oder:
+                          Voraussetzung: {rule?.requiredWins} Siege ({totalWins}/{rule?.requiredWins}) & {rule?.unlockCostNAT} NAT
                         </div>
                         <button
                           type="button"
                           disabled={!canAffordUnlock}
                           onClick={() => {
-                            if (rule) {
+                            if (rule && canAffordUnlock) {
                               soundFx.playLevelUp();
                               onUnlockMap(arena.id, rule.unlockCostNAT);
                             }

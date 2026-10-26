@@ -89,43 +89,43 @@ export const ARENA_UNLOCK_RULES: Record<string, ArenaUnlockRule> = {
   waldschwimmbad: {
     id: 'waldschwimmbad',
     order: 2,
-    requiredWins: 1,
-    unlockCostNAT: 250,
+    requiredWins: 2,
+    unlockCostNAT: 350,
     difficultyLabel: 'Stufe 2 · Waldrand-Gefecht',
   },
   bahnhof: {
     id: 'bahnhof',
     order: 3,
-    requiredWins: 2,
-    unlockCostNAT: 450,
+    requiredWins: 5,
+    unlockCostNAT: 650,
     difficultyLabel: 'Stufe 3 · Gleis-Verteidigung',
   },
   buergerhaus: {
     id: 'buergerhaus',
     order: 4,
-    requiredWins: 3,
-    unlockCostNAT: 700,
+    requiredWins: 9,
+    unlockCostNAT: 1050,
     difficultyLabel: 'Stufe 4 · Stadtmitte-Belagerung',
   },
   taunuscenter: {
     id: 'taunuscenter',
     order: 5,
-    requiredWins: 4,
-    unlockCostNAT: 950,
+    requiredWins: 14,
+    unlockCostNAT: 1600,
     difficultyLabel: 'Stufe 5 · Neue Mitte Häuserkampf',
   },
   ars: {
     id: 'ars',
     order: 6,
-    requiredWins: 5,
-    unlockCostNAT: 1250,
+    requiredWins: 20,
+    unlockCostNAT: 2300,
     difficultyLabel: 'Stufe 6 · Schulcampus-Offensive',
   },
   feldbergblick: {
     id: 'feldbergblick',
     order: 7,
-    requiredWins: 6,
-    unlockCostNAT: 1600,
+    requiredWins: 28,
+    unlockCostNAT: 3200,
     difficultyLabel: 'Stufe 7 · Taunuskamm-Endschlacht',
   },
 };
@@ -144,7 +144,7 @@ export const INITIAL_MAP_LEVELS: MapLevelsState = {
 
 export function getMapUpgradeCostNAT(arenaId: string, currentMapLevel = 1): number {
   const order = ARENA_UNLOCK_RULES[arenaId]?.order || 1;
-  return Math.round(140 + order * 35 + (currentMapLevel - 1) * 95);
+  return Math.round(220 + order * 65 + Math.pow(currentMapLevel - 1, 1.35) * 160);
 }
 
 export interface MapBotScalingInfo {
@@ -187,8 +187,8 @@ export function getMapBotScaling(
   const speedMultiplier = Number((1 + Math.min(0.42, (effectiveBotLevel - 1) * 0.045)).toFixed(2));
   const fireRateMultiplier = Number((1 + Math.min(0.65, (effectiveBotLevel - 1) * 0.08)).toFixed(2));
   const extraEnemiesPerWave = Math.floor((effectiveBotLevel - 1) * 0.75);
-  const rewardMultiplier = Number((1 + (effectiveBotLevel - 1) * 0.25).toFixed(2));
-  const xpRewardMult = Number((1 + (effectiveBotLevel - 1) * 0.28).toFixed(2));
+  const rewardMultiplier = Number((1 + (effectiveBotLevel - 1) * 0.12).toFixed(2));
+  const xpRewardMult = Number((1 + (effectiveBotLevel - 1) * 0.15).toFixed(2));
 
   const threatTitle =
     effectiveBotLevel >= 9
@@ -221,14 +221,11 @@ export function getMapBotScaling(
 
 export function checkArenaUnlocked(
   arenaId: string,
-  totalWins: number,
+  _totalWins: number,
   unlockedMapsList: string[]
 ): boolean {
   if (arenaId === 'hessenpark') return true;
-  if (unlockedMapsList.includes(arenaId)) return true;
-  const rule = ARENA_UNLOCK_RULES[arenaId];
-  if (!rule) return true;
-  return totalWins >= rule.requiredWins;
+  return unlockedMapsList.includes(arenaId);
 }
 
 /**

@@ -14,6 +14,7 @@ export interface SkillNodeDef {
   costNATPerLevel: number;
   requiresSkillId?: string;
   requiresSkillLevel?: number;
+  requiredOperatorLevel?: number;
   effectLabels: string[];
   isUltimate?: boolean;
 }
@@ -63,10 +64,11 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Äppler-Hohlspitz',
     subtitle: 'Stufe 1 · Grundlegende Feuerkraft',
     description: 'Verstärkte Taunus-Treibladung erhöht den Grundschaden aller Haupt- und Spezialwaffen.',
-    maxLevel: 3,
+    maxLevel: 5,
     costSP: 1,
-    costNATPerLevel: 120,
-    effectLabels: ['+12% Waffenschaden pro Stufe (bis +36%)'],
+    costNATPerLevel: 180,
+    requiredOperatorLevel: 1,
+    effectLabels: ['+8% Waffenschaden pro Stufe (bis +40%)'],
   },
   {
     id: 'schnellfinger',
@@ -75,12 +77,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Taunus-Schnellfinger',
     subtitle: 'Stufe 2 · Nachladen & Kadenz',
     description: 'Geübte Handgriffe verkürzen die Nachladezeit drastisch und steigern die Schussfrequenz.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 180,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 320,
     requiresSkillId: 'bembel_wucht',
-    requiresSkillLevel: 1,
-    effectLabels: ['+16% Nachladetempo pro Stufe', '+6% Feuerrate pro Stufe'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 3,
+    effectLabels: ['+12% Nachladetempo pro Stufe', '+5% Feuerrate pro Stufe'],
   },
   {
     id: 'adlerauge',
@@ -89,12 +92,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Feldberg-Adlerauge',
     subtitle: 'Stufe 3 · Kritische Präzision',
     description: 'Schwachstellen-Visierung erhöht die kritische Trefferchance sowie den kritischen Schadensfaktor.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 260,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 520,
     requiresSkillId: 'schnellfinger',
-    requiresSkillLevel: 1,
-    effectLabels: ['+7% Krit-Chance pro Stufe', '+18% Krit-Schaden pro Stufe'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 6,
+    effectLabels: ['+5% Krit-Chance pro Stufe', '+14% Krit-Schaden pro Stufe'],
   },
   {
     id: 'sprengmeister',
@@ -103,12 +107,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Traktor-Horst-Bezwinger (ULTIMATE)',
     subtitle: 'Stufe 4 · Boss- & Explosiv-Dominanz',
     description: 'Ultimative Offensiv-Meisterschaft: Massiver Zusatzschaden gegen Bosse & vergrößerter Wirkungsradius.',
-    maxLevel: 2,
-    costSP: 2,
-    costNATPerLevel: 420,
+    maxLevel: 3,
+    costSP: 3,
+    costNATPerLevel: 900,
     requiresSkillId: 'adlerauge',
-    requiresSkillLevel: 2,
-    effectLabels: ['+25% Schaden gegen Bosse & Stoßtruppen pro Stufe', '+25% Splitter-/Wirkungsradius pro Stufe'],
+    requiresSkillLevel: 3,
+    requiredOperatorLevel: 10,
+    effectLabels: ['+18% Schaden gegen Bosse & Stoßtruppen pro Stufe', '+18% Splitter-/Wirkungsradius pro Stufe'],
     isUltimate: true,
   },
 
@@ -120,10 +125,11 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Hessenpark-Kevlarweste',
     subtitle: 'Stufe 1 · Körperpanzerung',
     description: 'Verstärkte Schutzplatten unter der Anspacher Einsatzjacke erhöhen deine maximalen Lebenspunkte.',
-    maxLevel: 3,
+    maxLevel: 5,
     costSP: 1,
-    costNATPerLevel: 120,
-    effectLabels: ['+30 Maximale HP pro Stufe (bis +90 HP)'],
+    costNATPerLevel: 180,
+    requiredOperatorLevel: 1,
+    effectLabels: ['+20 Maximale HP pro Stufe (bis +100 HP)'],
   },
   {
     id: 'elektro_schild',
@@ -132,12 +138,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Stadtwerke-Energieschild',
     subtitle: 'Stufe 2 · Schild-Kapazität',
     description: 'Hochspannungs-Kondensator der Stadtwerke Neu-Anspach vergrößert deinen blauen Schutzschild.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 180,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 320,
     requiresSkillId: 'kevlar_weste',
-    requiresSkillLevel: 1,
-    effectLabels: ['+30 Maximaler Schild pro Stufe (bis +90 Schild)'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 3,
+    effectLabels: ['+25 Maximaler Schild pro Stufe (bis +100 Schild)'],
   },
   {
     id: 'handkaes_vitalitaet',
@@ -146,12 +153,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Handkäs-Regeneration',
     subtitle: 'Stufe 3 · Automatische Selbstheilung',
     description: 'Regeneriert im laufenden Einsatz kontinuierlich Lebenspunkte und Schildenergie pro Sekunde.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 260,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 520,
     requiresSkillId: 'elektro_schild',
-    requiresSkillLevel: 1,
-    effectLabels: ['+2.5 HP & +2.5 Schild / Sekunde pro Stufe'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 6,
+    effectLabels: ['+1.8 HP & +1.8 Schild / Sekunde pro Stufe'],
   },
   {
     id: 'nebel_bollwerk',
@@ -160,12 +168,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Taunus-Titanenrüstung (ULTIMATE)',
     subtitle: 'Stufe 4 · Schadensreduktion & Nebelfilter',
     description: 'Ultimativer Schutz: Reduziert allen erlittenen Feind- und Taunus-Nebel-Schaden drastisch.',
-    maxLevel: 2,
-    costSP: 2,
-    costNATPerLevel: 420,
+    maxLevel: 3,
+    costSP: 3,
+    costNATPerLevel: 900,
     requiresSkillId: 'handkaes_vitalitaet',
-    requiresSkillLevel: 2,
-    effectLabels: ['-15% erlittener Feindschaden pro Stufe', '-35% Taunus-Nebel-Schaden pro Stufe'],
+    requiresSkillLevel: 3,
+    requiredOperatorLevel: 10,
+    effectLabels: ['-10% erlittener Feindschaden pro Stufe', '-22% Taunus-Nebel-Schaden pro Stufe'],
     isUltimate: true,
   },
 
@@ -177,10 +186,11 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Lochmühle-Leichtfüßigkeit',
     subtitle: 'Stufe 1 · Mobilität & Sprungkraft',
     description: 'Erhöht dein Geh-, Ziel- und Sprinttempo sowie deine Sprunghöhe auf Dächer und Vorsprünge.',
-    maxLevel: 3,
+    maxLevel: 5,
     costSP: 1,
-    costNATPerLevel: 120,
-    effectLabels: ['+7% Bewegungstempo & +8% Sprungkraft pro Stufe'],
+    costNATPerLevel: 180,
+    requiredOperatorLevel: 1,
+    effectLabels: ['+5% Bewegungstempo & +5% Sprungkraft pro Stufe'],
   },
   {
     id: 'schatzsucher',
@@ -189,12 +199,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Anspacher Beute-Scanner',
     subtitle: 'Stufe 2 · Mehr NAT, Waffen-XP & Munition',
     description: 'Jeder ausgeschaltete Gegner und jede Kiste liefert deutlich mehr NAT-Taler, Operator-XP und Waffen-XP.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 180,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 320,
     requiresSkillId: 'lochmuehle_sprinter',
-    requiresSkillLevel: 1,
-    effectLabels: ['+25% Waffen-XP, Operator-XP & NAT-Beute pro Stufe'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 3,
+    effectLabels: ['+12% Waffen-XP, Operator-XP & NAT-Beute pro Stufe (bis +48%)'],
   },
   {
     id: 'trupp_kommandant',
@@ -203,12 +214,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Bürgerwehr-Kommandant',
     subtitle: 'Stufe 3 · Verstärkter KI-Squad',
     description: 'Deine KI-Kameraden (Florian, Lena & Timo) erhalten deutlich mehr Lebenspunkte und Feuerkraft.',
-    maxLevel: 3,
-    costSP: 1,
-    costNATPerLevel: 260,
+    maxLevel: 4,
+    costSP: 2,
+    costNATPerLevel: 520,
     requiresSkillId: 'schatzsucher',
-    requiresSkillLevel: 1,
-    effectLabels: ['+30% Squad-HP & +25% Squad-Schaden pro Stufe'],
+    requiresSkillLevel: 2,
+    requiredOperatorLevel: 6,
+    effectLabels: ['+20% Squad-HP & +18% Squad-Schaden pro Stufe'],
   },
   {
     id: 'feldberg_berserker',
@@ -217,12 +229,13 @@ export const SKILL_TREE_NODES: SkillNodeDef[] = [
     name: 'Feldberg-Vampirismus (ULTIMATE)',
     subtitle: 'Stufe 4 · Sofort-Schildraub bei jedem Kill',
     description: 'Jeder eliminierte Wehrheimer lädt deinen Schild sofort auf und füllt dein Magazin teilweise nach.',
-    maxLevel: 2,
-    costSP: 2,
-    costNATPerLevel: 420,
+    maxLevel: 3,
+    costSP: 3,
+    costNATPerLevel: 900,
     requiresSkillId: 'trupp_kommandant',
-    requiresSkillLevel: 2,
-    effectLabels: ['+18 Schild & +8 HP sofort pro Kill (je Stufe)', '+4 Schuss Direkt-Magazin pro Kill'],
+    requiresSkillLevel: 3,
+    requiredOperatorLevel: 10,
+    effectLabels: ['+12 Schild & +6 HP sofort pro Kill (je Stufe)', '+3 Schuss Direkt-Magazin pro Kill'],
     isUltimate: true,
   },
 ];
@@ -281,7 +294,17 @@ export interface SkillTreeBonuses {
   totalPointsSpent: number;
 }
 
-export function isSkillNodeUnlocked(node: SkillNodeDef, levels: SkillTreeLevels): boolean {
+export function getOperatorXpForNextLevel(level: number): number {
+  const clamped = Math.max(1, level);
+  return Math.round(180 + (clamped - 1) * 95 + Math.pow(clamped - 1, 1.3) * 20);
+}
+
+export function isSkillNodeUnlocked(
+  node: SkillNodeDef,
+  levels: SkillTreeLevels,
+  operatorLevel = 99
+): boolean {
+  if (operatorLevel < (node.requiredOperatorLevel || 1)) return false;
   if (!node.requiresSkillId) return true;
   const reqLv = node.requiresSkillLevel || 1;
   return (levels[node.requiresSkillId] || 0) >= reqLv;
@@ -310,33 +333,33 @@ export function computeSkillTreeBonuses(levels: SkillTreeLevels = INITIAL_SKILL_
   const trupp = levels.trupp_kommandant || 0;
   const vampir = levels.feldberg_berserker || 0;
 
-  const damageReduction = Math.min(0.45, bollwerk * 0.15);
-  const stormDamageReduction = Math.min(0.75, bollwerk * 0.35);
-  const regenPerSec = vital * 2.5;
-  const speedMultiplier = 1 + sprinter * 0.07;
-  const jumpMultiplier = 1 + sprinter * 0.08;
-  const lootXpMultiplier = 1 + schatz * 0.25;
-  const critChanceBonus = adler * 0.07;
-  const maxHpBonus = kevlar * 30;
-  const maxShieldBonus = schild * 30;
-  const killShieldRestore = vampir * 18;
-  const killHpRestore = vampir * 8;
-  const killAmmoRestore = vampir * 4;
+  const damageReduction = Math.min(0.45, bollwerk * 0.1);
+  const stormDamageReduction = Math.min(0.75, bollwerk * 0.22);
+  const regenPerSec = Number((vital * 1.8).toFixed(2));
+  const speedMultiplier = 1 + sprinter * 0.05;
+  const jumpMultiplier = 1 + sprinter * 0.05;
+  const lootXpMultiplier = 1 + schatz * 0.12;
+  const critChanceBonus = adler * 0.05;
+  const maxHpBonus = kevlar * 20;
+  const maxShieldBonus = schild * 25;
+  const killShieldRestore = vampir * 12;
+  const killHpRestore = vampir * 6;
+  const killAmmoRestore = vampir * 3;
 
   return {
-    damageMultiplier: 1 + wucht * 0.12,
-    fireRateMultiplier: 1 + schnell * 0.06,
-    reloadSpeedMultiplier: 1 + schnell * 0.16,
+    damageMultiplier: 1 + wucht * 0.08,
+    fireRateMultiplier: 1 + schnell * 0.05,
+    reloadSpeedMultiplier: 1 + schnell * 0.12,
     critChanceBonus,
     critChance: critChanceBonus,
-    critDamageMultiplier: 1.5 + adler * 0.18,
-    splashRadiusMultiplier: 1 + spreng * 0.25,
-    bossDamageMultiplier: 1 + spreng * 0.25,
+    critDamageMultiplier: 1.5 + adler * 0.14,
+    splashRadiusMultiplier: 1 + spreng * 0.18,
+    bossDamageMultiplier: 1 + spreng * 0.18,
     maxHpBonus,
     bonusMaxHp: maxHpBonus,
     maxShieldBonus,
     bonusMaxShield: maxShieldBonus,
-    bonusMagCapacity: schnell * 4,
+    bonusMagCapacity: schnell * 3,
     regenPerSec,
     hpRegenPerSec: regenPerSec,
     shieldRegenPerSec: regenPerSec,
@@ -351,8 +374,8 @@ export function computeSkillTreeBonuses(levels: SkillTreeLevels = INITIAL_SKILL_
     lootXpMultiplier,
     talerBonusMultiplier: lootXpMultiplier,
     weaponXpMultiplier: lootXpMultiplier,
-    allyHpMultiplier: 1 + trupp * 0.3,
-    allyDamageMultiplier: 1 + trupp * 0.25,
+    allyHpMultiplier: 1 + trupp * 0.2,
+    allyDamageMultiplier: 1 + trupp * 0.18,
     killShieldRestore,
     shieldOnKill: killShieldRestore,
     killHpRestore,
