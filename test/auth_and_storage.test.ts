@@ -176,6 +176,69 @@ test('Auth & Storage Test Suite', async (t) => {
     assert.equal(deletedLookup, null);
   });
 
+  await t.test('11. Google OAuth Kontoerstellung & Wiederanmeldung (authenticateWithGoogle)', async () => {
+    const firstAuth = await auth.authenticateWithGoogle({
+      googleSub: 'google_12345',
+      email: 'taunus@gmail.com',
+      displayName: 'Taunus Google',
+      clanTag: '61267',
+      faction: 'neu-anspach',
+    });
+
+    assert.equal(firstAuth.isNewAccount, true);
+    assert.equal(firstAuth.account.authProvider, 'google');
+    assert.equal(firstAuth.account.email, 'taunus@gmail.com');
+    assert.equal(firstAuth.account.clanTag, '61267');
+    assert.equal(firstAuth.account.faction, 'neu-anspach');
+    assert.ok(firstAuth.account.id.startsWith('acct_'));
+
+    // Second login with same googleSub returns existing account and updates avatarUrl
+    const secondAuth = await auth.authenticateWithGoogle({
+      googleSub: 'google_12345',
+      email: 'taunus@gmail.com',
+      displayName: 'Taunus Google',
+      avatarUrl: 'https://example.com/avatar.png',
+    });
+
+    assert.equal(secondAuth.isNewAccount, false);
+    assert.equal(secondAuth.account.id, firstAuth.account.id);
+    assert.equal(secondAuth.account.avatarUrl, 'https://example.com/avatar.png');
+
+    // Password login against a Google-only account returns null (cannot be bypassed with empty or arbitrary password)
+    const emptyPassAttempt = await auth.verifyCredentials(firstAuth.account.username, '');
+    assert.equal(emptyPassAttempt, null);
+
+    const randomPassAttempt = await auth.verifyCredentials(firstAuth.account.username, 'SomePassword123');
+    assert.equal(randomPassAttempt, null);
+  });
+
+  await t.test('12. DSGVO Export & Kontolöschung für Google-Konten', async () => {
+    const googleAuth = await auth.authenticateWithGoogle({
+      googleSub: 'google_12345',
+    });
+    const googleAccountId = googleAuth.account.id;
+
+    const exportData = await auth.exportAccountData(googleAccountId);
+    assert.ok(exportData);
+    assert.equal(exportData.authProvider, 'google');
+    assert.equal(exportData.googleLinked, true);
+    assert.ok(exportData.hostingAndProcessors);
+    assert.ok(exportData.hostingAndProcessors.applicationHost.includes('Render'));
+    assert.ok(exportData.hostingAndProcessors.databaseProvider.includes('Neon'));
+    assert.ok(exportData.hostingAndProcessors.identityProvider.includes('Google'));
+
+    // Deletion with wrong confirmation string fails
+    const failDelete = await auth.deleteAccount(googleAccountId, 'FALSCH');
+    assert.equal(failDelete, false);
+
+    // Deletion with 'LÖSCHEN' succeeds
+    const successDelete = await auth.deleteAccount(googleAccountId, 'LÖSCHEN');
+    assert.equal(successDelete, true);
+
+    const deletedLookup = await storage.getAccountById(googleAccountId);
+    assert.equal(deletedLookup, null);
+  });
+
   // Cleanup
   await storage.close();
   if (fs.existsSync(TEST_DB_PATH)) {

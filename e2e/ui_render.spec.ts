@@ -29,7 +29,7 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
     await expect(page.locator('#auth-confirm-password')).toBeVisible();
 
     // Verify empty submission triggers validation error
-    const submitBtn = page.getByRole('button', { name: /Konto registrieren|Anmelden/i });
+    const submitBtn = page.getByRole('button', { name: /Konto registrieren & Spiel starten|Anmelden & Spiel starten/i });
     await submitBtn.click();
     await expect(page.getByRole('alert')).toBeVisible();
 
@@ -144,5 +144,41 @@ test.describe('Neu-Anspach Royale - Complete UI & Interaction Suite', () => {
         !err.includes('Failed to load resource')
     );
     expect(fatalErrors).toEqual([]);
+  });
+
+  test('3. Google Sign-In flow & Legal Modal (Impressum, Render, Neon SQL & Google OAuth) on AuthScreen', async ({ page }) => {
+    await page.goto('/');
+
+    // Verify the "Mit Google anmelden" button is visible on AuthScreen
+    const googleBtn = page.getByTestId('google-auth-button').or(page.getByRole('button', { name: /Mit Google/i })).first();
+    await expect(googleBtn).toBeVisible();
+
+    // Click the Legal / Datenschutz button on AuthScreen and verify LegalModal opens
+    const legalBtn = page.getByRole('button', { name: /Impressum|Datenschutz|Rechtliches/i }).first();
+    await expect(legalBtn).toBeVisible();
+    await legalBtn.click();
+
+    const legalDialog = page.getByRole('dialog');
+    await expect(legalDialog).toBeVisible();
+    await expect(legalDialog.getByText(/Render/i).first()).toBeVisible();
+    await expect(legalDialog.getByText(/Neon/i).first()).toBeVisible();
+    await expect(legalDialog.getByText(/Google/i).first()).toBeVisible();
+    await expect(legalDialog.getByText(/Impressum/i).first()).toBeVisible();
+
+    // Close the LegalModal
+    const closeLegalBtn = legalDialog.getByRole('button', { name: /Schließen|Rechtliche Hinweise schließen/i }).first();
+    await closeLegalBtn.click();
+    await expect(legalDialog).toBeHidden();
+
+    // Trigger the Google Sign-In flow in dev/test mode
+    await googleBtn.click();
+
+    const devQuickLoginBtn = page.getByTestId('google-dev-quick-login').or(page.getByTestId('google-dev-submit')).first();
+    if (await devQuickLoginBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await devQuickLoginBtn.click();
+    }
+
+    // Verify user is authenticated and reaches the main dashboard
+    await expect(page.locator('header')).toBeVisible({ timeout: 15000 });
   });
 });

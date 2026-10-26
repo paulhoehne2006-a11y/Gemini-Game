@@ -31,24 +31,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const app = express();
+// Trust reverse proxy on Render / cloud load balancers for HTTPS detection and client IP rate limiting
+app.set('trust proxy', 1);
+
 export const server = http.createServer(app);
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-// Security Headers with Helmet
+// Security Headers with Helmet (includes Google Identity Services / OAuth domains)
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://accounts.google.com', 'https://apis.google.com'],
+        frameSrc: ["'self'", 'https://accounts.google.com'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", 'ws:', 'wss:', 'http:', 'https:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://lh3.googleusercontent.com', 'https://*.googleusercontent.com'],
+        connectSrc: ["'self'", 'ws:', 'wss:', 'http:', 'https:', 'https://accounts.google.com', 'https://oauth2.googleapis.com', 'https://www.googleapis.com'],
         mediaSrc: ["'self'", 'blob:', 'data:'],
         workerSrc: ["'self'", 'blob:'],
       },
     },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
@@ -204,8 +209,13 @@ function requireCsrf(req: express.Request, res: express.Response, next: express.
     return next();
   }
 
-  // Exempt auth bootstrap endpoints (login / register) which do not have a session yet
-  if (req.path === '/api/auth/login' || req.path === '/api/auth/register') {
+  // Exempt auth bootstrap endpoints (login / register / google) which do not have a session yet
+  if (
+    req.path === '/api/auth/login' ||
+    req.path === '/api/auth/register' ||
+    req.path === '/api/auth/google' ||
+    req.path === '/api/auth/google/callback'
+  ) {
     return next();
   }
 
@@ -646,6 +656,329 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Helper: Complete Google Sign-In session & leaderboard initialization
+async function completeGoogleAuthentication(
+  req: express.Request,
+  res: express.Response,
+  googleInput: {
+    googleSub: string;
+    email?: string;
+    displayName?: string;
+    avatarUrl?: string;
+    clanTag?: string;
+    faction?: string;
+    legalConsent?: any;
+  }
+) {
+  const { account, isNewAccount } = await authStore.authenticateWithGoogle(googleInput);
+  const session = await authStore.createSession(account.id, authConfig.sessionTtlMs);
+  setSessionCookie(req, res, session.token, session.expiresAt);
+  notifySessionSuperseded(account.id, session.token);
+
+  if (isNewAccount) {
+    await storage.saveLeaderboardEntry({
+      id: `op_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      accountId: account.id,
+      name: account.username,
+      clanTag: account.clanTag,
+      city: account.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach',
+      score: 0,
+      bestMatchScore: 0,
+      kills: 0,
+      wins: 0,
+      highestWave: 1,
+      unlockedMapsCount: 1,
+      signatureWeapon: 'XM4 Bembel-Sturmgewehr',
+      currentArena: 'Freilichtmuseum Hessenpark',
+      statusText: 'Via Google verifiziert · Einsatzbereit',
+      lastSeen: Date.now(),
+    });
+
+    await storage.addRecentEvent({
+      id: `ev_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
+      playerName: account.username,
+      clanTag: account.clanTag,
+      text: 'ist via Google-Anmeldung dem Taunus-Einsatznetzwerk beigetreten!',
+      timestamp: Date.now(),
+      type: 'join',
+    });
+
+    await broadcastLeaderboardSync();
+  }
+
+  return { account, csrfToken: session.csrfToken, isNewAccount };
+}
+
+function resolveGoogleCallbackUrl(req: express.Request): string {
+  if (authConfig.googleCallbackUrl) {
+    return authConfig.googleCallbackUrl;
+  }
+  const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.secure ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
+  return `${proto}://${host}/api/auth/google/callback`;
+}
+
+// Auth: Google OAuth & GIS Provider Configuration
+app.get('/api/auth/google/config', (req, res) => {
+  const clientId = authConfig.googleClientId;
+  const hasSecret = Boolean(authConfig.googleClientSecret);
+  const devFallbackEnabled =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.ALLOW_DEV_GOOGLE_AUTH === 'true' ||
+    !clientId;
+
+  res.json({
+    googleClientId: clientId || null,
+    oauthRedirectEnabled: Boolean(clientId && hasSecret),
+    gisEnabled: Boolean(clientId),
+    devFallbackEnabled,
+    callbackUrl: resolveGoogleCallbackUrl(req),
+  });
+});
+
+// Auth: Google OAuth 2.0 Redirect Initiation
+app.get('/api/auth/google', (req, res) => {
+  const ip = getClientIp(req);
+  if (isRateLimited(`auth_google_${ip}`, 20, 15 * 60 * 1000)) {
+    return res.redirect('/?auth_error=' + encodeURIComponent('Zu viele Anmeldeversuche. Bitte später erneut versuchen.'));
+  }
+
+  const clientId = authConfig.googleClientId;
+  const clientSecret = authConfig.googleClientSecret;
+  if (!clientId || !clientSecret) {
+    return res.redirect(
+      '/?auth_error=' +
+        encodeURIComponent(
+          'Google OAuth Redirect erfordert GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET in den Render-Umgebungsvariablen.'
+        )
+    );
+  }
+
+  const stateNonce = crypto.randomBytes(24).toString('base64url');
+  const clanTag = String(req.query.clanTag || '61267').trim().toUpperCase().slice(0, 6);
+  const faction = req.query.faction === 'wehrheim' ? 'wehrheim' : 'neu-anspach';
+  const statePayload = Buffer.from(
+    JSON.stringify({ nonce: stateNonce, clanTag, faction, ts: Date.now() }),
+    'utf8'
+  ).toString('base64url');
+
+  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || authConfig.secureCookie;
+  res.cookie(authConfig.googleStateCookieName, statePayload, {
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 10 * 60 * 1000,
+  });
+
+  const redirectUri = resolveGoogleCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state: stateNonce,
+    prompt: 'select_account',
+    access_type: 'online',
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+// Auth: Google OAuth 2.0 Callback
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    const errorParam = req.query.error;
+    if (errorParam) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Google-Anmeldung wurde abgebrochen.'));
+    }
+
+    const code = String(req.query.code || '');
+    const stateFromQuery = String(req.query.state || '');
+    const cookies = parseCookies(req);
+    const rawStateCookie = cookies[authConfig.googleStateCookieName];
+
+    res.clearCookie(authConfig.googleStateCookieName, { path: '/' });
+
+    if (!code || !stateFromQuery || !rawStateCookie) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Ungültiger OAuth-Status (State-Prüfung fehlgeschlagen).'));
+    }
+
+    let parsedState: { nonce: string; clanTag?: string; faction?: string } | null = null;
+    try {
+      parsedState = JSON.parse(Buffer.from(rawStateCookie, 'base64url').toString('utf8'));
+    } catch {
+      parsedState = null;
+    }
+
+    if (!parsedState || parsedState.nonce !== stateFromQuery) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Sicherheitsprüfung (OAuth CSRF State) fehlgeschlagen.'));
+    }
+
+    const redirectUri = resolveGoogleCallbackUrl(req);
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: authConfig.googleClientId,
+        client_secret: authConfig.googleClientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+
+    if (!tokenRes.ok) {
+      console.error('[Google OAuth] Token exchange failed with status:', tokenRes.status);
+      return res.redirect('/?auth_error=' + encodeURIComponent('Google-Token-Austausch fehlgeschlagen.'));
+    }
+
+    const tokenData = (await tokenRes.json()) as { access_token?: string; id_token?: string };
+    if (!tokenData.access_token) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Kein Zugriffstoken von Google erhalten.'));
+    }
+
+    const userRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    if (!userRes.ok) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Google-Profilinformationen konnten nicht geladen werden.'));
+    }
+
+    const profile = (await userRes.json()) as {
+      sub?: string;
+      email?: string;
+      email_verified?: boolean;
+      name?: string;
+      given_name?: string;
+      picture?: string;
+    };
+
+    if (!profile.sub) {
+      return res.redirect('/?auth_error=' + encodeURIComponent('Ungültige Google-Nutzerkennung.'));
+    }
+
+    await completeGoogleAuthentication(req, res, {
+      googleSub: profile.sub,
+      email: profile.email,
+      displayName: profile.name || profile.given_name,
+      avatarUrl: profile.picture,
+      clanTag: parsedState.clanTag,
+      faction: parsedState.faction,
+    });
+
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('🌐 [Google OAuth] Anmeldung über Redirect erfolgreich');
+    }
+
+    res.redirect('/');
+  } catch (error) {
+    console.error('[Google OAuth] Callback error:', error);
+    res.redirect('/?auth_error=' + encodeURIComponent('Anmeldung mit Google fehlgeschlagen.'));
+  }
+});
+
+// Auth: Google Identity Services (ID Token Verification) & Dev/Test Handler
+app.post('/api/auth/google', async (req, res) => {
+  const ip = getClientIp(req);
+  if (isRateLimited(`auth_google_post_${ip}`, 20, 15 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Zu viele Anmeldeversuche. Bitte versuche es später erneut.' });
+  }
+
+  try {
+    const credential = String(req.body?.credential || req.body?.idToken || '').trim();
+    const clanTag = String(req.body?.clanTag || '61267').trim().toUpperCase();
+    const faction = req.body?.faction === 'wehrheim' ? 'wehrheim' : 'neu-anspach';
+    const legalConsent = req.body?.legalConsent;
+
+    // 1. Real Google ID Token Verification (Google Identity Services)
+    if (credential) {
+      const verifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+      const tokenInfoRes = await fetch(verifyUrl);
+      if (!tokenInfoRes.ok) {
+        return res.status(401).json({ error: 'Das übermittelte Google-Token ist ungültig oder abgelaufen.' });
+      }
+      const tokenInfo = (await tokenInfoRes.json()) as {
+        sub?: string;
+        aud?: string;
+        email?: string;
+        email_verified?: string | boolean;
+        name?: string;
+        given_name?: string;
+        picture?: string;
+      };
+
+      const expectedClientId = authConfig.googleClientId;
+      if (expectedClientId && tokenInfo.aud !== expectedClientId) {
+        return res.status(401).json({ error: 'Google-Token Client-ID (aud) stimmt nicht überein.' });
+      }
+      if (!tokenInfo.sub) {
+        return res.status(401).json({ error: 'Google-Token enthält keine gültige Konto-ID (sub).' });
+      }
+
+      const result = await completeGoogleAuthentication(req, res, {
+        googleSub: tokenInfo.sub,
+        email: tokenInfo.email,
+        displayName: tokenInfo.name || tokenInfo.given_name,
+        avatarUrl: tokenInfo.picture,
+        clanTag,
+        faction,
+        legalConsent,
+      });
+
+      return res.status(result.isNewAccount ? 201 : 200).json({
+        success: true,
+        account: result.account,
+        csrfToken: result.csrfToken,
+        isNewAccount: result.isNewAccount,
+      });
+    }
+
+    // 2. Local Development / E2E Test Google Sign-In Simulation (enabled in dev, tests, or when googleClientId is not configured yet)
+    const devFallbackEnabled =
+      process.env.NODE_ENV !== 'production' ||
+      process.env.ALLOW_DEV_GOOGLE_AUTH === 'true' ||
+      !authConfig.googleClientId;
+
+    if (devFallbackEnabled && req.body?.devProfile) {
+      const devProfile = req.body.devProfile;
+      const email = String(devProfile.email || 'operator@gmail.com').trim().toLowerCase();
+      const displayName = String(devProfile.displayName || email.split('@')[0] || 'GoogleOperator').trim();
+      const googleSub = String(
+        devProfile.googleSub || `google_dev_${crypto.createHash('sha256').update(email).digest('hex').slice(0, 24)}`
+      );
+
+      const result = await completeGoogleAuthentication(req, res, {
+        googleSub,
+        email,
+        displayName,
+        clanTag,
+        faction,
+        legalConsent,
+      });
+
+      return res.status(result.isNewAccount ? 201 : 200).json({
+        success: true,
+        account: result.account,
+        csrfToken: result.csrfToken,
+        isNewAccount: result.isNewAccount,
+      });
+    }
+
+    return res.status(503).json({
+      error:
+        'Google Sign-In ist auf dem Server noch nicht fertig eingerichtet. Bitte hinterlege GOOGLE_CLIENT_ID (und optional GOOGLE_CLIENT_SECRET) in deinen Render-Umgebungsvariablen.',
+    });
+  } catch (error) {
+    if (error instanceof AuthValidationError || error instanceof AuthConflictError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('[Auth] Google auth error:', error);
+    res.status(500).json({ error: 'Google-Anmeldung fehlgeschlagen.' });
+  }
+});
+
 // Auth: Current User / Me
 app.get('/api/auth/me', requireAccount, (_req, res) => {
   res.json({
@@ -687,14 +1020,24 @@ app.get('/api/auth/export', requireAccount, async (_req, res) => {
 // DSGVO / GDPR Right to be Forgotten: Account Deletion
 app.post('/api/auth/delete', requireAccount, requireCsrf, async (req, res) => {
   const account = res.locals.account as PublicAccount;
-  const password = String(req.body?.password || '');
-  if (!password) {
-    return res.status(400).json({ error: 'Zur Kontolöschung ist die Eingabe deines Passworts erforderlich.' });
+  const passwordOrConfirm = String(req.body?.password || req.body?.confirmation || '');
+  if (!passwordOrConfirm) {
+    return res.status(400).json({
+      error:
+        account.authProvider === 'google'
+          ? 'Bitte gib zur Bestätigung der Kontolöschung das Wort LÖSCHEN oder deinen Benutzernamen ein.'
+          : 'Zur Kontolöschung ist die Eingabe deines Passworts erforderlich.',
+    });
   }
 
-  const success = await authStore.deleteAccount(account.id, password);
+  const success = await authStore.deleteAccount(account.id, passwordOrConfirm);
   if (!success) {
-    return res.status(403).json({ error: 'Das eingegebene Passwort ist nicht korrekt.' });
+    return res.status(403).json({
+      error:
+        account.authProvider === 'google'
+          ? 'Bestätigung ungültig. Bitte gib exakt LÖSCHEN oder deinen Benutzernamen ein.'
+          : 'Das eingegebene Passwort ist nicht korrekt.',
+    });
   }
 
   await storage.deleteLeaderboardEntryByName(account.username);

@@ -308,6 +308,12 @@ export default function App() {
         if (active) {
           setAuthUser(user);
           if (user) {
+            const identity = user.displayName || user.username || user.email;
+            if (identity) {
+              const cleanName = identity.slice(0, 20);
+              setPlayerName(cleanName);
+              localStorage.setItem('na_player_name', cleanName);
+            }
             const profileClanTag = user.clanTag || '61267';
             const profileCity = user.faction === 'wehrheim' ? 'Wehrheim' : 'Neu-Anspach';
             setClanTag(profileClanTag);
@@ -1125,7 +1131,14 @@ export default function App() {
             </button>
           </div>
         )}
-        <AuthScreen onAuthenticated={handleAuthenticated} />
+        <AuthScreen
+          onAuthenticated={handleAuthenticated}
+          onOpenLegal={() => setShowLegalModal(true)}
+        />
+        <LegalModal
+          isOpen={showLegalModal}
+          onClose={() => setShowLegalModal(false)}
+        />
         {authError && (
           <div role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-red-500/40 bg-red-950/90 px-4 py-3 text-xs text-red-100 shadow-xl">
             {authError}
@@ -1146,6 +1159,7 @@ export default function App() {
           initialClanTag={clanTag}
           initialCity={playerCity}
           isFirstTime={!isOperatorRegistered}
+          authProvider={authUser.authProvider}
           onComplete={handleCompleteOnboarding}
           onOpenLegal={() => setShowLegalModal(true)}
           onClose={isOperatorRegistered ? () => setShowProfileModal(false) : undefined}

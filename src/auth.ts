@@ -5,6 +5,8 @@ export interface AuthUser {
   displayName?: string;
   clanTag?: string;
   faction?: 'neu-anspach' | 'wehrheim';
+  authProvider?: 'password' | 'google';
+  avatarUrl?: string;
   createdAt?: string;
 }
 
@@ -15,11 +17,20 @@ export interface LegalConsentRecord {
   termsVersion: string;
 }
 
+export interface GoogleAuthConfig {
+  googleClientId: string | null;
+  oauthRedirectEnabled: boolean;
+  gisEnabled: boolean;
+  devFallbackEnabled: boolean;
+  callbackUrl: string;
+}
+
 interface AuthResponse {
   user?: AuthUser;
   account?: AuthUser;
   token?: string;
   csrfToken?: string;
+  isNewAccount?: boolean;
   error?: string;
 }
 
@@ -139,6 +150,49 @@ export async function register(
   return user;
 }
 
+export async function fetchGoogleAuthConfig(): Promise<GoogleAuthConfig> {
+  try {
+    const res = await fetch('/api/auth/google/config', { credentials: 'include' });
+    if (!res.ok) throw new Error('Status error');
+    return (await res.json()) as GoogleAuthConfig;
+  } catch {
+    return {
+      googleClientId: (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID) || null,
+      oauthRedirectEnabled: false,
+      gisEnabled: false,
+      devFallbackEnabled: false,
+      callbackUrl: `${window.location.origin}/api/auth/google/callback`,
+    };
+  }
+}
+
+export async function loginWithGoogle(params: {
+  credential?: string;
+  devProfile?: { email: string; displayName?: string };
+  clanTag?: string;
+  faction?: 'neu-anspach' | 'wehrheim';
+  legalConsent?: LegalConsentRecord;
+}): Promise<AuthUser> {
+  const res = await requestAuth('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  const user = normalizeUser(res);
+  if (!user) throw new AuthRequestError('Die Google-Anmeldung hat kein Benutzerkonto zurückgegeben.', 502);
+  return user;
+}
+
+export function startGoogleOAuthRedirect(params?: {
+  clanTag?: string;
+  faction?: 'neu-anspach' | 'wehrheim';
+}): void {
+  const query = new URLSearchParams();
+  if (params?.clanTag) query.set('clanTag', params.clanTag);
+  if (params?.faction) query.set('faction', params.faction);
+  const qs = query.toString();
+  window.location.assign(`/api/auth/google${qs ? `?${qs}` : ''}`);
+}
+
 export async function logout(): Promise<void> {
   try {
     await requestAuth('/api/auth/logout', { method: 'POST' });
@@ -155,7 +209,7 @@ export async function exportUserData(): Promise<any> {
   return await res.json();
 }
 
-export async function deleteUserAccount(password: string): Promise<void> {
+export async function deleteUserAccount(passwordOrConfirmation: string): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(inMemoryCsrfToken ? { 'X-CSRF-Token': inMemoryCsrfToken } : {}),
@@ -165,7 +219,10 @@ export async function deleteUserAccount(password: string): Promise<void> {
     method: 'POST',
     credentials: 'include',
     headers,
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({
+      password: passwordOrConfirmation,
+      confirmation: passwordOrConfirmation,
+    }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

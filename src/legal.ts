@@ -1,4 +1,4 @@
-export const LEGAL_NOTICE_VERSION = '2026-10-15';
+export const LEGAL_NOTICE_VERSION = '2026-10-26';
 
 export interface LegalConsentRecord {
   acceptedAt: string;
@@ -17,8 +17,13 @@ export function createLegalConsentRecord(): LegalConsentRecord {
   };
 }
 
-export const legalContactEmail =
-  import.meta.env.VITE_LEGAL_CONTACT_EMAIL || '[CONFIGURE_LEGAL_CONTACT_EMAIL]';
+const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
 
-export const legalOperatorName =
-  import.meta.env.VITE_LEGAL_OPERATOR_NAME || '[CONFIGURE_LEGAL_OPERATOR_NAME]';
+export const legalContactEmail: string =
+  metaEnv.VITE_LEGAL_CONTACT_EMAIL || 'paulhoehne411@gmail.com';
+
+export const legalOperatorName: string =
+  metaEnv.VITE_LEGAL_OPERATOR_NAME || 'Paul Höhne (Privates, nicht-kommerzielles Hobbyprojekt)';
+
+export const legalOperatorAddress: string =
+  metaEnv.VITE_LEGAL_OPERATOR_ADDRESS || 'Häuser Weg 9, 61267 Neu-Anspach, Deutschland';

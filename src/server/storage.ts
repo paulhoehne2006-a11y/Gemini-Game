@@ -21,6 +21,10 @@ export interface StoredAccount {
   faction: 'neu-anspach' | 'wehrheim';
   passwordSalt: string;
   passwordHash: string;
+  authProvider?: 'password' | 'google';
+  googleSub?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
   legalConsent: LegalConsentRecord;
   createdAt: string;
 }
@@ -104,6 +108,7 @@ export interface GameStorage {
   // Accounts
   getAccountById(id: string): Promise<StoredAccount | null>;
   getAccountByUsername(username: string): Promise<StoredAccount | null>;
+  getAccountByGoogleSub(googleSub: string): Promise<StoredAccount | null>;
   saveAccount(account: StoredAccount): Promise<void>;
   deleteAccount(id: string): Promise<void>;
 
@@ -178,6 +183,10 @@ export class SqliteStorageAdapter implements GameStorage {
         faction TEXT NOT NULL,
         password_salt TEXT NOT NULL,
         password_hash TEXT NOT NULL,
+        auth_provider TEXT NOT NULL DEFAULT 'password',
+        google_sub TEXT,
+        email TEXT,
+        avatar_url TEXT,
         legal_consent TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
@@ -248,6 +257,27 @@ export class SqliteStorageAdapter implements GameStorage {
       CREATE INDEX IF NOT EXISTS idx_rooms_updated_at ON rooms(updated_at);
     `);
 
+    // Ensure Google OAuth columns exist on pre-existing SQLite databases
+    const accountColumns = this.db.prepare('PRAGMA table_info(accounts)').all() as Array<{ name: string }>;
+    const colNames = new Set(accountColumns.map((c) => c.name));
+    if (!colNames.has('auth_provider')) {
+      this.db.exec("ALTER TABLE accounts ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'password';");
+    }
+    if (!colNames.has('google_sub')) {
+      this.db.exec('ALTER TABLE accounts ADD COLUMN google_sub TEXT;');
+    }
+    if (!colNames.has('email')) {
+      this.db.exec('ALTER TABLE accounts ADD COLUMN email TEXT;');
+    }
+    if (!colNames.has('avatar_url')) {
+      this.db.exec('ALTER TABLE accounts ADD COLUMN avatar_url TEXT;');
+    }
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_google_sub
+      ON accounts(google_sub)
+      WHERE google_sub IS NOT NULL;
+    `);
+
     // Ensure default derby_stats row exists
     const row = this.db.prepare('SELECT id FROM derby_stats WHERE id = 1').get();
     if (!row) {
@@ -271,8 +301,11 @@ export class SqliteStorageAdapter implements GameStorage {
           const data = JSON.parse(raw);
           if (Array.isArray(data.accounts)) {
             const insertStmt = this.db.prepare(`
-              INSERT OR IGNORE INTO accounts (id, username, clan_tag, faction, password_salt, password_hash, legal_consent, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT OR IGNORE INTO accounts (
+                id, username, clan_tag, faction, password_salt, password_hash,
+                auth_provider, google_sub, email, avatar_url, legal_consent, created_at
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
             for (const acc of data.accounts) {
               insertStmt.run(
@@ -282,6 +315,10 @@ export class SqliteStorageAdapter implements GameStorage {
                 acc.faction || 'neu-anspach',
                 acc.passwordSalt || '',
                 acc.passwordHash || '',
+                acc.authProvider || 'password',
+                acc.googleSub || null,
+                acc.email || null,
+                acc.avatarUrl || null,
                 JSON.stringify(acc.legalConsent || {}),
                 acc.createdAt || new Date().toISOString()
               );
@@ -351,9 +388,7 @@ export class SqliteStorageAdapter implements GameStorage {
     }
   }
 
-  async getAccountById(id: string): Promise<StoredAccount | null> {
-    const row = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) as any;
-    if (!row) return null;
+  private mapSqliteAccount(row: any): StoredAccount {
     return {
       id: row.id,
       username: row.username,
@@ -361,36 +396,51 @@ export class SqliteStorageAdapter implements GameStorage {
       faction: row.faction as any,
       passwordSalt: row.password_salt,
       passwordHash: row.password_hash,
-      legalConsent: JSON.parse(row.legal_consent),
+      authProvider: (row.auth_provider || 'password') as 'password' | 'google',
+      googleSub: row.google_sub || null,
+      email: row.email || null,
+      avatarUrl: row.avatar_url || null,
+      legalConsent: typeof row.legal_consent === 'string' ? JSON.parse(row.legal_consent) : row.legal_consent,
       createdAt: row.created_at,
     };
+  }
+
+  async getAccountById(id: string): Promise<StoredAccount | null> {
+    const row = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) as any;
+    if (!row) return null;
+    return this.mapSqliteAccount(row);
   }
 
   async getAccountByUsername(username: string): Promise<StoredAccount | null> {
     const row = this.db.prepare('SELECT * FROM accounts WHERE LOWER(username) = LOWER(?)').get(username.trim()) as any;
     if (!row) return null;
-    return {
-      id: row.id,
-      username: row.username,
-      clanTag: row.clan_tag,
-      faction: row.faction as any,
-      passwordSalt: row.password_salt,
-      passwordHash: row.password_hash,
-      legalConsent: JSON.parse(row.legal_consent),
-      createdAt: row.created_at,
-    };
+    return this.mapSqliteAccount(row);
+  }
+
+  async getAccountByGoogleSub(googleSub: string): Promise<StoredAccount | null> {
+    if (!googleSub) return null;
+    const row = this.db.prepare('SELECT * FROM accounts WHERE google_sub = ?').get(googleSub.trim()) as any;
+    if (!row) return null;
+    return this.mapSqliteAccount(row);
   }
 
   async saveAccount(account: StoredAccount): Promise<void> {
     this.db.prepare(`
-      INSERT INTO accounts (id, username, clan_tag, faction, password_salt, password_hash, legal_consent, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO accounts (
+        id, username, clan_tag, faction, password_salt, password_hash,
+        auth_provider, google_sub, email, avatar_url, legal_consent, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         username = excluded.username,
         clan_tag = excluded.clan_tag,
         faction = excluded.faction,
         password_salt = excluded.password_salt,
         password_hash = excluded.password_hash,
+        auth_provider = excluded.auth_provider,
+        google_sub = excluded.google_sub,
+        email = excluded.email,
+        avatar_url = excluded.avatar_url,
         legal_consent = excluded.legal_consent
     `).run(
       account.id,
@@ -399,6 +449,10 @@ export class SqliteStorageAdapter implements GameStorage {
       account.faction,
       account.passwordSalt,
       account.passwordHash,
+      account.authProvider || 'password',
+      account.googleSub || null,
+      account.email || null,
+      account.avatarUrl || null,
       JSON.stringify(account.legalConsent),
       account.createdAt
     );
@@ -685,7 +739,7 @@ export class SqliteStorageAdapter implements GameStorage {
 }
 
 // ---------------------------------------------------------------------------
-// 2. PostgreSQL Storage Adapter (Production / DATABASE_URL)
+// 2. PostgreSQL Storage Adapter (Production / Neon SQL / Render PostgreSQL)
 // ---------------------------------------------------------------------------
 export class PostgresStorageAdapter implements GameStorage {
   readonly type = 'postgres';
@@ -694,18 +748,18 @@ export class PostgresStorageAdapter implements GameStorage {
   constructor(private readonly connectionString: string) {}
 
   async init(): Promise<void> {
-    const isProduction = process.env.NODE_ENV === 'production';
-    // Reject unauthorized only if explicitly requested, otherwise permit standard cloud DB SSL
-    const sslConfig = this.connectionString.includes('localhost') || this.connectionString.includes('127.0.0.1')
-      ? false
-      : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' };
+    // Reject unauthorized only if explicitly requested, otherwise permit standard cloud DB SSL (Neon / Render)
+    const sslConfig =
+      this.connectionString.includes('localhost') || this.connectionString.includes('127.0.0.1')
+        ? false
+        : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' };
 
     this.pool = new pg.Pool({
       connectionString: this.connectionString,
       ssl: sslConfig,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
     });
 
     await this.pool.query(`
@@ -716,6 +770,10 @@ export class PostgresStorageAdapter implements GameStorage {
         faction VARCHAR(32) NOT NULL,
         password_salt VARCHAR(64) NOT NULL,
         password_hash VARCHAR(128) NOT NULL,
+        auth_provider VARCHAR(32) NOT NULL DEFAULT 'password',
+        google_sub VARCHAR(128) UNIQUE,
+        email VARCHAR(255),
+        avatar_url TEXT,
         legal_consent JSONB NOT NULL,
         created_at TIMESTAMPTZ NOT NULL
       );
@@ -783,6 +841,12 @@ export class PostgresStorageAdapter implements GameStorage {
       CREATE INDEX IF NOT EXISTS idx_pg_leaderboard_score ON leaderboard(score DESC);
       CREATE INDEX IF NOT EXISTS idx_pg_live_events_timestamp ON live_events(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_pg_rooms_updated_at ON rooms(updated_at);
+
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(32) NOT NULL DEFAULT 'password';
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS google_sub VARCHAR(128);
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_accounts_google_sub ON accounts(google_sub) WHERE google_sub IS NOT NULL;
     `);
 
     // Ensure default derby_stats
@@ -803,10 +867,7 @@ export class PostgresStorageAdapter implements GameStorage {
     }
   }
 
-  async getAccountById(id: string): Promise<StoredAccount | null> {
-    const res = await this.pool!.query('SELECT * FROM accounts WHERE id = $1', [id]);
-    if (res.rowCount === 0) return null;
-    const r = res.rows[0];
+  private mapPgAccount(r: any): StoredAccount {
     return {
       id: r.id,
       username: r.username,
@@ -814,48 +875,69 @@ export class PostgresStorageAdapter implements GameStorage {
       faction: r.faction,
       passwordSalt: r.password_salt,
       passwordHash: r.password_hash,
+      authProvider: (r.auth_provider || 'password') as 'password' | 'google',
+      googleSub: r.google_sub || null,
+      email: r.email || null,
+      avatarUrl: r.avatar_url || null,
       legalConsent: r.legal_consent,
-      createdAt: r.created_at.toISOString(),
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     };
+  }
+
+  async getAccountById(id: string): Promise<StoredAccount | null> {
+    const res = await this.pool!.query('SELECT * FROM accounts WHERE id = $1', [id]);
+    if (res.rowCount === 0) return null;
+    return this.mapPgAccount(res.rows[0]);
   }
 
   async getAccountByUsername(username: string): Promise<StoredAccount | null> {
     const res = await this.pool!.query('SELECT * FROM accounts WHERE LOWER(username) = LOWER($1)', [username.trim()]);
     if (res.rowCount === 0) return null;
-    const r = res.rows[0];
-    return {
-      id: r.id,
-      username: r.username,
-      clanTag: r.clan_tag,
-      faction: r.faction,
-      passwordSalt: r.password_salt,
-      passwordHash: r.password_hash,
-      legalConsent: r.legal_consent,
-      createdAt: r.created_at.toISOString(),
-    };
+    return this.mapPgAccount(res.rows[0]);
+  }
+
+  async getAccountByGoogleSub(googleSub: string): Promise<StoredAccount | null> {
+    if (!googleSub) return null;
+    const res = await this.pool!.query('SELECT * FROM accounts WHERE google_sub = $1', [googleSub.trim()]);
+    if (res.rowCount === 0) return null;
+    return this.mapPgAccount(res.rows[0]);
   }
 
   async saveAccount(account: StoredAccount): Promise<void> {
-    await this.pool!.query(`
-      INSERT INTO accounts (id, username, clan_tag, faction, password_salt, password_hash, legal_consent, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    await this.pool!.query(
+      `
+      INSERT INTO accounts (
+        id, username, clan_tag, faction, password_salt, password_hash,
+        auth_provider, google_sub, email, avatar_url, legal_consent, created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT(id) DO UPDATE SET
         username = EXCLUDED.username,
         clan_tag = EXCLUDED.clan_tag,
         faction = EXCLUDED.faction,
         password_salt = EXCLUDED.password_salt,
         password_hash = EXCLUDED.password_hash,
+        auth_provider = EXCLUDED.auth_provider,
+        google_sub = EXCLUDED.google_sub,
+        email = EXCLUDED.email,
+        avatar_url = EXCLUDED.avatar_url,
         legal_consent = EXCLUDED.legal_consent
-    `, [
-      account.id,
-      account.username,
-      account.clanTag,
-      account.faction,
-      account.passwordSalt,
-      account.passwordHash,
-      JSON.stringify(account.legalConsent),
-      account.createdAt,
-    ]);
+    `,
+      [
+        account.id,
+        account.username,
+        account.clanTag,
+        account.faction,
+        account.passwordSalt,
+        account.passwordHash,
+        account.authProvider || 'password',
+        account.googleSub || null,
+        account.email || null,
+        account.avatarUrl || null,
+        JSON.stringify(account.legalConsent),
+        account.createdAt,
+      ]
+    );
   }
 
   async deleteAccount(id: string): Promise<void> {
@@ -864,25 +946,31 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async createSession(session: StoredSession): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       INSERT INTO sessions (id, account_id, token_hash, csrf_token, created_at, expires_at, revoked_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
-    `, [
-      session.id,
-      session.accountId,
-      session.tokenHash,
-      session.csrfToken,
-      session.createdAt,
-      session.expiresAt,
-      session.revokedAt || null,
-    ]);
+    `,
+      [
+        session.id,
+        session.accountId,
+        session.tokenHash,
+        session.csrfToken,
+        session.createdAt,
+        session.expiresAt,
+        session.revokedAt || null,
+      ]
+    );
   }
 
   async getSessionByTokenHash(tokenHash: string): Promise<StoredSession | null> {
-    const res = await this.pool!.query(`
+    const res = await this.pool!.query(
+      `
       SELECT * FROM sessions
       WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()
-    `, [tokenHash]);
+    `,
+      [tokenHash]
+    );
     if (res.rowCount === 0) return null;
     const r = res.rows[0];
     return {
@@ -897,22 +985,31 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async revokeSessionByTokenHash(tokenHash: string): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       UPDATE sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL
-    `, [tokenHash]);
+    `,
+      [tokenHash]
+    );
   }
 
   async revokeActiveSessionsForAccount(accountId: string, exceptTokenHash?: string): Promise<void> {
     if (exceptTokenHash) {
-      await this.pool!.query(`
+      await this.pool!.query(
+        `
         UPDATE sessions SET revoked_at = NOW()
         WHERE account_id = $1 AND token_hash != $2 AND revoked_at IS NULL
-      `, [accountId, exceptTokenHash]);
+      `,
+        [accountId, exceptTokenHash]
+      );
     } else {
-      await this.pool!.query(`
+      await this.pool!.query(
+        `
         UPDATE sessions SET revoked_at = NOW()
         WHERE account_id = $1 AND revoked_at IS NULL
-      `, [accountId]);
+      `,
+        [accountId]
+      );
     }
   }
 
@@ -950,7 +1047,8 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async saveLeaderboardEntry(entry: StoredLeaderboardEntry): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       INSERT INTO leaderboard (
         id, account_id, name, clan_tag, city, score, best_match_score, kills, wins,
         highest_wave, unlocked_maps_count, signature_weapon, current_arena, status_text, last_seen
@@ -969,23 +1067,25 @@ export class PostgresStorageAdapter implements GameStorage {
         current_arena = EXCLUDED.current_arena,
         status_text = EXCLUDED.status_text,
         last_seen = EXCLUDED.last_seen
-    `, [
-      entry.id,
-      entry.accountId || null,
-      entry.name,
-      entry.clanTag,
-      entry.city,
-      entry.score,
-      entry.bestMatchScore,
-      entry.kills,
-      entry.wins,
-      entry.highestWave,
-      entry.unlockedMapsCount,
-      entry.signatureWeapon,
-      entry.currentArena,
-      entry.statusText,
-      entry.lastSeen,
-    ]);
+    `,
+      [
+        entry.id,
+        entry.accountId || null,
+        entry.name,
+        entry.clanTag,
+        entry.city,
+        entry.score,
+        entry.bestMatchScore,
+        entry.kills,
+        entry.wins,
+        entry.highestWave,
+        entry.unlockedMapsCount,
+        entry.signatureWeapon,
+        entry.currentArena,
+        entry.statusText,
+        entry.lastSeen,
+      ]
+    );
   }
 
   async deleteLeaderboardEntryByName(name: string): Promise<void> {
@@ -1012,24 +1112,30 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async saveDerbyStats(stats: StoredDerbyStats): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       UPDATE derby_stats
       SET neu_anspach_points = $1, wehrheim_points = $2, total_battles = $3, current_contested_district = $4
       WHERE id = 1
-    `, [
-      stats.neuAnspachPoints,
-      stats.wehrheimPoints,
-      stats.totalBattles,
-      stats.currentContestedDistrict,
-    ]);
+    `,
+      [
+        stats.neuAnspachPoints,
+        stats.wehrheimPoints,
+        stats.totalBattles,
+        stats.currentContestedDistrict,
+      ]
+    );
   }
 
   async getRecentEvents(limit = 25): Promise<StoredLiveFeedEvent[]> {
-    const res = await this.pool!.query(`
+    const res = await this.pool!.query(
+      `
       SELECT * FROM live_events
       ORDER BY timestamp DESC
       LIMIT $1
-    `, [limit]);
+    `,
+      [limit]
+    );
 
     return res.rows.map((r) => ({
       id: r.id,
@@ -1042,7 +1148,8 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async addRecentEvent(event: StoredLiveFeedEvent): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       INSERT INTO live_events (id, player_name, clan_tag, text, timestamp, type)
       VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT(id) DO UPDATE SET
@@ -1051,14 +1158,16 @@ export class PostgresStorageAdapter implements GameStorage {
         text = EXCLUDED.text,
         timestamp = EXCLUDED.timestamp,
         type = EXCLUDED.type
-    `, [
-      event.id,
-      event.playerName,
-      event.clanTag,
-      event.text,
-      event.timestamp,
-      event.type,
-    ]);
+    `,
+      [
+        event.id,
+        event.playerName,
+        event.clanTag,
+        event.text,
+        event.timestamp,
+        event.type,
+      ]
+    );
 
     await this.pool!.query(`
       DELETE FROM live_events
@@ -1105,7 +1214,8 @@ export class PostgresStorageAdapter implements GameStorage {
   }
 
   async saveRoom(room: StoredRoom): Promise<void> {
-    await this.pool!.query(`
+    await this.pool!.query(
+      `
       INSERT INTO rooms (code, host_account_id, host_name, arena, players_json, wave, total_kills, status, updated_at, created_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT(code) DO UPDATE SET
@@ -1117,18 +1227,20 @@ export class PostgresStorageAdapter implements GameStorage {
         total_kills = EXCLUDED.total_kills,
         status = EXCLUDED.status,
         updated_at = EXCLUDED.updated_at
-    `, [
-      room.code,
-      room.hostAccountId || null,
-      room.hostName,
-      room.arena,
-      JSON.stringify(room.players),
-      room.wave,
-      room.totalKills,
-      room.status,
-      room.updatedAt,
-      room.createdAt,
-    ]);
+    `,
+      [
+        room.code,
+        room.hostAccountId || null,
+        room.hostName,
+        room.arena,
+        JSON.stringify(room.players),
+        room.wave,
+        room.totalKills,
+        room.status,
+        room.updatedAt,
+        room.createdAt,
+      ]
+    );
   }
 
   async deleteRoom(code: string): Promise<void> {
@@ -1147,7 +1259,7 @@ export class PostgresStorageAdapter implements GameStorage {
 export async function createStorage(dbPath?: string): Promise<GameStorage> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!dbPath && databaseUrl && (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'))) {
-    console.log('[Storage] Attempting PostgreSQL storage from DATABASE_URL');
+    console.log('[Storage] Attempting PostgreSQL storage from DATABASE_URL (Neon / Cloud SQL)');
     try {
       const adapter = new PostgresStorageAdapter(databaseUrl);
       await adapter.init();

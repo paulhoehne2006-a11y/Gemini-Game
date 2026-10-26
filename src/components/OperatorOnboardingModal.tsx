@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, CheckCircle2, Swords, Scale, Download, Trash2, AlertTriangle, Sparkles } from 'lucide-react';
+import { Shield, CheckCircle2, Swords, Scale, Download, Trash2, AlertTriangle } from 'lucide-react';
 import { soundFx } from '../audio/soundFx';
-import { LegalConsentRecord } from '../legal';
+import { createLegalConsentRecord, LegalConsentRecord } from '../legal';
 import { exportUserData, deleteUserAccount } from '../auth';
 
 interface OperatorOnboardingModalProps {
@@ -9,6 +9,7 @@ interface OperatorOnboardingModalProps {
   initialClanTag: string;
   initialCity: string;
   isFirstTime: boolean;
+  authProvider?: 'password' | 'google';
   onComplete: (profile: {
     name: string;
     clanTag: string;
@@ -27,6 +28,7 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
   initialClanTag,
   initialCity,
   isFirstTime,
+  authProvider = 'password',
   onComplete,
   onOpenLegal,
   onClose,
@@ -44,6 +46,8 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const isGoogleAccount = authProvider === 'google';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,12 +68,7 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
       city,
       ...(isFirstTime
         ? {
-            consent: {
-              acceptedAt: new Date().toISOString(),
-              noticeVersion: '2026-10-15',
-              privacyPolicyVersion: '2026-10-15',
-              termsVersion: '2026-10-15',
-            },
+            consent: createLegalConsentRecord(),
           }
         : {}),
     });
@@ -96,14 +95,19 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
   };
 
   const handleDeleteAccountSubmit = async () => {
-    if (!deletePassword) {
+    if (isGoogleAccount) {
+      if (deletePassword.trim().toUpperCase() !== 'LÖSCHEN') {
+        setDeleteError('Bitte gib zur Bestätigung LÖSCHEN ein.');
+        return;
+      }
+    } else if (!deletePassword) {
       setDeleteError('Bitte gib dein Passwort ein.');
       return;
     }
     try {
       setIsDeleting(true);
       setDeleteError(null);
-      await deleteUserAccount(deletePassword);
+      await deleteUserAccount(isGoogleAccount ? deletePassword.trim().toUpperCase() : deletePassword);
       if (onLogout) {
         onLogout();
       } else {
@@ -362,17 +366,19 @@ export const OperatorOnboardingModal: React.FC<OperatorOnboardingModalProps> = (
                       <span>Konto unwiderruflich löschen?</span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Bitte bestätige mit deinem Passwort. Alle Kontodaten, Sitzungen und Leaderboard-Einträge werden sofort entfernt.
+                      {isGoogleAccount
+                        ? 'Google-verknüpfte Konten ohne lokales Passwort werden durch Eingabe von LÖSCHEN endgültig entfernt. Alle Kontodaten, Sitzungen und Leaderboard-Einträge werden sofort gelöscht.'
+                        : 'Bitte bestätige mit deinem Passwort. Alle Kontodaten, Sitzungen und Leaderboard-Einträge werden sofort entfernt.'}
                     </p>
                     {deleteError && (
                       <div className="text-xs text-red-400 font-mono">{deleteError}</div>
                     )}
                     <div className="flex items-center gap-2 pt-1">
                       <input
-                        type="password"
+                        type={isGoogleAccount ? 'text' : 'password'}
                         value={deletePassword}
                         onChange={(e) => setDeletePassword(e.target.value)}
-                        placeholder="Dein Passwort"
+                        placeholder={isGoogleAccount ? 'LÖSCHEN eingeben' : 'Dein Passwort'}
                         className="flex-1 px-3.5 py-2 rounded-xl bg-slate-950/80 border border-red-500/40 text-xs font-mono text-white focus:outline-none focus:ring-2 focus:ring-red-500/30"
                       />
                       <button
