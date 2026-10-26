@@ -112,6 +112,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
 
     const effectiveClanTag = clanTag.trim().toUpperCase() || '61267';
 
+    if (cfg.devFallbackEnabled) {
+      setShowGoogleDevPanel((prev) => !prev);
+      return;
+    }
+
     if (cfg.oauthRedirectEnabled) {
       setIsSubmitting(true);
       startGoogleOAuthRedirect({
@@ -382,7 +387,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Lokale Testumgebung ohne Google Cloud Schlüssel erkannt. Wähle ein Test-Konto für den sofortigen OAuth-Login:
+                  Lokale Testumgebung erkannt. Wähle ein Test-Konto für den sofortigen Login:
                 </p>
 
                 <button
@@ -431,6 +436,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthenticated, onOpenL
                 >
                   Mit angegebenem Google-Konto fortfahren
                 </button>
+
+                {googleConfig?.oauthRedirectEnabled && (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      setIsSubmitting(true);
+                      startGoogleOAuthRedirect({
+                        clanTag: clanTag.trim().toUpperCase() || '61267',
+                        faction,
+                      });
+                    }}
+                    className="w-full text-center text-[10px] font-mono text-slate-400 hover:text-amber-400 underline underline-offset-2 pt-1 transition-colors cursor-pointer"
+                  >
+                    Echten Google OAuth Redirect aufrufen &rarr;
+                  </button>
+                )}
               </div>
             )}
           </div>
