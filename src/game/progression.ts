@@ -264,14 +264,29 @@ export function loadCareerStats(): CareerStats {
     const raw = localStorage.getItem('na_career_stats');
     if (raw) {
       const parsed = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return { ...DEFAULT_CAREER_STATS };
+      }
       return {
-        ...DEFAULT_CAREER_STATS,
-        ...parsed,
+        totalKills: typeof parsed.totalKills === 'number' ? parsed.totalKills : DEFAULT_CAREER_STATS.totalKills,
+        totalBossKills: typeof parsed.totalBossKills === 'number' ? parsed.totalBossKills : DEFAULT_CAREER_STATS.totalBossKills,
+        bossesDefeated: typeof parsed.bossesDefeated === 'number' ? parsed.bossesDefeated : DEFAULT_CAREER_STATS.bossesDefeated,
+        highestStreak: typeof parsed.highestStreak === 'number' ? parsed.highestStreak : DEFAULT_CAREER_STATS.highestStreak,
+        highestCombo: typeof parsed.highestCombo === 'number' ? parsed.highestCombo : DEFAULT_CAREER_STATS.highestCombo,
+        highestWave: typeof parsed.highestWave === 'number' ? parsed.highestWave : DEFAULT_CAREER_STATS.highestWave,
+        abilitiesUsed: typeof parsed.abilitiesUsed === 'number' ? parsed.abilitiesUsed : DEFAULT_CAREER_STATS.abilitiesUsed,
+        totalMatchesPlayed: typeof parsed.totalMatchesPlayed === 'number' ? parsed.totalMatchesPlayed : DEFAULT_CAREER_STATS.totalMatchesPlayed,
+        totalTalerEarned: typeof parsed.totalTalerEarned === 'number' ? parsed.totalTalerEarned : DEFAULT_CAREER_STATS.totalTalerEarned,
+        gunsmithUpgrades: typeof parsed.gunsmithUpgrades === 'number' ? parsed.gunsmithUpgrades : DEFAULT_CAREER_STATS.gunsmithUpgrades,
+        equippedTitle: typeof parsed.equippedTitle === 'string' ? parsed.equippedTitle : DEFAULT_CAREER_STATS.equippedTitle,
+        lastDailyBonusDate: typeof parsed.lastDailyBonusDate === 'string' ? parsed.lastDailyBonusDate : DEFAULT_CAREER_STATS.lastDailyBonusDate,
+        lastLoginDate: typeof parsed.lastLoginDate === 'string' ? parsed.lastLoginDate : DEFAULT_CAREER_STATS.lastLoginDate,
+        loginStreakDays: typeof parsed.loginStreakDays === 'number' ? parsed.loginStreakDays : DEFAULT_CAREER_STATS.loginStreakDays,
         claimedBattlePassTiers: Array.isArray(parsed.claimedBattlePassTiers)
-          ? parsed.claimedBattlePassTiers
+          ? parsed.claimedBattlePassTiers.filter((x: any) => typeof x === 'number')
           : [],
         claimedAchievements: Array.isArray(parsed.claimedAchievements)
-          ? parsed.claimedAchievements
+          ? parsed.claimedAchievements.filter((x: any) => typeof x === 'string')
           : [],
       };
     }
