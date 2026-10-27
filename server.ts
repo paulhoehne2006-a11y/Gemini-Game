@@ -120,10 +120,6 @@ setInterval(() => {
 }, 60000).unref();
 
 function getClientIp(req: express.Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
   return req.ip || req.socket.remoteAddress || '127.0.0.1';
 }
 
@@ -155,7 +151,7 @@ function extractRequestToken(req: express.Request): string | undefined {
 }
 
 function setSessionCookie(req: express.Request, res: express.Response, token: string, expiresAt: string): void {
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || authConfig.secureCookie;
+  const isHttps = req.secure || authConfig.secureCookie;
   // If running in iframe preview over HTTPS, SameSite=None is required. For standard deployments, SameSite=Lax.
   const sameSite = isHttps ? 'None' : 'Lax';
 
@@ -170,7 +166,7 @@ function setSessionCookie(req: express.Request, res: express.Response, token: st
 }
 
 function clearSessionCookie(req: express.Request, res: express.Response): void {
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || authConfig.secureCookie;
+  const isHttps = req.secure || authConfig.secureCookie;
   const sameSite = isHttps ? 'None' : 'Lax';
   res.clearCookie(authConfig.cookieName, {
     httpOnly: true,
@@ -1066,8 +1062,8 @@ function resolveGoogleCallbackUrl(req: express.Request): string {
   if (authConfig.googleCallbackUrl) {
     return authConfig.googleCallbackUrl;
   }
-  const proto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim() || (req.secure ? 'https' : 'http');
-  const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
+  const proto = req.secure ? 'https' : 'http';
+  const host = req.get('host') || `localhost:${PORT}`;
   return `${proto}://${host}/api/auth/google/callback`;
 }
 
@@ -1116,7 +1112,7 @@ app.get('/api/auth/google', (req, res) => {
     'utf8'
   ).toString('base64url');
 
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || authConfig.secureCookie;
+  const isHttps = req.secure || authConfig.secureCookie;
   res.cookie(authConfig.googleStateCookieName, statePayload, {
     httpOnly: true,
     secure: isHttps,
