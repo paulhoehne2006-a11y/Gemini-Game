@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getWeaponLevelTrainCostNAT, MAX_WEAPON_LEVEL } from '../src/game/weapons.ts';
+import { getWeaponLevelTrainCostNAT, getWeaponXpForNextLevel, MAX_WEAPON_LEVEL } from '../src/game/weapons.ts';
 
 test('getWeaponLevelTrainCostNAT', async (t) => {
   await t.test('calculates correct cost for level 1 (boundary)', () => {
@@ -44,5 +44,28 @@ test('getWeaponLevelTrainCostNAT', async (t) => {
     const maxCost = getWeaponLevelTrainCostNAT(MAX_WEAPON_LEVEL);
     assert.equal(getWeaponLevelTrainCostNAT(MAX_WEAPON_LEVEL + 1), maxCost);
     assert.equal(getWeaponLevelTrainCostNAT(100), maxCost);
+  });
+});
+
+test('getWeaponXpForNextLevel', async (t) => {
+  await t.test('returns correct XP for base level 1', () => {
+    assert.equal(getWeaponXpForNextLevel(1), 180);
+  });
+
+  await t.test('clamps level below 1', () => {
+    assert.equal(getWeaponXpForNextLevel(0), 180);
+    assert.equal(getWeaponXpForNextLevel(-5), 180);
+  });
+
+  await t.test('returns correct XP for intermediate levels', () => {
+    assert.equal(getWeaponXpForNextLevel(2), 288);
+    assert.equal(getWeaponXpForNextLevel(15), 2075);
+  });
+
+  await t.test('clamps level above MAX_WEAPON_LEVEL', () => {
+    const maxLevelXp = getWeaponXpForNextLevel(MAX_WEAPON_LEVEL);
+    assert.equal(maxLevelXp, 4486);
+    assert.equal(getWeaponXpForNextLevel(MAX_WEAPON_LEVEL + 1), maxLevelXp);
+    assert.equal(getWeaponXpForNextLevel(100), maxLevelXp);
   });
 });
