@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -384,7 +385,7 @@ export class SqliteStorageAdapter implements GameStorage {
             `);
             for (const entry of data.leaderboard) {
               insertStmt.run(
-                entry.id || `op_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                entry.id || `op_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
                 null,
                 entry.name,
                 entry.clanTag || '61267',
