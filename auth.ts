@@ -224,12 +224,28 @@ export class AuthStore {
       return base;
     }
 
+    const candidates: string[] = [];
     for (let attempt = 0; attempt < 20; attempt++) {
       const suffix = crypto.randomInt(100, 9999).toString();
       const candidate = `${base.slice(0, 24 - suffix.length - 1)}_${suffix}`;
       if (USERNAME_PATTERN.test(candidate)) {
-        const collision = await this.storage.getAccountByUsername(candidate);
-        if (!collision) return candidate;
+        candidates.push(candidate);
+      }
+    }
+
+    if (candidates.length > 0) {
+      if (this.storage.checkUsernamesExist) {
+        const existing = await this.storage.checkUsernamesExist(candidates);
+        for (const candidate of candidates) {
+          if (!existing.has(candidate.toLowerCase())) {
+            return candidate;
+          }
+        }
+      } else {
+        for (const candidate of candidates) {
+          const collision = await this.storage.getAccountByUsername(candidate);
+          if (!collision) return candidate;
+        }
       }
     }
 
