@@ -509,9 +509,9 @@ function getTodayKey(accountId: string): string {
   return `${accountId}_${day}`;
 }
 
-async function buildClanSummary(record: ClanRecord, viewerAccount?: PublicAccount) {
+async function buildClanSummary(record: ClanRecord, viewerAccount?: PublicAccount, providedLeaderboard?: StoredLeaderboardEntry[]) {
   const tag = record.tag.toUpperCase();
-  const leaderboard = await storage.getLeaderboard();
+  const leaderboard = providedLeaderboard || await storage.getLeaderboard();
   const members: Array<{
     accountId: string;
     username: string;
@@ -1817,8 +1817,10 @@ app.get('/api/clans/directory', requireAccount, async (req, res) => {
     const joinTypeFilter = String(req.query.joinType || '').trim();
     const maxMinLevel = req.query.maxMinLevel !== undefined ? Number(req.query.maxMinLevel) : undefined;
 
+    const leaderboard = await storage.getLeaderboard();
+
     const summaries = await Promise.all(
-      [...clans.values()].map((record) => buildClanSummary(record, account))
+      [...clans.values()].map((record) => buildClanSummary(record, account, leaderboard))
     );
 
     const filtered = summaries
