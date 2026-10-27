@@ -1453,7 +1453,6 @@ export async function createStorage(dbPath?: string): Promise<GameStorage> {
 
   try {
     const targetPath = dbPath || process.env.SQLITE_DB_PATH;
-    console.log(`[Storage] Initializing SQLite storage (${targetPath || 'default'})`);
     const adapter = new SqliteStorageAdapter(targetPath);
     await adapter.init();
     return adapter;
