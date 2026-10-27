@@ -126,6 +126,7 @@ export interface GameStorage {
   getAccountById(id: string): Promise<StoredAccount | null>;
   getAccountByUsername(username: string): Promise<StoredAccount | null>;
   getAccountByGoogleSub(googleSub: string): Promise<StoredAccount | null>;
+  checkUsernamesExist(usernames: string[]): Promise<Set<string>>;
   saveAccount(account: StoredAccount): Promise<void>;
   deleteAccount(id: string): Promise<void>;
 
@@ -461,6 +462,14 @@ export class SqliteStorageAdapter implements GameStorage {
     const row = this.db.prepare('SELECT * FROM accounts WHERE google_sub = ?').get(googleSub.trim()) as any;
     if (!row) return null;
     return this.mapSqliteAccount(row);
+  }
+
+  async checkUsernamesExist(usernames: string[]): Promise<Set<string>> {
+    if (!usernames || usernames.length === 0) return new Set();
+    const placeholders = usernames.map(() => 'LOWER(?)').join(',');
+    const query = `SELECT username FROM accounts WHERE LOWER(username) IN (${placeholders})`;
+    const rows = this.db.prepare(query).all(...usernames) as any[];
+    return new Set(rows.map(r => r.username.toLowerCase()));
   }
 
   async saveAccount(account: StoredAccount): Promise<void> {
@@ -1020,6 +1029,14 @@ export class PostgresStorageAdapter implements GameStorage {
     const res = await this.pool!.query('SELECT * FROM accounts WHERE google_sub = $1', [googleSub.trim()]);
     if (res.rowCount === 0) return null;
     return this.mapPgAccount(res.rows[0]);
+  }
+
+  async checkUsernamesExist(usernames: string[]): Promise<Set<string>> {
+    if (!usernames || usernames.length === 0) return new Set();
+    const placeholders = usernames.map((_, i) => `LOWER($${i + 1})`).join(',');
+    const query = `SELECT username FROM accounts WHERE LOWER(username) IN (${placeholders})`;
+    const res = await this.pool!.query(query, usernames);
+    return new Set(res.rows.map((r: any) => r.username.toLowerCase()));
   }
 
   async saveAccount(account: StoredAccount): Promise<void> {
