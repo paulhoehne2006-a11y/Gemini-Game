@@ -1440,11 +1440,9 @@ export class PostgresStorageAdapter implements GameStorage {
 export async function createStorage(dbPath?: string): Promise<GameStorage> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!dbPath && databaseUrl && (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'))) {
-    console.log('[Storage] Attempting PostgreSQL storage from DATABASE_URL (Neon / Cloud SQL)');
     try {
       const adapter = new PostgresStorageAdapter(databaseUrl);
       await adapter.init();
-      console.log('[Storage] PostgreSQL storage connected and initialized successfully');
       return adapter;
     } catch (pgError: any) {
       console.warn(`[Storage] PostgreSQL connection failed (${pgError?.message || pgError}). Falling back to SQLite storage.`);
